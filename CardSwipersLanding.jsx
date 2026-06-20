@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import './firebase';
+import React, { useEffect, useState } from 'react';
+import { addDoc, collection, getDocs, limit, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase';
 import logo from './assets/cardswipers-logo.svg';
 
 const INITIAL_DECK = [
@@ -48,32 +49,133 @@ export default function CardSwipersLanding() {
     { id: 101, name: '1st Edition Blue-Eyes White Dragon', brand: 'Yu-Gi-Oh!', condition: 'PSA 9' },
     { id: 102, name: '2024 Shohei Ohtani Topps Chrome', brand: 'Topps', condition: 'Raw' }
   ]);
-  const [messages] = useState([
+  const [messages, setMessages] = useState([
     { id: 1, user: 'PalletTownTrades', lastMsg: 'Hey! Down to trade Charizard for your Blue-Eyes?', unread: true },
     { id: 2, user: 'VintageVault', lastMsg: 'Is that price firm on the Ohtani?', unread: false }
   ]);
   const [activeChat, setActiveChat] = useState(null);
 
   const [newCard, setNewCard] = useState({ name: '', brand: 'Topps', condition: 'Raw', lookingFor: '' });
+  const [chatDraft, setChatDraft] = useState('');
 
-  const handleSwipe = (direction) => {
-    if (direction === 'right') {
-      alert(`Liked ${deck[0]?.title}! If they swipe right on your collection, it's a Trade Match.`);
+  useEffect(() => {
+    const loadPersistedData = async () => {
+      try {
+        const cardsQuery = query(collection(db, 'cards'), orderBy('createdAt', 'desc'), limit(50));
+        const messagesQuery = query(collection(db, 'messages'), orderBy('updatedAt', 'desc'), limit(50));
+
+        const [cardsSnapshot, messagesSnapshot] = await Promise.all([
+          getDocs(cardsQuery),
+          getDocs(messagesQuery)
+        ]);
+
+        if (!cardsSnapshot.empty) {
+          const loadedCards = cardsSnapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              name: data.name,
+              brand: data.brand,
+              condition: data.condition
+            };
+          });
+          setMyCollection(loadedCards);
+        }
+
+        if (!messagesSnapshot.empty) {
+          const loadedMessages = messagesSnapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              user: data.user,
+              lastMsg: data.lastMsg,
+              unread: Boolean(data.unread)
+            };
+          });
+          setMessages(loadedMessages);
+        }
+      } catch (error) {
+        console.error('Failed to load Firestore data:', error);
+      }
+    };
+
+    loadPersistedData();
+  }, []);
+
+  const handleSwipe = async (direction) => {
+    const topCard = deck[0];
+    if (!topCard) return;
+
+    try {
+      await addDoc(collection(db, 'swipes'), {
+        cardId: topCard.id,
+        title: topCard.title,
+        direction,
+        createdAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed to persist swipe:', error);
     }
+
+    if (direction === 'right') {
+      alert(`Liked ${topCard.title}! If they swipe right on your collection, it's a Trade Match.`);
+    }
+
     setDeck((prevDeck) => prevDeck.slice(1));
   };
 
-  const handlePostCard = (e) => {
+  const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.name) return;
 
-    setMyCollection([
-      ...myCollection,
-      { id: Date.now(), name: newCard.name, brand: newCard.brand, condition: newCard.condition }
+    let createdId = Date.now();
+
+    try {
+      const docRef = await addDoc(collection(db, 'cards'), {
+        name: newCard.name,
+        brand: newCard.brand,
+        condition: newCard.condition,
+        lookingFor: newCard.lookingFor,
+        createdAt: serverTimestamp()
+      });
+      createdId = docRef.id;
+    } catch (error) {
+      console.error('Failed to persist posted card:', error);
+    }
+
+    setMyCollection((prevCollection) => [
+      { id: createdId, name: newCard.name, brand: newCard.brand, condition: newCard.condition },
+      ...prevCollection
     ]);
 
     setNewCard({ name: '', brand: 'Topps', condition: 'Raw', lookingFor: '' });
     setCurrentTab('collection');
+  };
+
+  const handleSendMessage = async () => {
+    const trimmedMessage = chatDraft.trim();
+    if (!activeChat || !trimmedMessage) return;
+
+    let messageId = Date.now();
+
+    try {
+      const docRef = await addDoc(collection(db, 'messages'), {
+        user: activeChat.user,
+        lastMsg: trimmedMessage,
+        unread: false,
+        updatedAt: serverTimestamp()
+      });
+      messageId = docRef.id;
+    } catch (error) {
+      console.error('Failed to persist message:', error);
+    }
+
+    setMessages((prevMessages) => [
+      { id: messageId, user: activeChat.user, lastMsg: trimmedMessage, unread: false },
+      ...prevMessages.filter((msg) => msg.user !== activeChat.user)
+    ]);
+    setActiveChat((prevChat) => (prevChat ? { ...prevChat, lastMsg: trimmedMessage, unread: false } : prevChat));
+    setChatDraft('');
   };
 
   return (
@@ -275,7 +377,12 @@ export default function CardSwipersLanding() {
                   {messages.map((chat) => (
                     <div
                       key={chat.id}
-                      onClick={() => setActiveChat(chat)}
+                      onClick={() => {
+                        setActiveChat(chat);
+                        setMessages((prevMessages) =>
+                          prevMessages.map((msg) => (msg.id === chat.id ? { ...msg, unread: false } : msg))
+                        );
+                      }}
                       className="py-4 flex items-center justify-between cursor-pointer group hover:bg-neutral-900/40 px-2 rounded-xl transition-colors"
                     >
                       <div className="flex items-center space-x-3">
@@ -317,9 +424,11 @@ export default function CardSwipersLanding() {
                   <input
                     type="text"
                     placeholder="Type a trade offer..."
+                    value={chatDraft}
+                    onChange={(e) => setChatDraft(e.target.value)}
                     className="flex-grow p-3 bg-neutral-900 border border-neutral-800 rounded-xl text-xs focus:outline-none"
                   />
-                  <button className="bg-[#E50914] px-4 rounded-xl text-xs font-bold" type="button">
+                  <button className="bg-[#E50914] px-4 rounded-xl text-xs font-bold" type="button" onClick={handleSendMessage}>
                     Send
                   </button>
                 </div>
