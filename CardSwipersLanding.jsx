@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import './firebase';
+import logo from './assets/cardswipers-logo.svg';
 
 export default function CardSwipersLanding() {
   const [email, setEmail] = useState('');
@@ -19,10 +20,7 @@ export default function CardSwipersLanding() {
       {/* HEADER / NAV */}
       <header className="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          {/* Logo container inspired by IMG_6089.jpg */}
-          <div className="w-10 h-10 bg-[#E50914] rounded-xl flex items-center justify-center shadow-lg shadow-red-600/20">
-            <span className="text-white font-black italic text-lg tracking-tighter">CS</span>
-          </div>
+          <img src={logo} alt="CardSwipers logo" className="w-10 h-10 rounded-xl shadow-lg shadow-red-600/20" />
           <span className="text-xl font-bold tracking-tight">
             card<span className="text-[#E50914]">swipers</span>.com
           </span>
