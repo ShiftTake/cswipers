@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import './firebase';
 
 export default function CardSwipersLanding() {
   const [email, setEmail] = useState('');
