@@ -34,6 +34,89 @@ if (ADMIN_EMAILS.length === 0 && import.meta.env.DEV) {
   ADMIN_EMAILS.push('adminbootstrap+cardswipers@example.com');
 }
 
+function NavIcon({ children }) {
+  return <span className="w-5 h-5 inline-flex items-center justify-center">{children}</span>;
+}
+
+function SwipeDeckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <rect x="6" y="4" width="12" height="16" rx="2" />
+      <path d="M9 8h6M9 12h6M9 16h4" />
+    </svg>
+  );
+}
+
+function PostIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M12 5v14M5 12h14" />
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+    </svg>
+  );
+}
+
+function BinderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7z" />
+      <path d="M7 4a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h10" />
+      <path d="M9 8h6M9 12h6" />
+    </svg>
+  );
+}
+
+function InboxIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
+      <path d="m6 8 6 5 6-5" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M12 3 5.5 5.5v5.8c0 4.2 2.7 8 6.5 9.7 3.8-1.7 6.5-5.5 6.5-9.7V5.5z" />
+      <path d="M9.5 12.5 11 14l3.5-4" />
+    </svg>
+  );
+}
+
+function PassIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function InterestIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+      <path d="M12 21c-.3 0-.5-.1-.7-.3l-6.2-6c-3.1-3-3.1-7.8-.1-10.8A7.2 7.2 0 0 1 12 5.2a7.2 7.2 0 0 1 6.9-1.3c3 3 3 7.8-.1 10.8l-6.1 6c-.2.2-.5.3-.7.3Z" />
+    </svg>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+      <path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.5-5-2.7-5 2.7.9-5.5-4-3.9 5.6-.8z" />
+    </svg>
+  );
+}
+
 const INITIAL_DECK = [
   {
     id: 1,
@@ -41,9 +124,20 @@ const INITIAL_DECK = [
     brand: 'Bowman',
     category: 'Sports Cards',
     imageEmoji: '⚾',
+    detailLine: 'PSA 10 • Bowman Chrome • On-card auto',
     condition: 'PSA 10',
     owner: 'CollectorTexas99',
     lookingFor: 'High-end Pokemon TCG or $450 Trade Value',
+    tradeValue: '$450',
+    avgMarketValue: '$425',
+    recentComps: '$410-$470',
+    collectorRating: '4.9',
+    completedTrades: 143,
+    memberSince: '2024',
+    location: 'Dallas, TX',
+    trustLabel: 'Verified Collector',
+    responseTime: 'Replies in under 1 hour',
+    seekingTags: ['Pokemon TCG', 'Baseball autos', 'Slabs'],
     cardColor: 'from-amber-500/20 to-red-600/20',
     borderColor: 'border-amber-500/40',
     collection: [
@@ -59,8 +153,19 @@ const INITIAL_DECK = [
     category: 'TCG',
     condition: 'Raw / Mint',
     imageEmoji: '🔥',
+    detailLine: 'Mint raw • Scarlet & Violet • Special Illustration Rare',
     owner: 'PaldeaMaster',
     lookingFor: 'Yu-Gi-Oh Retro formats or Vintage Topps Baseball',
+    tradeValue: '$320',
+    avgMarketValue: '$305',
+    recentComps: '$290-$335',
+    collectorRating: '4.8',
+    completedTrades: 88,
+    memberSince: '2023',
+    location: 'Phoenix, AZ',
+    trustLabel: 'Identity Verified',
+    responseTime: 'Replies same day',
+    seekingTags: ['Yu-Gi-Oh retro', 'Vintage Topps', 'Trade-up deals'],
     cardColor: 'from-red-600/20 to-orange-500/20',
     borderColor: 'border-red-500/40',
     collection: [
@@ -75,8 +180,19 @@ const INITIAL_DECK = [
     category: 'TCG',
     condition: 'PSA 8',
     imageEmoji: '🐉',
+    detailLine: 'PSA 8 • First Edition • Vintage grail',
     owner: 'KaibaCorpTrue',
     lookingFor: '1-for-1 sports grails or high-end soccer cards',
+    tradeValue: '$1,150',
+    avgMarketValue: '$1,090',
+    recentComps: '$1,020-$1,180',
+    collectorRating: '5.0',
+    completedTrades: 212,
+    memberSince: '2022',
+    location: 'Miami, FL',
+    trustLabel: 'Power Seller',
+    responseTime: 'Usually replies in 30 min',
+    seekingTags: ['Sports grails', 'High-end soccer', '1-for-1 swaps'],
     cardColor: 'from-blue-600/20 to-neutral-700/20',
     borderColor: 'border-blue-400/40',
     collection: [{ id: 301, title: 'Dark Magician Girl', emoji: '🧙‍♀️' }]
@@ -496,7 +612,7 @@ export default function CardSwipersLanding() {
   });
 
   return (
-    <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-gradient-to-b from-red-700 via-red-800 to-red-950'}`}>
+    <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {isLandingScreen && (
         <>
           <div className="absolute -top-36 -left-20 w-[28rem] h-[28rem] rounded-full bg-[#D72638]/20 blur-3xl pointer-events-none" />
@@ -507,7 +623,7 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
-      <header className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-red-700/95 border-red-300/40'} backdrop-blur-md border-b sticky top-0 z-50`}>
+      <header className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <img src={logo} alt="CardSwipers logo" className="w-9 h-9 rounded-lg shadow-md shadow-red-600/30 object-cover" />
@@ -933,83 +1049,224 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'swipe' && (
-          <div className="h-full max-w-2xl mx-auto flex flex-col justify-between items-center py-4">
+          <div className="h-full max-w-6xl mx-auto flex flex-col justify-between py-6">
             {currentCard ? (
-              <div className="w-full space-y-6">
-                <div className="w-full h-[440px] bg-red-950/80 border border-red-300/30 rounded-[32px] p-4 flex flex-col justify-between relative overflow-hidden shadow-xl">
-                  <div className={`absolute inset-0 bg-gradient-to-b ${currentCard.cardColor} opacity-40 pointer-events-none`} />
+              <div className="w-full grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-6 items-start">
+                <div className="space-y-5">
+                  <div className="w-full min-h-[620px] bg-[#171923] border border-white/10 rounded-[32px] p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+                    <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-30 pointer-events-none`} />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_35%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.25))] pointer-events-none" />
 
-                  {swipeFeedback === 'like' && (
-                    <div className="absolute top-8 left-6 -rotate-12 border-4 border-emerald-400 text-emerald-400 font-black text-2xl px-3 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
-                      Match Trading
-                    </div>
-                  )}
-                  {swipeFeedback === 'pass' && (
-                    <div className="absolute top-8 right-6 rotate-12 border-4 border-[#E50914] text-[#E50914] font-black text-2xl px-3 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
-                      Pass
-                    </div>
-                  )}
+                    {swipeFeedback === 'like' && (
+                      <div className="absolute top-8 left-6 -rotate-12 border-4 border-emerald-400 text-emerald-400 font-black text-2xl px-3 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
+                        Interested
+                      </div>
+                    )}
+                    {swipeFeedback === 'pass' && (
+                      <div className="absolute top-8 right-6 rotate-12 border-4 border-[#E11D48] text-[#E11D48] font-black text-2xl px-3 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
+                        Pass
+                      </div>
+                    )}
 
-                  <div className="flex justify-between items-center z-10">
-                    <span className="bg-white/20 backdrop-blur-md text-[11px] font-bold px-3 py-1 rounded-full border border-white/30 uppercase tracking-wider text-white">
-                      {currentCard.brand}
-                    </span>
-                    <span className="bg-[#E50914] text-white text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
-                      {currentCard.condition}
-                    </span>
+                    <div className="flex justify-between items-center z-10 gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="bg-white/10 backdrop-blur-md text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 uppercase tracking-wider text-white">
+                          {currentCard.brand}
+                        </span>
+                        <span className="bg-emerald-500/12 text-emerald-300 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-400/20 uppercase tracking-wider">
+                          {currentCard.trustLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                          {currentCard.condition}
+                        </span>
+                        <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 tracking-wider">
+                          {currentCard.tradeValue}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="relative z-10 flex-1 flex items-center justify-center py-6">
+                      <div className={`w-full max-w-[420px] min-h-[390px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[28px] shadow-[0_18px_50px_rgba(0,0,0,0.45)] relative overflow-hidden`}>
+                        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
+                        <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
+                        <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60">
+                          VERIFIED ASSET
+                        </div>
+                        <div className="h-full flex flex-col items-center justify-center px-8 pt-10 pb-8 text-center">
+                          <div className="text-[8rem] leading-none drop-shadow-[0_10px_24px_rgba(0,0,0,0.45)]">{currentCard.imageEmoji}</div>
+                          <div className="mt-5 space-y-2">
+                            <p className="text-[11px] uppercase tracking-[0.28em] text-white/45">{currentCard.category}</p>
+                            <h3 className="text-lg font-semibold text-white leading-tight max-w-[18rem] mx-auto">{currentCard.title}</h3>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="z-10 space-y-4 bg-gradient-to-t from-[#171923] via-[#171923]/92 to-transparent pt-4 rounded-xl">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="space-y-2 min-w-0">
+                          <h2 className="text-[2rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
+                          <p className="text-sm text-white/70 font-medium">{currentCard.detailLine}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Trade Value</p>
+                          <p className="text-2xl font-bold text-white">{currentCard.tradeValue}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid sm:grid-cols-3 gap-3">
+                        <div className="bg-white/[0.04] border border-white/10 rounded-2xl px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Average Market</p>
+                          <p className="mt-1 text-base font-semibold">{currentCard.avgMarketValue}</p>
+                        </div>
+                        <div className="bg-white/[0.04] border border-white/10 rounded-2xl px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Recent Comps</p>
+                          <p className="mt-1 text-base font-semibold">{currentCard.recentComps}</p>
+                        </div>
+                        <div className="bg-white/[0.04] border border-white/10 rounded-2xl px-4 py-3">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Collector Rating</p>
+                          <p className="mt-1 text-base font-semibold flex items-center gap-1.5"><StarIcon /> {currentCard.collectorRating}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-4 flex-wrap bg-[#0F131C] border border-white/10 rounded-2xl px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setViewingCollection(currentCard)}
+                          className="text-sm text-white font-semibold hover:text-rose-300 transition-colors"
+                        >
+                          @{currentCard.owner} · View Binder ({(currentCard.collection || []).length})
+                        </button>
+                        <p className="text-sm text-white/65">Seeking: {currentCard.lookingFor}</p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className={`w-44 h-60 mx-auto bg-red-900/80 border ${currentCard.borderColor} rounded-2xl flex flex-col items-center justify-center shadow-2xl relative z-10`}>
-                    <span className="text-6xl animate-pulse">{currentCard.imageEmoji}</span>
-                    <div className="absolute bottom-3 text-[10px] uppercase tracking-widest text-red-200 font-bold">
-                      Verified Asset
-                    </div>
-                  </div>
-
-                  <div className="z-10 space-y-1 bg-gradient-to-t from-red-950 via-red-950/80 to-transparent p-2 rounded-xl">
+                  <div className="grid sm:grid-cols-3 gap-3">
                     <button
+                      onClick={() => handleSwipe('pass')}
+                      className="min-h-[68px] rounded-2xl bg-white/[0.04] border border-white/10 text-white shadow-lg hover:border-white/20 hover:bg-white/[0.06] transition-all px-4 py-3 text-left"
                       type="button"
-                      onClick={() => setViewingCollection(currentCard)}
-                      className="text-xs text-red-200 font-semibold hover:text-white underline underline-offset-2"
                     >
-                      @{currentCard.owner} • View Binder ({(currentCard.collection || []).length})
+                      <div className="flex items-center gap-3">
+                        <span className="w-10 h-10 rounded-full bg-white/[0.04] border border-white/10 inline-flex items-center justify-center text-white/70"><PassIcon /></span>
+                        <div>
+                          <p className="font-semibold">Pass</p>
+                          <p className="text-xs text-white/55">Skip this listing</p>
+                        </div>
+                      </div>
                     </button>
-                    <h2 className="text-xl font-black truncate">{currentCard.title}</h2>
-                    <p className="text-xs text-red-100 font-medium leading-relaxed truncate">
-                      <span className="text-white font-bold">ISO:</span> {currentCard.lookingFor}
-                    </p>
+                    <button
+                      onClick={() => setViewingCollection(currentCard)}
+                      className="min-h-[68px] rounded-2xl bg-white/[0.04] border border-white/10 text-white shadow-lg hover:border-white/20 hover:bg-white/[0.06] transition-all px-4 py-3 text-left"
+                      type="button"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-400/20 inline-flex items-center justify-center text-amber-300"><BinderIcon /></span>
+                        <div>
+                          <p className="font-semibold">View Binder</p>
+                          <p className="text-xs text-white/55">Inspect collector inventory</p>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleSwipe('like')}
+                      className="min-h-[68px] rounded-2xl bg-gradient-to-b from-[#E11D48] to-[#BE123C] text-white shadow-[0_12px_24px_rgba(225,29,72,0.28)] hover:brightness-110 transition-all px-4 py-3 text-left"
+                      type="button"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-10 h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white"><InterestIcon /></span>
+                        <div>
+                          <p className="font-semibold">Interested</p>
+                          <p className="text-xs text-white/75">Record interest and keep moving</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/65">
+                    Pass skips the listing. View Binder opens the collector's inventory. Interested records that you'd trade for this card.
                   </div>
                 </div>
 
-                <div className="flex justify-center items-center space-x-6">
-                  <button
-                    onClick={() => handleSwipe('pass')}
-                    className="w-14 h-14 rounded-full bg-red-950 border border-red-400/40 text-red-200 font-bold text-xl shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                    type="button"
-                  >
-                    ✕
-                  </button>
-                  <button
-                    onClick={() => setViewingCollection(currentCard)}
-                    className="w-12 h-12 rounded-full bg-red-950 border border-red-400/40 text-amber-300 font-bold text-lg shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                    type="button"
-                  >
-                    📖
-                  </button>
-                  <button
-                    onClick={() => handleSwipe('like')}
-                    className="w-14 h-14 rounded-full bg-[#E50914] text-white font-bold text-xl shadow-lg shadow-red-600/20 hover:scale-105 active:scale-95 transition-transform"
-                    type="button"
-                  >
-                    ❤️
-                  </button>
-                </div>
+                <aside className="space-y-4 xl:sticky xl:top-24">
+                  <div className="rounded-[28px] bg-[#111827] border border-white/10 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Collector Trust</p>
+                        <h3 className="mt-2 text-2xl font-bold">{currentCard.owner}</h3>
+                        <p className="text-sm text-white/55 mt-1">{currentCard.location}</p>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-emerald-500/12 border border-emerald-400/20 text-emerald-300 text-xs font-semibold uppercase tracking-wider">
+                        {currentCard.trustLabel}
+                      </span>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Rating</p>
+                        <p className="mt-2 flex items-center gap-2 text-xl font-bold"><StarIcon /> {currentCard.collectorRating}</p>
+                      </div>
+                      <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Completed Trades</p>
+                        <p className="mt-2 text-xl font-bold">{currentCard.completedTrades}</p>
+                      </div>
+                      <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Member Since</p>
+                        <p className="mt-2 text-xl font-bold">{currentCard.memberSince}</p>
+                      </div>
+                      <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Response Time</p>
+                        <p className="mt-2 text-sm font-semibold leading-snug">{currentCard.responseTime}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[28px] bg-[#111827] border border-white/10 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] space-y-4">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Marketplace View</p>
+                      <h3 className="mt-2 text-xl font-bold">Why this card is worth reviewing</h3>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] border border-white/10 px-4 py-3">
+                        <span className="text-sm text-white/65">Trade Value</span>
+                        <span className="font-semibold">{currentCard.tradeValue}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] border border-white/10 px-4 py-3">
+                        <span className="text-sm text-white/65">Average Market Value</span>
+                        <span className="font-semibold">{currentCard.avgMarketValue}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] border border-white/10 px-4 py-3">
+                        <span className="text-sm text-white/65">Recent Comps</span>
+                        <span className="font-semibold">{currentCard.recentComps}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 mb-3">Seeking</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(currentCard.seekingTags || []).map((tag) => (
+                          <span key={tag} className="px-3 py-1.5 rounded-full bg-[#0F131C] border border-white/10 text-sm text-white/75">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-[#0F131C] border border-white/10 p-4">
+                      <p className="text-sm font-semibold text-white">Expected next step</p>
+                      <p className="mt-2 text-sm text-white/65">
+                        Review trust signals, compare market value, open the binder if you need more context, then mark Interested if this collector looks like a fit.
+                      </p>
+                    </div>
+                  </div>
+                </aside>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center text-center py-20 space-y-4">
-                <span className="text-5xl">🃏</span>
+                <span className="text-5xl text-white/60"><SwipeDeckIcon /></span>
                 <h3 className="text-xl font-bold">End of the Deck!</h3>
-                <p className="text-sm text-red-100 max-w-xs">
+                <p className="text-sm text-white/65 max-w-xs">
                   No more collectors matching your filters in your radius. Try expanding your search options.
                 </p>
               </div>
@@ -1254,7 +1511,7 @@ export default function CardSwipersLanding() {
       )}
 
       {currentTab !== 'landing' && currentTab !== 'auth' && (
-      <footer className="bg-red-950/90 backdrop-blur-md border-t border-red-500/30 py-2 px-4 sticky bottom-0 z-50">
+      <footer className="bg-[#111827]/92 backdrop-blur-md border-t border-white/10 py-2 px-4 sticky bottom-0 z-50">
         <div className="max-w-6xl mx-auto">
         <nav className="flex justify-around items-center">
           <button
@@ -1262,10 +1519,10 @@ export default function CardSwipersLanding() {
               navigateToTab('swipe');
               setActiveChat(null);
             }}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'swipe' ? 'text-white' : 'text-red-200'}`}
+            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'swipe' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
             type="button"
           >
-            <span className="text-lg mb-0.5">🎴</span>
+            <NavIcon><SwipeDeckIcon /></NavIcon>
             <span>Swipe</span>
           </button>
 
@@ -1274,10 +1531,10 @@ export default function CardSwipersLanding() {
               navigateToTab('post');
               setActiveChat(null);
             }}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'post' ? 'text-white' : 'text-red-200'}`}
+            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'post' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
             type="button"
           >
-            <span className="text-lg mb-0.5">📤</span>
+            <NavIcon><PostIcon /></NavIcon>
             <span>Post Card</span>
           </button>
 
@@ -1286,19 +1543,19 @@ export default function CardSwipersLanding() {
               navigateToTab('collection');
               setActiveChat(null);
             }}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'collection' ? 'text-white' : 'text-red-200'}`}
+            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'collection' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
             type="button"
           >
-            <span className="text-lg mb-0.5">🗂️</span>
+            <NavIcon><BinderIcon /></NavIcon>
             <span>Binder</span>
           </button>
 
           <button
             onClick={() => navigateToTab('messages')}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'messages' ? 'text-white' : 'text-red-200'}`}
+            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'messages' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
             type="button"
           >
-            <span className="text-lg mb-0.5">💬</span>
+            <NavIcon><InboxIcon /></NavIcon>
             <span>Inbox</span>
           </button>
 
@@ -1308,10 +1565,10 @@ export default function CardSwipersLanding() {
                 navigateToTab('admin');
                 setActiveChat(null);
               }}
-              className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'admin' ? 'text-white' : 'text-red-200'}`}
+              className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'admin' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
               type="button"
             >
-              <span className="text-lg mb-0.5">🛡️</span>
+              <NavIcon><ShieldIcon /></NavIcon>
               <span>Admin</span>
             </button>
           )}
@@ -1320,25 +1577,25 @@ export default function CardSwipersLanding() {
           <button
             type="button"
             onClick={() => setShowHelp(true)}
-            className="text-[11px] text-red-200 hover:text-white underline underline-offset-2 mr-3"
+            className="text-[11px] text-white/55 hover:text-white underline underline-offset-2 mr-3"
           >
             Help
           </button>
           <button
             type="button"
             onClick={() => setShowTermsOfService(true)}
-            className="text-[11px] text-red-200 hover:text-white underline underline-offset-2 mr-3"
+            className="text-[11px] text-white/55 hover:text-white underline underline-offset-2 mr-3"
           >
             Terms of Service
           </button>
           <button
             type="button"
             onClick={() => setShowPrivacyPolicy(true)}
-            className="text-[11px] text-red-200 hover:text-white underline underline-offset-2"
+            className="text-[11px] text-white/55 hover:text-white underline underline-offset-2"
           >
             Privacy Policy
           </button>
-          <p className="text-[10px] text-red-300 mt-2">© 2026 CardSwipers. All rights reserved.</p>
+          <p className="text-[10px] text-white/40 mt-2">© 2026 CardSwipers. All rights reserved.</p>
         </div>
         </div>
       </footer>
