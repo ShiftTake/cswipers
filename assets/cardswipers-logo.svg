@@ -1,25 +1,25 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">CardSwipers logo</title>
-  <desc id="desc">Two white outlined cards with CS lettering on a red gradient background</desc>
+  <desc id="desc">CardSwipers mark with two white outlined cards and CS lettering on a vivid red field</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ff1a2f" />
-      <stop offset="100%" stop-color="#e10619" />
+      <stop offset="0%" stop-color="#ff0d26" />
+      <stop offset="100%" stop-color="#e6001f" />
     </linearGradient>
   </defs>
 
-  <rect width="512" height="512" fill="url(#bg)" />
+  <rect width="1200" height="1200" fill="url(#bg)" />
 
-  <g transform="translate(82 70) rotate(11 174 190)">
-    <rect x="142" y="54" width="230" height="320" rx="30" fill="none" stroke="#ffffff" stroke-width="16" opacity="0.95" />
+  <g transform="translate(660 310) rotate(11)">
+    <rect x="0" y="0" width="300" height="710" rx="58" fill="none" stroke="#ffffff" stroke-width="34" />
   </g>
 
-  <g transform="translate(42 34) rotate(-8 174 190)">
-    <rect x="66" y="34" width="300" height="400" rx="34" fill="none" stroke="#ffffff" stroke-width="16" />
+  <g transform="translate(150 210) rotate(-8 330 395)">
+    <rect x="0" y="0" width="660" height="790" rx="72" fill="none" stroke="#ffffff" stroke-width="34" />
 
-    <g fill="#ffffff" transform="translate(0 6)">
-      <path d="M168 236c-15 0-23-8-21-21l13-81c2-14 13-24 28-24h51c15 0 23 9 21 22l-4 22h-36l2-9h-24l-10 59h24l2-11h36l-4 24c-2 14-13 23-28 23h-50z" />
-      <path d="M279 236c-15 0-23-9-21-22l3-19h36l-1 9h23l2-10-43-24c-12-7-18-15-16-26l4-21c2-14 13-23 28-23h49c15 0 23 9 21 22l-3 16h-36l1-7h-23l-1 8 43 24c13 7 18 15 16 27l-4 24c-2 14-13 22-28 22h-50z" />
+    <g fill="#ffffff" transform="translate(115 175) scale(1.42)">
+      <path d="M115 247c-26 0-40-14-36-38l18-107c4-22 20-37 44-37h64c27 0 40 15 36 38l-6 34h-51l3-16h-31l-13 74h32l3-18h51l-6 35c-4 24-20 39-45 39h-63z" />
+      <path d="M276 247c-27 0-40-15-36-39l4-27h51l-2 13h31l2-14-60-34c-17-10-24-21-21-35l6-31c4-24 20-39 45-39h62c27 0 40 15 36 39l-4 22h-51l2-10h-31l-2 11 61 34c17 10 24 21 21 36l-6 34c-4 24-20 40-45 40h-63z" />
     </g>
   </g>
 </svg>

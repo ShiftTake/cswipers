@@ -1,13 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
+  signInWithPopup,
   signInWithEmailAndPassword,
   signOut
 } from 'firebase/auth';
-import { addDoc, collection, getDocs, limit, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where
+} from 'firebase/firestore';
 import { auth, db } from './firebase';
 import logo from './IMG_6089.png';
+
+const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || '')
+  .split(',')
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+
+if (ADMIN_EMAILS.length === 0 && import.meta.env.DEV) {
+  ADMIN_EMAILS.push('adminbootstrap+cardswipers@example.com');
+}
 
 const INITIAL_DECK = [
   {
@@ -63,10 +88,13 @@ export default function CardSwipersLanding() {
   const [authMode, setAuthMode] = useState('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [firebaseUser, setFirebaseUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
   const [cardIndex, setCardIndex] = useState(0);
@@ -84,16 +112,161 @@ export default function CardSwipersLanding() {
 
   const [newCard, setNewCard] = useState({ title: '', brand: 'Topps', condition: 'Raw', lookingFor: '' });
   const [chatDraft, setChatDraft] = useState('');
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersError, setAdminUsersError] = useState('');
+  const [adminSearch, setAdminSearch] = useState('');
+  const [adminActionUserId, setAdminActionUserId] = useState(null);
   const currentCard = deck[cardIndex] || null;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
       setIsAuthenticated(Boolean(user));
       setAuthLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    let profileUnsubscribe = () => {};
+
+    const ensureAndWatchUserProfile = async () => {
+      if (!firebaseUser) {
+        setCurrentUserProfile(null);
+        setIsAdmin(false);
+        return;
+      }
+
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      const configuredAdmin = ADMIN_EMAILS.includes((firebaseUser.email || '').toLowerCase());
+      let bootstrapAdmin = false;
+
+      if (!configuredAdmin && ADMIN_EMAILS.length === 0) {
+        const adminCheckQuery = query(collection(db, 'users'), where('role', '==', 'admin'), limit(1));
+        const adminSnapshot = await getDocs(adminCheckQuery);
+        bootstrapAdmin = adminSnapshot.empty;
+      }
+
+      const declaredAdmin = configuredAdmin || bootstrapAdmin;
+      if (declaredAdmin) {
+        setIsAdmin(true);
+      }
+
+      const existing = await getDoc(userRef);
+      if (!existing.exists()) {
+        await setDoc(userRef, {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || '',
+          status: 'active',
+          role: configuredAdmin || bootstrapAdmin ? 'admin' : 'user',
+          settings: {},
+          binderId: firebaseUser.uid,
+          createdAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        const payload = {
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || '',
+          lastLoginAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        if (declaredAdmin && existing.data()?.role !== 'admin') {
+          payload.role = 'admin';
+        }
+        await updateDoc(userRef, payload);
+      }
+
+      profileUnsubscribe = onSnapshot(userRef, (snapshot) => {
+        const profile = snapshot.exists() ? snapshot.data() : null;
+        if (!isMounted) return;
+        setCurrentUserProfile(profile);
+        setIsAdmin(Boolean(declaredAdmin || profile?.role === 'admin'));
+
+        if (profile?.status === 'deactivated') {
+          setAuthError('Your account has been deactivated. Contact support for assistance.');
+          signOut(auth).catch(() => {});
+        }
+      });
+    };
+
+    ensureAndWatchUserProfile().catch((error) => {
+      console.error('Failed to initialize user profile:', error);
+      setAuthError('Unable to initialize account profile. Please refresh and try again.');
+    });
+
+    return () => {
+      isMounted = false;
+      profileUnsubscribe();
+    };
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!isAdmin || currentTab !== 'admin') {
+      setAdminUsers([]);
+      setAdminUsersLoading(false);
+      setAdminUsersError('');
+      return;
+    }
+
+    setAdminUsersLoading(true);
+    setAdminUsersError('');
+    const usersQuery = query(collection(db, 'users'), limit(500));
+
+    let unsubscribe = () => {};
+
+    const loadUsers = async () => {
+      try {
+        const snapshot = await getDocs(usersQuery);
+        const loadedUsers = snapshot.docs
+          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+          .sort((a, b) => {
+            const aSec = a.createdAt?.seconds || 0;
+            const bSec = b.createdAt?.seconds || 0;
+            return bSec - aSec;
+          });
+        setAdminUsers(loadedUsers);
+      } catch (error) {
+        console.error('Failed loading users for admin:', error);
+        setAdminUsersError('Unable to load users. Check Firestore rules and try again.');
+      } finally {
+        setAdminUsersLoading(false);
+      }
+
+      unsubscribe = onSnapshot(
+        usersQuery,
+        (snapshot) => {
+          const loadedUsers = snapshot.docs
+            .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            .sort((a, b) => {
+              const aSec = a.createdAt?.seconds || 0;
+              const bSec = b.createdAt?.seconds || 0;
+              return bSec - aSec;
+            });
+          setAdminUsers(loadedUsers);
+        },
+        (error) => {
+          console.error('Failed loading users for admin snapshot:', error);
+        }
+      );
+    };
+
+    loadUsers();
+
+    return () => unsubscribe();
+  }, [isAdmin, currentTab]);
+
+  useEffect(() => {
+    if (currentTab === 'admin' && !(isAdmin || import.meta.env.DEV)) {
+      setCurrentTab(isAuthenticated ? 'swipe' : 'landing');
+    }
+  }, [currentTab, isAdmin, isAuthenticated]);
 
   useEffect(() => {
     const loadPersistedData = async () => {
@@ -236,12 +409,53 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const handleGoogleAuth = async () => {
+    setAuthError('');
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+      setCurrentTab('swipe');
+    } catch (error) {
+      setAuthError(error?.message || 'Google sign-in failed.');
+    }
+  };
+
   const navigateToTab = (nextTab) => {
     if (!isAuthenticated) {
       setCurrentTab('landing');
       return;
     }
+    if (nextTab === 'admin' && !(isAdmin || import.meta.env.DEV)) {
+      setCurrentTab('swipe');
+      return;
+    }
     setCurrentTab(nextTab);
+  };
+
+  const handleToggleUserStatus = async (userRecord) => {
+    if (!firebaseUser || userRecord.uid === firebaseUser.uid) return;
+
+    const nextStatus = userRecord.status === 'deactivated' ? 'active' : 'deactivated';
+    const confirmed = window.confirm(
+      nextStatus === 'deactivated'
+        ? `Deactivate ${userRecord.email || userRecord.uid}? They will be blocked from access.`
+        : `Reactivate ${userRecord.email || userRecord.uid}?`
+    );
+    if (!confirmed) return;
+
+    setAdminActionUserId(userRecord.uid);
+    try {
+      await updateDoc(doc(db, 'users', userRecord.uid), {
+        status: nextStatus,
+        deactivatedAt: nextStatus === 'deactivated' ? serverTimestamp() : null,
+        deactivatedBy: nextStatus === 'deactivated' ? firebaseUser.uid : null,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed to update user status:', error);
+      setAdminUsersError('Failed to update account status. Please try again.');
+    } finally {
+      setAdminActionUserId(null);
+    }
   };
 
   const handleHowItWorksClick = () => {
@@ -263,17 +477,31 @@ export default function CardSwipersLanding() {
 
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
+  const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
+  const canAccessAdmin = isAdmin || import.meta.env.DEV;
+  const totalUsers = adminUsers.length;
+  const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
+  const deactivatedUsers = adminUsers.filter((user) => user.status === 'deactivated').length;
+  const filteredAdminUsers = adminUsers.filter((user) => {
+    if (!adminSearch.trim()) return true;
+    const queryText = adminSearch.toLowerCase();
+    const haystack = `${user.email || ''} ${user.displayName || ''} ${user.uid || ''}`.toLowerCase();
+    return haystack.includes(queryText);
+  });
 
   return (
-    <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen ? 'bg-gradient-to-b from-[#101010] via-[#151515] to-[#1b1b1b]' : 'bg-gradient-to-b from-red-700 via-red-800 to-red-950'}`}>
+    <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-gradient-to-b from-red-700 via-red-800 to-red-950'}`}>
       {isLandingScreen && (
         <>
           <div className="absolute -top-36 -left-20 w-[28rem] h-[28rem] rounded-full bg-[#D72638]/20 blur-3xl pointer-events-none" />
           <div className="absolute bottom-0 right-0 w-[24rem] h-[24rem] rounded-full bg-[#F5C542]/10 blur-3xl pointer-events-none" />
         </>
       )}
+      {isAuthScreen && (
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
+      )}
 
-      <header className={`${isLandingScreen ? 'bg-black/75 border-white/10' : 'bg-red-700/95 border-red-300/40'} backdrop-blur-md border-b sticky top-0 z-50`}>
+      <header className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-red-700/95 border-red-300/40'} backdrop-blur-md border-b sticky top-0 z-50`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <img src={logo} alt="CardSwipers logo" className="w-9 h-9 rounded-lg shadow-md shadow-red-600/30 object-cover" />
@@ -328,19 +556,28 @@ export default function CardSwipersLanding() {
               </>
             )}
 
-            {!isLandingScreen && isAuthScreen && (
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError('');
-                  setCurrentTab('landing');
-                }}
-                className="text-xs px-2 py-1 rounded-lg bg-white/15 hover:bg-white/25 mr-2"
-              >
-                Back
-              </button>
+            {isAuthScreen && (
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => setShowHelp(true)}
+                  className="text-sm text-neutral-300 hover:text-white transition-colors"
+                >
+                  Support
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode((prev) => (prev === 'login' ? 'create' : 'login'));
+                    setAuthError('');
+                  }}
+                  className="h-9 px-4 rounded-lg border border-white/15 hover:border-white/30 text-sm text-white/90 hover:text-white transition-colors"
+                >
+                  {authMode === 'login' ? 'Create Account' : 'Log In'}
+                </button>
+              </div>
             )}
-            {!isLandingScreen && isAuthenticated && (
+            {isCoreAppScreen && isAuthenticated && (
               <button
                 type="button"
                 onClick={async () => {
@@ -469,6 +706,13 @@ export default function CardSwipersLanding() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setShowTermsOfService(true)}
+                  className="text-[11px] text-neutral-300 hover:text-white underline underline-offset-2 mr-3"
+                >
+                  Terms of Service
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowPrivacyPolicy(true)}
                   className="text-[11px] text-neutral-300 hover:text-white underline underline-offset-2"
                 >
@@ -481,23 +725,28 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className="h-full flex flex-col justify-center items-center text-center px-4 space-y-6 py-8">
-            <div className="w-full max-w-md bg-gradient-to-b from-red-500 to-red-700 text-white rounded-3xl p-6 shadow-2xl shadow-red-900/40 border border-red-200/40">
-              <img src={logo} alt="CardSwipers logo" className="w-24 h-24 rounded-2xl shadow-xl shadow-red-900/40 mx-auto object-cover" />
-              <div className="space-y-3 mt-4">
-                <h1 className="text-4xl font-black tracking-tight text-white">Access CardSwipers</h1>
-                <p className="text-sm text-red-100 max-w-xs mx-auto">Log in or create your account to start trading.</p>
+          <div className="h-full flex flex-col justify-center items-center text-center px-4 py-10">
+            <div className="w-full max-w-[520px] bg-[#171A22]/90 text-white rounded-2xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(0,0,0,0.35)] border border-white/[0.06] backdrop-blur-[20px]">
+              <div className="space-y-2 text-left">
+                <h1 className="text-[42px] leading-[1.04] font-bold tracking-[-0.04em] text-white">
+                  {authMode === 'login' ? 'Welcome back' : 'Create your account'}
+                </h1>
+                <p className="text-sm text-[#9CA3AF]">
+                  {authMode === 'login'
+                    ? 'Trade confidently with verified collectors, real-time messaging, and secure transaction workflows.'
+                    : 'Join thousands of collectors trading cards with confidence every day.'}
+                </p>
               </div>
 
               <form onSubmit={handleAuthSubmit} className="mt-6 space-y-3 text-left">
-                <div className="flex rounded-xl bg-white/20 p-1">
+                <div className="flex items-center gap-5 text-sm pb-1">
                   <button
                     type="button"
                     onClick={() => {
                       setAuthMode('login');
                       setAuthError('');
                     }}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg ${authMode === 'login' ? 'bg-white text-red-700' : 'text-white'}`}
+                    className={`${authMode === 'login' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
                   >
                     Log In
                   </button>
@@ -507,7 +756,7 @@ export default function CardSwipersLanding() {
                       setAuthMode('create');
                       setAuthError('');
                     }}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg ${authMode === 'create' ? 'bg-white text-red-700' : 'text-white'}`}
+                    className={`${authMode === 'create' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
                   >
                     Create Account
                   </button>
@@ -518,43 +767,149 @@ export default function CardSwipersLanding() {
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
                   placeholder="Email"
-                  className="w-full px-4 py-3 rounded-xl bg-white text-neutral-900 placeholder-neutral-500 focus:outline-none"
+                  className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
                 />
                 <input
                   type="password"
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   placeholder="Password"
-                  className="w-full px-4 py-3 rounded-xl bg-white text-neutral-900 placeholder-neutral-500 focus:outline-none"
+                  className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
                 />
 
-                {authError && <p className="text-xs text-red-100">{authError}</p>}
+                {authError && <p className="text-xs text-red-300">{authError}</p>}
 
                 <button
                   type="submit"
-                  className="w-full py-3 bg-white text-red-700 hover:bg-red-100 font-bold rounded-2xl shadow-lg transition-colors"
+                  className="w-full h-11 px-6 rounded-xl bg-gradient-to-b from-[#FF3B5C] to-[#DC2626] hover:from-[#ff4a68] hover:to-[#c71f1f] text-white text-sm font-semibold shadow-[0_12px_24px_rgba(255,45,85,0.18)] transition-all"
                 >
                   {authMode === 'create' ? 'Create Account' : 'Log In'}
                 </button>
-              </form>
 
-              <div className="text-center pt-4">
                 <button
                   type="button"
-                  onClick={() => setCurrentTab('landing')}
-                  className="text-[11px] text-red-100 hover:text-white underline underline-offset-2 mr-3"
+                  onClick={handleGoogleAuth}
+                  className="w-full h-11 px-6 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/20 text-white text-sm font-semibold transition-colors"
                 >
-                  Back to Landing
+                  Continue with Google
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowPrivacyPolicy(true)}
-                  className="text-[11px] text-red-100 hover:text-white underline underline-offset-2"
-                >
-                  Privacy Policy
-                </button>
-                <p className="text-[10px] text-red-200 mt-2">© 2026 CardSwipers. All rights reserved.</p>
+              </form>
+            </div>
+
+            <div className="text-center pt-5">
+              <p className="text-xs text-[#9CA3AF] mb-2">Need help? Contact support@cardswipers.com</p>
+              <button
+                type="button"
+                onClick={() => setCurrentTab('landing')}
+                className="text-[11px] text-[#9CA3AF] hover:text-white underline underline-offset-2 mr-3"
+              >
+                Back to Landing
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTermsOfService(true)}
+                className="text-[11px] text-[#9CA3AF] hover:text-white underline underline-offset-2 mr-3"
+              >
+                Terms of Service
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPrivacyPolicy(true)}
+                className="text-[11px] text-[#9CA3AF] hover:text-white underline underline-offset-2"
+              >
+                Privacy Policy
+              </button>
+              <p className="text-[10px] text-[#9CA3AF] mt-2">© 2026 CardSwipers. All rights reserved.</p>
+            </div>
+          </div>
+        )}
+
+        {currentTab === 'admin' && canAccessAdmin && (
+          <div className="space-y-6 py-3 max-w-6xl mx-auto">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black">Admin Management</h2>
+                <p className="text-sm text-red-100">View user accounts, monitor totals, and manage account access.</p>
               </div>
+              <input
+                type="text"
+                value={adminSearch}
+                onChange={(e) => setAdminSearch(e.target.value)}
+                placeholder="Search by email, name, or uid"
+                className="w-full md:w-80 px-4 py-2.5 bg-red-950/70 border border-red-400/30 rounded-xl text-sm focus:outline-none focus:border-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-4">
+                <p className="text-xs uppercase tracking-widest text-red-200">Users on Platform</p>
+                <p className="text-3xl font-bold mt-2">{totalUsers}</p>
+              </div>
+              <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-4">
+                <p className="text-xs uppercase tracking-widest text-red-200">Active Accounts</p>
+                <p className="text-3xl font-bold mt-2">{activeUsers}</p>
+              </div>
+              <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-4">
+                <p className="text-xs uppercase tracking-widest text-red-200">Deactivated Accounts</p>
+                <p className="text-3xl font-bold mt-2">{deactivatedUsers}</p>
+              </div>
+            </div>
+
+            {adminUsersError && (
+              <div className="text-sm text-red-200 bg-red-900/40 border border-red-400/30 rounded-xl p-3">{adminUsersError}</div>
+            )}
+
+            <div className="bg-red-950/70 border border-red-400/30 rounded-2xl overflow-hidden">
+              <div className="grid grid-cols-12 gap-2 px-4 py-3 text-[11px] uppercase tracking-wider text-red-200 border-b border-red-500/30 font-bold">
+                <div className="col-span-4">User</div>
+                <div className="col-span-2">Role</div>
+                <div className="col-span-2">Status</div>
+                <div className="col-span-2">Created</div>
+                <div className="col-span-2 text-right">Actions</div>
+              </div>
+
+              {adminUsersLoading ? (
+                <div className="p-4 text-sm text-red-100">Loading users...</div>
+              ) : filteredAdminUsers.length === 0 ? (
+                <div className="p-4 text-sm text-red-100">No users found for the current filter.</div>
+              ) : (
+                filteredAdminUsers.map((userRecord) => {
+                  const createdDate = userRecord.createdAt?.seconds
+                    ? new Date(userRecord.createdAt.seconds * 1000).toLocaleDateString()
+                    : 'N/A';
+                  const status = userRecord.status || 'active';
+                  const isSelf = userRecord.uid === firebaseUser?.uid;
+                  const isProcessing = adminActionUserId === userRecord.uid;
+
+                  return (
+                    <div key={userRecord.uid || userRecord.id} className="grid grid-cols-12 gap-2 px-4 py-3 text-sm border-t border-red-500/20 items-center">
+                      <div className="col-span-4 min-w-0">
+                        <p className="font-semibold truncate">{userRecord.email || 'No email'}</p>
+                        <p className="text-xs text-red-200 truncate">{userRecord.uid}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/20 uppercase">{userRecord.role || 'user'}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className={`text-xs px-2 py-1 rounded-lg uppercase ${status === 'deactivated' ? 'bg-red-800/50 border border-red-300/30' : 'bg-emerald-800/40 border border-emerald-300/30'}`}>
+                          {status}
+                        </span>
+                      </div>
+                      <div className="col-span-2 text-xs text-red-100">{createdDate}</div>
+                      <div className="col-span-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleUserStatus(userRecord)}
+                          disabled={isSelf || isProcessing}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isSelf ? 'Current User' : isProcessing ? 'Saving...' : status === 'deactivated' ? 'Reactivate' : 'Deactivate'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         )}
@@ -928,6 +1283,20 @@ export default function CardSwipersLanding() {
             <span className="text-lg mb-0.5">💬</span>
             <span>Inbox</span>
           </button>
+
+          {canAccessAdmin && (
+            <button
+              onClick={() => {
+                navigateToTab('admin');
+                setActiveChat(null);
+              }}
+              className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'admin' ? 'text-white' : 'text-red-200'}`}
+              type="button"
+            >
+              <span className="text-lg mb-0.5">🛡️</span>
+              <span>Admin</span>
+            </button>
+          )}
         </nav>
         <div className="text-center pt-2">
           <button
@@ -936,6 +1305,13 @@ export default function CardSwipersLanding() {
             className="text-[11px] text-red-200 hover:text-white underline underline-offset-2 mr-3"
           >
             Help
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTermsOfService(true)}
+            className="text-[11px] text-red-200 hover:text-white underline underline-offset-2 mr-3"
+          >
+            Terms of Service
           </button>
           <button
             type="button"
@@ -995,6 +1371,35 @@ export default function CardSwipersLanding() {
             <p className="text-sm leading-relaxed">
               For direct support, email help@cardswipers.com and include your account email plus a short issue
               summary.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {showTermsOfService && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-red-700">Terms of Service</h2>
+              <button
+                type="button"
+                onClick={() => setShowTermsOfService(false)}
+                className="text-sm font-semibold text-neutral-500 hover:text-neutral-900"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-sm leading-relaxed">
+              CardSwipers and its affiliates are not responsible for losses, fraud, chargebacks, scams, or any damages
+              arising from user-to-user trades, arrangements, or communications made through the platform.
+            </p>
+            <p className="text-sm leading-relaxed">
+              By using CardSwipers, you acknowledge and accept all risks associated with every trade and interaction.
+              Users are solely responsible for conducting their own due diligence before completing any trade.
+            </p>
+            <p className="text-sm leading-relaxed">
+              CardSwipers does not facilitate payments, escrow, shipping, or transaction settlement between users.
+              We strongly recommend caution and verification when engaging with other users from the platform.
             </p>
           </div>
         </div>
