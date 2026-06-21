@@ -88,6 +88,7 @@ export default function CardSwipersLanding() {
   const [authMode, setAuthMode] = useState('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -394,6 +395,11 @@ export default function CardSwipersLanding() {
 
     if (!authEmail || !authPassword) {
       setAuthError('Email and password are required.');
+      return;
+    }
+
+    if (authMode === 'create' && authPassword !== authConfirmPassword) {
+      setAuthError('Passwords do not match. Please enter the same password twice.');
       return;
     }
 
@@ -745,6 +751,7 @@ export default function CardSwipersLanding() {
                     onClick={() => {
                       setAuthMode('login');
                       setAuthError('');
+                      setAuthConfirmPassword('');
                     }}
                     className={`${authMode === 'login' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
                   >
@@ -755,6 +762,7 @@ export default function CardSwipersLanding() {
                     onClick={() => {
                       setAuthMode('create');
                       setAuthError('');
+                      setAuthConfirmPassword('');
                     }}
                     className={`${authMode === 'create' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
                   >
@@ -776,6 +784,16 @@ export default function CardSwipersLanding() {
                   placeholder="Password"
                   className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
                 />
+
+                {authMode === 'create' && (
+                  <input
+                    type="password"
+                    value={authConfirmPassword}
+                    onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                    placeholder="Confirm password"
+                    className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
+                  />
+                )}
 
                 {authError && <p className="text-xs text-red-300">{authError}</p>}
 
