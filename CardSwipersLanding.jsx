@@ -12,6 +12,7 @@ import {
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDocFromCache,
   getDoc,
@@ -30,6 +31,7 @@ import { auth, db, storage } from './firebase';
 import logo from './IMG_6089.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import swipeDummyCard from './Screenshot 2026-06-21 123904.png';
+import AdminPanel from './Admin';
 
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || '')
   .split(',')
@@ -1897,6 +1899,27 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'admin' && canAccessAdmin && (
+          <AdminPanel
+            adminSearch={adminSearch}
+            setAdminSearch={setAdminSearch}
+            totalUsers={totalUsers}
+            activeUsers={activeUsers}
+            deactivatedUsers={deactivatedUsers}
+            adminUsersError={adminUsersError}
+            flaggedCards={flaggedCards}
+            flaggedCardsError={flaggedCardsError}
+            flaggedCardsLoading={flaggedCardsLoading}
+            handleDeleteFlaggedCard={handleDeleteFlaggedCard}
+            handleDeleteFlagRecord={handleDeleteFlagRecord}
+            adminUsersLoading={adminUsersLoading}
+            filteredAdminUsers={filteredAdminUsers}
+            firebaseUser={firebaseUser}
+            adminActionUserId={adminActionUserId}
+            handleToggleUserStatus={handleToggleUserStatus}
+          />
+        )}
+
+        {false && currentTab === 'admin' && canAccessAdmin && (
           <div className="space-y-6 py-3 max-w-6xl mx-auto">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
