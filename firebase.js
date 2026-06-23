@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getAnalytics, isSupported } from 'firebase/analytics';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyDMQiOJDkoeFNJcFy0GlcX2MC0lXPmp53k',
@@ -14,8 +15,16 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const db = initializeFirestore(app, {
+  // Improves reliability on constrained networks/proxies where WebChannel streams get aborted.
+  experimentalAutoDetectLongPolling: true,
+  useFetchStreams: false,
+  localCache: persistentLocalCache({
+    tabManager: persistentSingleTabManager()
+  })
+});
 const auth = getAuth(app);
+const storage = getStorage(app);
 
 let analytics = null;
 
@@ -31,4 +40,4 @@ if (typeof window !== 'undefined') {
     });
 }
 
-export { app, analytics, db, auth };
+export { app, analytics, db, auth, storage };
