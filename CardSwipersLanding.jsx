@@ -279,6 +279,7 @@ const scoreCardForUser = (card, profile, likedCards = [], successfulMatches = []
 };
 
 export default function CardSwipersLanding() {
+  const isAdminPath = typeof window !== 'undefined' && window.location.pathname.toLowerCase() === '/admin';
   const [currentTab, setCurrentTab] = useState('landing');
   const [authMode, setAuthMode] = useState('login');
   const [authDisplayName, setAuthDisplayName] = useState('');
@@ -621,6 +622,27 @@ export default function CardSwipersLanding() {
       setCurrentTab(isAuthenticated ? 'swipe' : 'landing');
     }
   }, [currentTab, isAdmin, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAdminPath) return;
+    if (!isAuthenticated) {
+      setCurrentTab('auth');
+      return;
+    }
+    setCurrentTab('admin');
+  }, [isAdminPath, isAuthenticated]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentPath = window.location.pathname.toLowerCase();
+    if (currentTab === 'admin' && currentPath !== '/admin') {
+      window.history.replaceState({}, '', '/admin');
+      return;
+    }
+    if (currentTab !== 'admin' && currentPath === '/admin') {
+      window.history.replaceState({}, '', isAuthenticated ? '/discover' : '/');
+    }
+  }, [currentTab, isAuthenticated]);
 
   useEffect(() => {
     const loadPersistedData = async () => {
@@ -1223,7 +1245,7 @@ export default function CardSwipersLanding() {
       } else {
         await signInWithEmailAndPassword(auth, authEmail, authPassword);
       }
-      setCurrentTab('swipe');
+      setCurrentTab(isAdminPath ? 'admin' : 'swipe');
     } catch (error) {
       setAuthError(error?.message || 'Authentication failed.');
     }
@@ -1234,7 +1256,7 @@ export default function CardSwipersLanding() {
     setAuthInfo('');
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
-      setCurrentTab('swipe');
+      setCurrentTab(isAdminPath ? 'admin' : 'swipe');
     } catch (error) {
       setAuthError(error?.message || 'Google sign-in failed.');
     }
