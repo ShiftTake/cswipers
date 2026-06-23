@@ -348,6 +348,12 @@ export default function CardSwipersLanding() {
   const [adminUsersError, setAdminUsersError] = useState('');
   const [adminSearch, setAdminSearch] = useState('');
   const [adminActionUserId, setAdminActionUserId] = useState(null);
+  const [flaggedCards, setFlaggedCards] = useState([]);
+  const [flaggedCardsLoading, setFlaggedCardsLoading] = useState(false);
+  const [flaggedCardsError, setFlaggedCardsError] = useState('');
+  const [showFlagModal, setShowFlagModal] = useState(false);
+  const [flagReason, setFlagReason] = useState('');
+  const [flagCardId, setFlagCardId] = useState(null);
   const currentCard = personalizedDeck[cardIndex] || null;
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
 
@@ -561,6 +567,49 @@ export default function CardSwipersLanding() {
     };
 
     loadUsers();
+
+    return () => unsubscribe();
+  }, [isAdmin, currentTab]);
+
+  useEffect(() => {
+    if (!isAdmin || currentTab !== 'admin') {
+      setFlaggedCards([]);
+      setFlaggedCardsLoading(false);
+      setFlaggedCardsError('');
+      return;
+    }
+
+    setFlaggedCardsLoading(true);
+    setFlaggedCardsError('');
+    const flagsQuery = query(collection(db, 'flaggedCards'), orderBy('flaggedAt', 'desc'), limit(500));
+
+    let unsubscribe = () => {};
+
+    const loadFlags = async () => {
+      try {
+        const snapshot = await getDocs(flagsQuery);
+        const loadedFlags = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setFlaggedCards(loadedFlags);
+      } catch (error) {
+        console.error('Failed loading flagged cards for admin:', error);
+        setFlaggedCardsError('Unable to load flagged cards. Check Firestore rules and try again.');
+      } finally {
+        setFlaggedCardsLoading(false);
+      }
+
+      unsubscribe = onSnapshot(
+        flagsQuery,
+        (snapshot) => {
+          const loadedFlags = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+          setFlaggedCards(loadedFlags);
+        },
+        (error) => {
+          console.error('Failed loading flagged cards snapshot:', error);
+        }
+      );
+    };
+
+    loadFlags();
 
     return () => unsubscribe();
   }, [isAdmin, currentTab]);
@@ -1293,8 +1342,8 @@ export default function CardSwipersLanding() {
     const nextStatus = userRecord.status === 'deactivated' ? 'active' : 'deactivated';
     const confirmed = window.confirm(
       nextStatus === 'deactivated'
-        ? `Deactivate ${userRecord.email || userRecord.uid}? They will be blocked from access.`
-        : `Reactivate ${userRecord.email || userRecord.uid}?`
+        ? `Block ${userRecord.email || userRecord.uid}? They will be blocked from access.`
+        : `Unblock ${userRecord.email || userRecord.uid}?`
     );
     if (!confirmed) return;
 
@@ -1302,8 +1351,8 @@ export default function CardSwipersLanding() {
     try {
       await updateDoc(doc(db, 'users', userRecord.uid), {
         status: nextStatus,
-        deactivatedAt: nextStatus === 'deactivated' ? serverTimestamp() : null,
-        deactivatedBy: nextStatus === 'deactivated' ? firebaseUser.uid : null,
+        blockedAt: nextStatus === 'deactivated' ? serverTimestamp() : null,
+        blockedBy: nextStatus === 'deactivated' ? firebaseUser.uid : null,
         updatedAt: serverTimestamp()
       });
     } catch (error) {
@@ -1311,6 +1360,59 @@ export default function CardSwipersLanding() {
       setAdminUsersError('Failed to update account status. Please try again.');
     } finally {
       setAdminActionUserId(null);
+    }
+  };
+
+  const handleFlagCard = async () => {
+    if (!currentCard || !firebaseUser || !flagReason.trim()) return;
+
+    try {
+      await addDoc(collection(db, 'flaggedCards'), {
+        cardId: currentCard.id,
+        cardTitle: currentCard.title,
+        cardOwnerUid: currentCard.ownerUid || 'unknown',
+        cardOwnerName: currentCard.owner || 'unknown',
+        flaggedByUid: firebaseUser.uid,
+        flaggedByEmail: firebaseUser.email,
+        reason: flagReason,
+        cardImageUrl: currentCard.imageUrl,
+        flaggedAt: serverTimestamp(),
+        status: 'pending'
+      });
+      setShowFlagModal(false);
+      setFlagReason('');
+      setFlagCardId(null);
+      alert('Card flagged for review. Thank you for helping keep CardSwipers safe.');
+    } catch (error) {
+      console.error('Failed to flag card:', error);
+      alert('Failed to flag card. Please try again.');
+    }
+  };
+
+  const handleDeleteFlaggedCard = async (flagId, cardId) => {
+    const confirmed = window.confirm('Delete this flagged card report?');
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, 'flaggedCards', flagId));
+      await deleteDoc(doc(db, 'cards', cardId));
+      setFlaggedCards(flaggedCards.filter(f => f.id !== flagId));
+    } catch (error) {
+      console.error('Failed to delete flagged card:', error);
+      setFlaggedCardsError('Failed to delete card. Please try again.');
+    }
+  };
+
+  const handleDeleteFlagRecord = async (flagId) => {
+    const confirmed = window.confirm('Clear this flag report (card will remain)?');
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, 'flaggedCards', flagId));
+      setFlaggedCards(flaggedCards.filter(f => f.id !== flagId));
+    } catch (error) {
+      console.error('Failed to delete flag record:', error);
+      setFlaggedCardsError('Failed to clear flag. Please try again.');
     }
   };
 
@@ -1829,7 +1931,64 @@ export default function CardSwipersLanding() {
               <div className="text-sm text-red-200 bg-red-900/40 border border-red-400/30 rounded-xl p-3">{adminUsersError}</div>
             )}
 
-            <div className="bg-red-950/70 border border-red-400/30 rounded-2xl overflow-hidden">
+            <div className="border-t border-white/10 pt-8 mt-8">
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                🚩 Flagged Cards
+                {flaggedCards.length > 0 && <span className="px-2 py-1 rounded-full bg-red-600 text-xs font-semibold">{flaggedCards.length}</span>}
+              </h3>
+
+              {flaggedCardsError && (
+                <div className="text-sm text-red-200 bg-red-900/40 border border-red-400/30 rounded-xl p-3 mb-4">{flaggedCardsError}</div>
+              )}
+
+              {flaggedCardsLoading ? (
+                <div className="p-4 text-sm text-red-100">Loading flagged cards...</div>
+              ) : flaggedCards.length === 0 ? (
+                <div className="p-4 text-sm text-red-100 bg-red-950/30 border border-red-400/20 rounded-xl">No flagged cards to review.</div>
+              ) : (
+                <div className="space-y-3">
+                  {flaggedCards.map((flag) => (
+                    <div key={flag.id} className="bg-red-950/40 border border-red-400/30 rounded-xl p-4">
+                      <div className="grid grid-cols-12 gap-4 items-start">
+                        <div className="col-span-8 space-y-2">
+                          <div>
+                            <p className="text-xs uppercase tracking-widest text-red-200">Card</p>
+                            <p className="font-semibold text-white">{flag.cardTitle || 'Unknown Card'}</p>
+                            <p className="text-xs text-red-300">Owner: {flag.cardOwnerName}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-widest text-red-200 mt-2">Report Reason</p>
+                            <p className="text-sm text-white/80">{flag.reason}</p>
+                          </div>
+                          <div className="text-xs text-red-300">
+                            Flagged by: {flag.flaggedByEmail} • {flag.flaggedAt?.seconds ? new Date(flag.flaggedAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                          </div>
+                        </div>
+                        <div className="col-span-4 flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFlaggedCard(flag.id, flag.cardId)}
+                            className="text-xs px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium"
+                          >
+                            Delete Card
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFlagRecord(flag.id)}
+                            className="text-xs px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white font-medium"
+                          >
+                            Clear Flag
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 pt-8 mt-8">
+              <h3 className="text-xl font-bold mb-4">👥 User Management</h3>
               <div className="grid grid-cols-12 gap-2 px-4 py-3 text-[11px] uppercase tracking-wider text-red-200 border-b border-red-500/30 font-bold">
                 <div className="col-span-4">User</div>
                 <div className="col-span-2">Role</div>
@@ -1856,6 +2015,7 @@ export default function CardSwipersLanding() {
                       <div className="col-span-4 min-w-0">
                         <p className="font-semibold truncate">{userRecord.email || 'No email'}</p>
                         <p className="text-xs text-red-200 truncate">{userRecord.uid}</p>
+                        {userRecord.location && <p className="text-xs text-red-300 truncate">📍 {userRecord.location}</p>}
                       </div>
                       <div className="col-span-2">
                         <span className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/20 uppercase">{userRecord.role || 'user'}</span>
@@ -1873,7 +2033,7 @@ export default function CardSwipersLanding() {
                           disabled={isSelf || isProcessing}
                           className="text-xs px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isSelf ? 'Current User' : isProcessing ? 'Saving...' : status === 'deactivated' ? 'Reactivate' : 'Deactivate'}
+                          {isSelf ? 'Current User' : isProcessing ? 'Saving...' : status === 'deactivated' ? 'Unblock' : 'Block'}
                         </button>
                       </div>
                     </div>
@@ -2050,6 +2210,16 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setFlagCardId(currentCard.id);
+                      setShowFlagModal(true);
+                    }}
+                    className="w-full rounded-2xl bg-red-950/40 border border-red-400/30 hover:bg-red-900/50 transition-colors px-4 py-3 text-sm text-red-200 font-semibold"
+                  >
+                    🚩 Report Inappropriate
+                  </button>
                 </aside>
               </div>
             ) : (
@@ -2750,6 +2920,49 @@ export default function CardSwipersLanding() {
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {showFlagModal && (
+        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#111827] border border-white/10 rounded-3xl p-7 space-y-6">
+            <div>
+              <h2 className="text-2xl font-black">Report Inappropriate</h2>
+              <p className="text-sm text-white/60 mt-1">Help us keep CardSwipers safe for collectors</p>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-white/80 uppercase">What's the issue?</label>
+              <textarea
+                value={flagReason}
+                onChange={(e) => setFlagReason(e.target.value)}
+                placeholder="Describe the problem (e.g., offensive imagery, fake card, suspicious activity)"
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-white/40 resize-none h-24"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFlagModal(false);
+                  setFlagReason('');
+                  setFlagCardId(null);
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-white/20 text-white text-sm font-medium hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleFlagCard}
+                disabled={!flagReason.trim()}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+              >
+                Submit Report
+              </button>
+            </div>
           </div>
         </div>
       )}
