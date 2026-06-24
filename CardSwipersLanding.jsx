@@ -33,14 +33,11 @@ import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import swipeDummyCard from './Screenshot 2026-06-21 123904.png';
 import AdminPanel from './Admin';
 
-const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || '')
+const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
+const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
   .split(',')
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
-
-if (ADMIN_EMAILS.length === 0 && import.meta.env.DEV) {
-  ADMIN_EMAILS.push('adminbootstrap+cardswipers@example.com');
-}
 
 function NavIcon({ children }) {
   return <span className="w-5 h-5 inline-flex items-center justify-center">{children}</span>;
@@ -279,7 +276,9 @@ const scoreCardForUser = (card, profile, likedCards = [], successfulMatches = []
 };
 
 export default function CardSwipersLanding() {
-  const isAdminPath = typeof window !== 'undefined' && window.location.pathname.toLowerCase() === '/admin';
+  const normalizedPath =
+    typeof window !== 'undefined' ? window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/' : '/';
+  const isAdminPath = normalizedPath === '/admin' || normalizedPath === '/admin.html';
   const [currentTab, setCurrentTab] = useState('landing');
   const [authMode, setAuthMode] = useState('login');
   const [authDisplayName, setAuthDisplayName] = useState('');
@@ -359,6 +358,8 @@ export default function CardSwipersLanding() {
   const [flagCardId, setFlagCardId] = useState(null);
   const currentCard = personalizedDeck[cardIndex] || null;
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
+  const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
+  const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -394,15 +395,7 @@ export default function CardSwipersLanding() {
 
       const userRef = doc(db, 'users', firebaseUser.uid);
       const configuredAdmin = ADMIN_EMAILS.includes((firebaseUser.email || '').toLowerCase());
-      let bootstrapAdmin = false;
-
-      if (!configuredAdmin && ADMIN_EMAILS.length === 0) {
-        const adminCheckQuery = query(collection(db, 'users'), where('role', '==', 'admin'), limit(1));
-        const adminSnapshot = await getDocs(adminCheckQuery);
-        bootstrapAdmin = adminSnapshot.empty;
-      }
-
-      const declaredAdmin = configuredAdmin || bootstrapAdmin;
+      const declaredAdmin = configuredAdmin;
       if (declaredAdmin) {
         setIsAdmin(true);
       }
@@ -428,7 +421,7 @@ export default function CardSwipersLanding() {
           email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || '',
           status: 'active',
-          role: configuredAdmin || bootstrapAdmin ? 'admin' : 'user',
+          role: declaredAdmin ? 'admin' : 'user',
           settings: {},
           binderId: firebaseUser.uid,
           createdAt: serverTimestamp(),
@@ -478,8 +471,10 @@ export default function CardSwipersLanding() {
           lastLoginAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         };
-        if (declaredAdmin && (profile.role !== 'admin')) {
+        if (declaredAdmin && profile.role !== 'admin') {
           payload.role = 'admin';
+        } else if (!declaredAdmin && profile.role === 'admin') {
+          payload.role = 'user';
         }
         try {
           await updateDoc(userRef, payload);
@@ -494,7 +489,7 @@ export default function CardSwipersLanding() {
         const profile = snapshot.exists() ? snapshot.data() : null;
         if (!isMounted) return;
         setCurrentUserProfile(profile);
-        setIsAdmin(Boolean(declaredAdmin || profile?.role === 'admin'));
+        setIsAdmin(Boolean(declaredAdmin));
 
         if (profile?.status === 'deactivated') {
           setAuthError('Your account has been deactivated. Contact support for assistance.');
@@ -618,10 +613,10 @@ export default function CardSwipersLanding() {
   }, [isAdmin, currentTab]);
 
   useEffect(() => {
-    if (currentTab === 'admin' && !(isAdmin || import.meta.env.DEV)) {
+    if (currentTab === 'admin' && !hasAdminAccess) {
       setCurrentTab(isAuthenticated ? 'swipe' : 'landing');
     }
-  }, [currentTab, isAdmin, isAuthenticated]);
+  }, [currentTab, hasAdminAccess, isAuthenticated]);
 
   useEffect(() => {
     if (!isAdminPath) return;
@@ -629,20 +624,23 @@ export default function CardSwipersLanding() {
       setCurrentTab('auth');
       return;
     }
-    setCurrentTab('admin');
-  }, [isAdminPath, isAuthenticated]);
+    setCurrentTab(hasAdminAccess ? 'admin' : 'swipe');
+  }, [isAdminPath, isAuthenticated, hasAdminAccess]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const currentPath = window.location.pathname.toLowerCase();
+    const currentPath = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
     if (currentTab === 'admin' && currentPath !== '/admin') {
       window.history.replaceState({}, '', '/admin');
       return;
     }
     if (currentTab !== 'admin' && currentPath === '/admin') {
-      window.history.replaceState({}, '', isAuthenticated ? '/discover' : '/');
+      if (!isAuthenticated || hasAdminAccess) {
+        return;
+      }
+      window.history.replaceState({}, '', '/discover');
     }
-  }, [currentTab, isAuthenticated]);
+  }, [currentTab, isAuthenticated, hasAdminAccess]);
 
   useEffect(() => {
     const loadPersistedData = async () => {
@@ -1245,7 +1243,7 @@ export default function CardSwipersLanding() {
       } else {
         await signInWithEmailAndPassword(auth, authEmail, authPassword);
       }
-      setCurrentTab(isAdminPath ? 'admin' : 'swipe');
+      setCurrentTab('swipe');
     } catch (error) {
       setAuthError(error?.message || 'Authentication failed.');
     }
@@ -1256,7 +1254,7 @@ export default function CardSwipersLanding() {
     setAuthInfo('');
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
-      setCurrentTab(isAdminPath ? 'admin' : 'swipe');
+      setCurrentTab('swipe');
     } catch (error) {
       setAuthError(error?.message || 'Google sign-in failed.');
     }
@@ -1460,7 +1458,7 @@ export default function CardSwipersLanding() {
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
-  const canAccessAdmin = isAdmin || import.meta.env.DEV;
+  const canAccessAdmin = hasAdminAccess;
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
   const deactivatedUsers = adminUsers.filter((user) => user.status === 'deactivated').length;
