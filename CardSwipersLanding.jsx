@@ -214,6 +214,43 @@ const parseDollarValue = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const compressImageFile = async (file) => {
+  if (!file?.type?.startsWith('image/')) return file;
+
+  const maxDimension = 1600;
+  const targetSizeBytes = 900 * 1024;
+  const minQuality = 0.62;
+
+  const imageBitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxDimension / Math.max(imageBitmap.width, imageBitmap.height));
+  const width = Math.max(1, Math.round(imageBitmap.width * scale));
+  const height = Math.max(1, Math.round(imageBitmap.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return file;
+  ctx.drawImage(imageBitmap, 0, 0, width, height);
+
+  let quality = 0.84;
+  let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob) return file;
+
+  while (blob.size > targetSizeBytes && quality > minQuality) {
+    quality -= 0.08;
+    blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob) return file;
+  }
+
+  if (blob.size >= file.size) {
+    return file;
+  }
+
+  const baseName = file.name.replace(/\.[^.]+$/, '') || 'upload';
+  return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+};
+
 const scoreCardForUser = (card, profile, likedCards = [], successfulMatches = []) => {
   let score = 0;
   const interests = (profile?.interests || []).map(normalizeTag);
@@ -867,12 +904,10 @@ export default function CardSwipersLanding() {
     }
 
     const incomingQuery = query(collection(db, 'interests'), where('toUserId', '==', firebaseUser.uid), orderBy('createdAt', 'desc'));
-    const outgoingQuery = query(collection(db, 'interests'), where('fromUserId', '==', firebaseUser.uid), orderBy('createdAt', 'desc'));
     const matchesQuery = query(collection(db, 'matches'), where('participants', 'array-contains', firebaseUser.uid), orderBy('updatedAt', 'desc'));
 
     // Track listener state to prevent duplicate timeout firings
     let incomingFired = false;
-    let outgoingFired = false;
     let matchesFired = false;
 
     const unsubIncoming = onSnapshot(
@@ -886,21 +921,6 @@ export default function CardSwipersLanding() {
           incomingFired = true;
           console.error('Error listening to incoming interests:', error);
           setIncomingInterests([]);
-        }
-      }
-    );
-
-    const unsubOutgoing = onSnapshot(
-      outgoingQuery,
-      (snapshot) => {
-        outgoingFired = true;
-        setOutgoingInterests(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
-      },
-      (error) => {
-        if (!outgoingFired) {
-          outgoingFired = true;
-          console.error('Error listening to outgoing interests:', error);
-          setOutgoingInterests([]);
         }
       }
     );
@@ -949,11 +969,6 @@ export default function CardSwipersLanding() {
         console.warn('Incoming interests listener timed out');
         setIncomingInterests([]);
       }
-      if (!outgoingFired) {
-        outgoingFired = true;
-        console.warn('Outgoing interests listener timed out');
-        setOutgoingInterests([]);
-      }
       if (!matchesFired) {
         matchesFired = true;
         console.warn('Matches listener timed out');
@@ -965,10 +980,46 @@ export default function CardSwipersLanding() {
     return () => {
       window.clearTimeout(timeoutId);
       unsubIncoming();
-      unsubOutgoing();
       unsubMatches();
     };
   }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser || currentTab !== 'messages') {
+      return;
+    }
+
+    const outgoingQuery = query(collection(db, 'interests'), where('fromUserId', '==', firebaseUser.uid), orderBy('createdAt', 'desc'));
+
+    let outgoingFired = false;
+    const unsubscribe = onSnapshot(
+      outgoingQuery,
+      (snapshot) => {
+        outgoingFired = true;
+        setOutgoingInterests(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        if (!outgoingFired) {
+          outgoingFired = true;
+          console.error('Error listening to outgoing interests:', error);
+          setOutgoingInterests([]);
+        }
+      }
+    );
+
+    const timeoutId = window.setTimeout(() => {
+      if (!outgoingFired) {
+        outgoingFired = true;
+        console.warn('Outgoing interests listener timed out');
+        setOutgoingInterests([]);
+      }
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      unsubscribe();
+    };
+  }, [firebaseUser, currentTab]);
 
   useEffect(() => {
     if (!activeChat?.id) {
@@ -983,7 +1034,12 @@ export default function CardSwipersLanding() {
       }).catch(() => {});
     }
 
-    const messagesQuery = query(collection(db, 'messages'), where('matchId', '==', activeChat.id), orderBy('createdAt', 'asc'));
+    const messagesQuery = query(
+      collection(db, 'messages'),
+      where('matchId', '==', activeChat.id),
+      orderBy('createdAt', 'asc'),
+      limit(120)
+    );
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       setChatMessages(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
       // Auto-scroll to bottom when new messages arrive
@@ -1168,12 +1224,13 @@ export default function CardSwipersLanding() {
 
     try {
       if (postImageFile) {
-        const safeFileName = postImageFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const optimizedFile = await compressImageFile(postImageFile);
+        const safeFileName = optimizedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         const imageRef = ref(
           storage,
           `cards/${firebaseUser?.uid || 'anonymous'}/${Date.now()}-${safeFileName}`
         );
-        await withTimeout(uploadBytes(imageRef, postImageFile), 12000, 'Image upload timed out');
+        await withTimeout(uploadBytes(imageRef, optimizedFile), 12000, 'Image upload timed out');
         imageUrl = await withTimeout(getDownloadURL(imageRef), 12000, 'Image URL fetch timed out');
       }
 
@@ -1284,8 +1341,8 @@ export default function CardSwipersLanding() {
       return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
-      setPostImageError('Image must be under 8MB.');
+    if (file.size > 12 * 1024 * 1024) {
+      setPostImageError('Image must be under 12MB. The app will optimize it before upload.');
       return;
     }
 
