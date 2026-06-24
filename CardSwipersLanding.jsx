@@ -871,6 +871,13 @@ export default function CardSwipersLanding() {
     const messagesQuery = query(collection(db, 'messages'), where('matchId', '==', activeChat.id), orderBy('createdAt', 'asc'));
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       setChatMessages(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      // Auto-scroll to bottom when new messages arrive
+      window.setTimeout(() => {
+        const chatContainer = document.querySelector('[data-chat-messages]');
+        if (chatContainer) {
+          chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+      }, 0);
     });
 
     return () => unsubscribe();
@@ -1206,11 +1213,17 @@ export default function CardSwipersLanding() {
         unreadBy: unreadTarget,
         updatedAt: serverTimestamp()
       });
+
+      setChatDraft('');
+      setAuthError('');
     } catch (error) {
       console.error('Failed to persist message:', error);
+      const errorMessage =
+        error?.code === 'operation-timeout' || error?.code?.includes('offline') || error?.code?.includes('unavailable')
+          ? 'Network issue while sending message. Please try again.'
+          : 'Failed to send message. Please try again.';
+      setAuthError(errorMessage);
     }
-
-    setChatDraft('');
   };
 
   const handleForgotPassword = async () => {
@@ -2578,7 +2591,7 @@ export default function CardSwipersLanding() {
                   <h3 className="font-bold text-base">Chatting with @{activeChat.counterpartyName || activeChat.user}</h3>
                 </div>
 
-                <div className="flex-grow bg-red-900/20 rounded-2xl p-4 flex flex-col justify-end space-y-3 min-h-[300px]">
+                <div data-chat-messages className="flex-grow bg-red-900/20 rounded-2xl p-4 flex flex-col justify-end space-y-3 min-h-[300px] overflow-y-auto">
                   {chatMessages.length === 0 ? (
                     <div className="text-xs text-red-100">No messages yet. Send your opening proposal.</div>
                   ) : (
