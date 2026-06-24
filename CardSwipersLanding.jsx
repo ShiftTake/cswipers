@@ -214,6 +214,24 @@ const parseDollarValue = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const looksLikeLegacyDummyCard = (raw = {}) => {
+  const fieldsToScan = [
+    raw.name,
+    raw.title,
+    raw.brand,
+    raw.ownerName,
+    raw.location,
+    raw.responseTime,
+    raw.condition,
+    ...(Array.isArray(raw.seekingTags) ? raw.seekingTags : [])
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+
+  const tokens = ['dummy', 'democollector', 'demo mode', 'preview only', 'demo card', 'sample listing'];
+  return tokens.some((token) => fieldsToScan.includes(token));
+};
+
 const compressImageFile = async (file) => {
   if (!file?.type?.startsWith('image/')) return file;
 
@@ -795,31 +813,32 @@ export default function CardSwipersLanding() {
 
         if (!cardsSnapshot.empty) {
           const loadedCards = cardsSnapshot.docs
+            .filter((docSnap) => !looksLikeLegacyDummyCard(docSnap.data()))
             .map((docSnap) => {
-            const data = docSnap.data();
-            return {
-              id: docSnap.id,
-              name: data.name,
-              brand: data.brand,
-              condition: data.condition,
-              imageUrl: data.imageUrl || '',
-              title: data.name,
-              category: data.category || data.brand || 'Cards',
-              tradeValue: data.tradeValue || data.value || '$0',
-              avgMarketValue: data.avgMarketValue || data.value || '$0',
-              recentComps: data.recentComps || data.value || '$0',
-              owner: data.ownerName || 'Collector',
-              ownerUid: data.ownerUid || null,
-              seekingTags: data.seekingTags || [],
-              detailLine: data.condition || 'Card listing',
-              cardColor: 'from-red-600/20 to-orange-500/20',
-              borderColor: 'border-red-500/40',
-              location: data.location || 'Unknown',
-              memberSince: data.memberSince || '2026',
-              responseTime: data.responseTime || 'Replies same day',
-              completedTrades: data.completedTrades || 0,
-              collection: []
-            };
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                name: data.name,
+                brand: data.brand,
+                condition: data.condition,
+                imageUrl: data.imageUrl || '',
+                title: data.name,
+                category: data.category || data.brand || 'Cards',
+                tradeValue: data.tradeValue || data.value || '$0',
+                avgMarketValue: data.avgMarketValue || data.value || '$0',
+                recentComps: data.recentComps || data.value || '$0',
+                owner: data.ownerName || 'Collector',
+                ownerUid: data.ownerUid || null,
+                seekingTags: data.seekingTags || [],
+                detailLine: data.condition || 'Card listing',
+                cardColor: 'from-red-600/20 to-orange-500/20',
+                borderColor: 'border-red-500/40',
+                location: data.location || 'Unknown',
+                memberSince: data.memberSince || '2026',
+                responseTime: data.responseTime || 'Replies same day',
+                completedTrades: data.completedTrades || 0,
+                collection: []
+              };
             })
             .filter((card) => !hiddenCardIds.has(card.id));
 
@@ -1886,13 +1905,13 @@ export default function CardSwipersLanding() {
                   <div className="relative rounded-3xl overflow-hidden border border-white/[0.07] shadow-[0_32px_80px_rgba(0,0,0,0.6)]">
                     <img
                       src={heroCards}
-                      alt="Ungraded trading card listing mockup used as dummy data"
+                      alt="CardSwipers marketplace preview"
                       className="w-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0F1117]/60 via-transparent to-transparent" />
                     <div className="absolute bottom-5 left-1/2 -translate-x-1/2 text-center px-4">
                       <p className="text-xs text-white/50 tracking-widest uppercase font-medium">
-                        Ungraded Listing Preview - Dummy Data for CardSwipers
+                        Live Marketplace Preview
                       </p>
                     </div>
                   </div>
