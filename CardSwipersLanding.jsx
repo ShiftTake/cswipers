@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -109,6 +109,15 @@ function ProfileIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
       <path d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
       <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M15 17H9m10-1c-1.2-1.1-2-2.7-2-4.4V10a5 5 0 1 0-10 0v1.6c0 1.7-.8 3.3-2 4.4" />
+      <path d="M10.5 20a1.5 1.5 0 0 0 3 0" />
     </svg>
   );
 }
@@ -271,6 +280,7 @@ export default function CardSwipersLanding() {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
   const [personalizedDeck, setPersonalizedDeck] = useState(INITIAL_DECK);
@@ -326,10 +336,115 @@ export default function CardSwipersLanding() {
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
   const [flagCardId, setFlagCardId] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const hasHydratedPendingInterests = useRef(false);
+  const hasHydratedMatches = useRef(false);
+  const pendingInterestIdsRef = useRef(new Set());
+  const matchIdsRef = useRef(new Set());
+  const unreadMatchIdsRef = useRef(new Set());
   const currentCard = personalizedDeck[cardIndex] || null;
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
+  const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
+  const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
+  const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
+
+  const addNotification = useCallback((payload) => {
+    const notification = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      read: false,
+      createdAt: Date.now(),
+      ...payload
+    };
+
+    setNotifications((prev) => [notification, ...prev].slice(0, 40));
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(notification.title, { body: notification.message });
+      } catch {
+        // Ignore browser notification failures and rely on in-app panel.
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (firebaseUser) return;
+    setNotifications([]);
+    setShowNotificationsPanel(false);
+    hasHydratedPendingInterests.current = false;
+    hasHydratedMatches.current = false;
+    pendingInterestIdsRef.current = new Set();
+    matchIdsRef.current = new Set();
+    unreadMatchIdsRef.current = new Set();
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const pendingIncoming = incomingInterests.filter((interest) => interest.status === 'pending');
+    const currentPendingIds = new Set(pendingIncoming.map((interest) => interest.id));
+
+    if (!hasHydratedPendingInterests.current) {
+      hasHydratedPendingInterests.current = true;
+      pendingInterestIdsRef.current = currentPendingIds;
+      return;
+    }
+
+    pendingIncoming.forEach((interest) => {
+      if (!pendingInterestIdsRef.current.has(interest.id)) {
+        addNotification({
+          type: 'interest',
+          title: 'New Interest Request',
+          message: `${interest.fromUserName || 'A collector'} is interested in ${interest.cardTitle || 'your listing'}.`,
+          actionTab: 'messages'
+        });
+      }
+    });
+
+    pendingInterestIdsRef.current = currentPendingIds;
+  }, [incomingInterests, firebaseUser, addNotification]);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const currentMatchIds = new Set(matches.map((match) => match.id));
+    const currentUnreadMatchIds = new Set(
+      matches
+        .filter((match) => match.unreadBy?.includes(firebaseUser.uid))
+        .map((match) => match.id)
+    );
+
+    if (!hasHydratedMatches.current) {
+      hasHydratedMatches.current = true;
+      matchIdsRef.current = currentMatchIds;
+      unreadMatchIdsRef.current = currentUnreadMatchIds;
+      return;
+    }
+
+    matches.forEach((match) => {
+      if (!matchIdsRef.current.has(match.id)) {
+        addNotification({
+          type: 'match',
+          title: 'New Match Created',
+          message: `You matched with ${match.counterpartyName || 'a trade partner'}.`,
+          actionTab: 'messages'
+        });
+      }
+      if (currentUnreadMatchIds.has(match.id) && !unreadMatchIdsRef.current.has(match.id)) {
+        addNotification({
+          type: 'message',
+          title: 'New Message',
+          message: `${match.counterpartyName || 'A trade partner'} sent you a message.`,
+          actionTab: 'messages'
+        });
+      }
+    });
+
+    matchIdsRef.current = currentMatchIds;
+    unreadMatchIdsRef.current = currentUnreadMatchIds;
+  }, [matches, firebaseUser, addNotification]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -1310,6 +1425,23 @@ export default function CardSwipersLanding() {
     setCurrentTab(nextTab);
   };
 
+  const handleOpenNotifications = () => {
+    setShowNotificationsPanel(true);
+    setAccountMenuOpen(false);
+  };
+
+  const handleNotificationClick = (notification) => {
+    setNotifications((prev) => prev.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
+    if (notification.actionTab) {
+      navigateToTab(notification.actionTab);
+    }
+    setShowNotificationsPanel(false);
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+  };
+
   const toggleOnboardingValue = (field, value, maxItems = Infinity) => {
     setOnboardingData((prev) => {
       const currentValues = Array.isArray(prev[field]) ? prev[field] : [];
@@ -1609,6 +1741,18 @@ export default function CardSwipersLanding() {
             )}
             {isCoreAppScreen && isAuthenticated && (
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenNotifications}
+                  className="relative w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white"
+                >
+                  <BellIcon />
+                  {unreadNotificationCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] text-[10px] leading-4 text-white font-bold text-center">
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                    </span>
+                  )}
+                </button>
                 <div className="relative">
                   <button
                     type="button"
@@ -1641,13 +1785,12 @@ export default function CardSwipersLanding() {
                       </button>
                       <button
                         onClick={() => {
-                          setCurrentTab('messages');
-                          setAccountMenuOpen(false);
+                          handleOpenNotifications();
                         }}
                         className="w-full text-left px-4 py-3 text-white hover:bg-white/5 transition-colors text-sm"
                         type="button"
                       >
-                        Notifications
+                        Notifications{unreadNotificationCount > 0 ? ` (${unreadNotificationCount})` : ''}
                       </button>
                       <div className="border-t border-white/10"></div>
                       <button
@@ -2637,6 +2780,78 @@ export default function CardSwipersLanding() {
         </div>
       </main>
 
+      {showNotificationsPanel && (
+        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4">
+          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold">Notifications</h3>
+                <p className="text-xs text-white/60">Realtime updates for interests, matches, and messages.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNotificationsPanel(false)}
+                className="text-sm text-white/70 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleMarkAllNotificationsRead}
+                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold"
+              >
+                Mark all as read
+              </button>
+              <button
+                type="button"
+                onClick={() => setNotifications([])}
+                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-white/80"
+              >
+                Clear all
+              </button>
+              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+                <button
+                  type="button"
+                  onClick={() => Notification.requestPermission().catch(() => {})}
+                  className="px-3 py-2 rounded-xl bg-[#E50914] hover:bg-red-700 text-xs font-semibold"
+                >
+                  Enable Browser Alerts
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+              {notifications.length === 0 ? (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">
+                  No notifications yet.
+                </div>
+              ) : (
+                notifications.map((notification) => (
+                  <button
+                    key={notification.id}
+                    type="button"
+                    onClick={() => handleNotificationClick(notification)}
+                    className={`w-full text-left rounded-xl border p-3 transition-colors ${notification.read ? 'border-white/10 bg-white/[0.02]' : 'border-red-400/30 bg-red-500/10 hover:bg-red-500/15'}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold">{notification.title}</p>
+                      {!notification.read && <span className="w-2 h-2 rounded-full bg-[#E50914]" />}
+                    </div>
+                    <p className="text-xs text-white/75 mt-1">{notification.message}</p>
+                    <p className="text-[11px] text-white/45 mt-2">
+                      {new Date(notification.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewingCollection && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[55] p-4 flex flex-col justify-between">
           <div className="max-w-4xl w-full mx-auto">
@@ -3116,9 +3331,9 @@ export default function CardSwipersLanding() {
           >
             <div className="relative">
               <NavIcon><InboxIcon /></NavIcon>
-              {pendingInterestCount > 0 && (
+              {inboxBadgeCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] text-[10px] leading-4 text-white font-bold text-center">
-                  {pendingInterestCount}
+                  {inboxBadgeCount > 99 ? '99+' : inboxBadgeCount}
                 </span>
               )}
             </div>
