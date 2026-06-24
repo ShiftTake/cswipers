@@ -906,6 +906,10 @@ export default function CardSwipersLanding() {
     setSwipeFeedback(direction);
 
     if (direction === 'pass') {
+      // Optimistically filter deck immediately
+      const nextDeck = deck.filter((card) => card.id !== currentCard.id);
+      setDeck(nextDeck);
+      
       try {
         const hiddenUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await addDoc(collection(db, 'swipes'), {
@@ -916,10 +920,10 @@ export default function CardSwipersLanding() {
           hiddenUntil,
           createdAt: serverTimestamp()
         });
-
-        setDeck((prevDeck) => prevDeck.filter((card) => card.id !== currentCard.id));
       } catch (error) {
         console.error('Failed to persist left swipe:', error);
+        // Restore card to deck if Firestore write failed
+        setDeck((prevDeck) => [...prevDeck, currentCard]);
       }
       advanceDeck();
       return;
@@ -935,6 +939,13 @@ export default function CardSwipersLanding() {
     if (!currentCard || !firebaseUser || interestBusy) return;
     setInterestError('');
     setInterestBusy(true);
+
+    // Optimistically filter deck and close modal immediately
+    const nextDeck = deck.filter((card) => card.id !== currentCard.id);
+    setDeck(nextDeck);
+    setShowInterestModal(false);
+    setSwipeFeedback('like');
+
     try {
       await withTimeout(
         addDoc(collection(db, 'interests'), {
@@ -954,12 +965,13 @@ export default function CardSwipersLanding() {
         'Sending interest timed out'
       );
 
-      setDeck((prevDeck) => prevDeck.filter((card) => card.id !== currentCard.id));
-      setShowInterestModal(false);
-      setSwipeFeedback('like');
       advanceDeck();
     } catch (error) {
       console.error('Failed to send interest:', error);
+      // Restore card to deck if Firestore write failed
+      setDeck((prevDeck) => [...prevDeck, currentCard]);
+      setShowInterestModal(true);
+      setSwipeFeedback(null);
       const errorMessage =
         error?.code === 'operation-timeout' || error?.code?.includes('offline') || error?.code?.includes('unavailable')
           ? 'Network issue while sending interest. Please try again.'
@@ -1084,6 +1096,38 @@ export default function CardSwipersLanding() {
       return;
     }
 
+    const newPostedCard = {
+      id: createdId,
+      title: newCard.title,
+      name: newCard.title,
+      brand: newCard.brand,
+      category: newCard.brand,
+      condition: conditionLabel,
+      imageUrl,
+      owner: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
+      ownerUid: firebaseUser?.uid || null,
+      tradeValue: newCard.estimatedValue || '$0',
+      avgMarketValue: newCard.estimatedValue || '$0',
+      recentComps: newCard.estimatedValue || '$0',
+      detailLine: conditionLabel,
+      cardColor: 'from-blue-600/20 to-blue-500/20',
+      borderColor: 'border-blue-500/40',
+      lookingFor: newCard.lookingFor || 'Good trades',
+      seekingTags: (newCard.lookingFor || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+      location: 'Your Collection',
+      memberSince: new Date().getFullYear().toString(),
+      responseTime: 'Replies same day',
+      completedTrades: 0,
+      collection: []
+    };
+
+    // Add to deck immediately so it appears in swipe feed right away
+    setDeck((prevDeck) => [newPostedCard, ...prevDeck]);
+
+    // Also add to collection
     setMyCollection((prevCollection) => [
       {
         id: createdId,
@@ -1134,7 +1178,18 @@ export default function CardSwipersLanding() {
 
   const handleSendMessage = async () => {
     const trimmedMessage = chatDraft.trim();
-    if (!activeChat || !trimmedMessage || !firebaseUser) return;
+    if (!firebaseUser) {
+      setAuthError('You must be signed in to send messages.');
+      return;
+    }
+    if (!activeChat) {
+      setAuthError('No active chat selected. Please select a match to message.');
+      return;
+    }
+    if (!trimmedMessage) {
+      setAuthError('Please enter a message before sending.');
+      return;
+    }
 
     try {
       await addDoc(collection(db, 'messages'), {
@@ -2549,7 +2604,16 @@ export default function CardSwipersLanding() {
                     onChange={(e) => setChatDraft(e.target.value)}
                     className="flex-grow p-3 bg-red-950 border border-red-400/30 rounded-xl text-xs focus:outline-none"
                   />
-                  <button className="bg-[#E50914] px-4 rounded-xl text-xs font-bold" type="button" onClick={handleSendMessage}>
+                  <button 
+                    className={`px-4 rounded-xl text-xs font-bold transition-opacity ${
+                      activeChat && chatDraft.trim() 
+                        ? 'bg-[#E50914] hover:bg-[#cc070e] cursor-pointer' 
+                        : 'bg-gray-600 opacity-50 cursor-not-allowed'
+                    }`} 
+                    type="button" 
+                    onClick={handleSendMessage}
+                    disabled={!activeChat || !chatDraft.trim()}
+                  >
                     Send
                   </button>
                 </div>
@@ -2922,6 +2986,16 @@ export default function CardSwipersLanding() {
                       className="px-5 py-2.5 text-xs rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-40 font-medium transition-all"
                     >
                       Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOnboarding(false);
+                        setOnboardingBusy(false);
+                      }}
+                      className="px-4 py-2.5 text-xs rounded-xl bg-white/5 hover:bg-white/10 text-white/70 font-medium transition-all"
+                    >
+                      Skip for Now
                     </button>
                     <button
                       type="button"
