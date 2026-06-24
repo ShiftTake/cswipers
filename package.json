@@ -21,11 +21,15 @@
   "homepage": "https://github.com/ShiftTake/cswipers#readme",
   "description": "",
   "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1",
     "firebase": "^12.15.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
     "vite": "^7.1.3"
   }
 }
