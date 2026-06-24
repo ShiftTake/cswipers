@@ -30,7 +30,6 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from './firebase';
 import logo from './IMG_6089.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
-import swipeDummyCard from './Screenshot 2026-06-21 123904.png';
 import AdminPanel from './Admin';
 
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
@@ -114,30 +113,7 @@ function ProfileIcon() {
   );
 }
 
-const INITIAL_DECK = [
-  {
-    id: 1,
-    title: 'Ungraded Dummy Card Listing',
-    brand: 'Demo Card',
-    category: 'Unrated / Ungraded',
-    imageUrl: swipeDummyCard,
-    imageEmoji: '🃏',
-    detailLine: 'Ungraded sample listing used to preview the swipe experience',
-    condition: 'Ungraded',
-    owner: 'DemoCollector',
-    lookingFor: 'Collectors who want to preview the feature',
-    tradeValue: '$0',
-    memberSince: '2026',
-    location: 'Demo Mode',
-    responseTime: 'Preview only',
-    seekingTags: ['Dummy data', 'Preview only', 'Ungraded'],
-    cardColor: 'from-neutral-600/20 to-slate-700/20',
-    borderColor: 'border-white/20',
-    collection: [
-      { id: 101, title: 'Preview Item 1', emoji: '🃏' }
-    ]
-  }
-];
+const INITIAL_DECK = [];
 
 const PUBLISHERS = [
   { label: 'Sports', options: ['Topps', 'Bowman', 'Panini', 'Upper Deck'] },
@@ -301,14 +277,8 @@ export default function CardSwipersLanding() {
   const [cardIndex, setCardIndex] = useState(0);
   const [viewingCollection, setViewingCollection] = useState(null);
   const [swipeFeedback, setSwipeFeedback] = useState(null);
-  const [myCollection, setMyCollection] = useState([
-    { id: 101, name: '1st Edition Blue-Eyes White Dragon', brand: 'Yu-Gi-Oh!', condition: 'PSA 9', imageUrl: swipeDummyCard },
-    { id: 102, name: '2024 Shohei Ohtani Topps Chrome', brand: 'Topps', condition: 'Raw', imageUrl: swipeDummyCard }
-  ]);
-  const [messages, setMessages] = useState([
-    { id: 1, user: 'PalletTownTrades', lastMsg: 'Hey! Down to trade Charizard for your Blue-Eyes?', unread: true },
-    { id: 2, user: 'VintageVault', lastMsg: 'Is that price firm on the Ohtani?', unread: false }
-  ]);
+  const [myCollection, setMyCollection] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
 
   const [newCard, setNewCard] = useState({
@@ -2268,9 +2238,11 @@ export default function CardSwipersLanding() {
             ) : (
               <div className="flex flex-col items-center justify-center text-center py-20 space-y-4">
                 <span className="text-5xl text-white/60"><SwipeDeckIcon /></span>
-                <h3 className="text-xl font-bold">End of the Deck!</h3>
+                <h3 className="text-xl font-bold">{personalizedDeck.length === 0 ? 'No Cards Available' : 'End of the Deck!'}</h3>
                 <p className="text-sm text-white/65 max-w-xs">
-                  No more collectors matching your filters in your radius. Try expanding your search options.
+                  {personalizedDeck.length === 0 
+                    ? 'No cards are available yet. Check back later or adjust your onboarding preferences.' 
+                    : 'No more collectors matching your filters in your radius. Try expanding your search options.'}
                 </p>
               </div>
             )}
