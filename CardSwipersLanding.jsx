@@ -39,6 +39,50 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
 
+const normalizeAuthEmail = (value) => value.trim().toLowerCase();
+
+const getAuthErrorMessage = (error, flow = 'login') => {
+  const code = String(error?.code || '').toLowerCase();
+
+  if (code.includes('email-already-in-use')) {
+    return 'That email is already registered. Try Log In, or use Forgot Password to reset access.';
+  }
+  if (code.includes('account-exists-with-different-credential')) {
+    return 'An account already exists with a different sign-in method. Try Continue with Google.';
+  }
+  if (code.includes('invalid-email') || code.includes('missing-email')) {
+    return 'Enter a valid email address.';
+  }
+  if (code.includes('weak-password')) {
+    return 'Use a stronger password with at least 6 characters.';
+  }
+  if (code.includes('wrong-password') || code.includes('invalid-credential')) {
+    return 'Email or password is incorrect. Please try again.';
+  }
+  if (code.includes('user-not-found')) {
+    return flow === 'login'
+      ? 'No account was found for that email. Switch to Create Account to get started.'
+      : 'No account was found for that email.';
+  }
+  if (code.includes('too-many-requests')) {
+    return 'Too many attempts. Please wait a moment and try again.';
+  }
+  if (code.includes('network-request-failed') || code.includes('offline') || code.includes('unavailable')) {
+    return 'Network issue detected. Check your connection and try again.';
+  }
+  if (code.includes('popup-closed-by-user')) {
+    return 'Sign-in was canceled before completion.';
+  }
+  if (code.includes('operation-not-allowed')) {
+    return 'This sign-in method is currently unavailable. Please contact support.';
+  }
+
+  if (flow === 'google') return 'Google sign-in failed. Please try again.';
+  if (flow === 'reset') return 'Could not send reset link. Please try again.';
+  if (flow === 'create') return 'Could not create account. Please check your details and try again.';
+  return 'Could not log in. Please try again.';
+};
+
 function NavIcon({ children }) {
   return <span className="w-5 h-5 inline-flex items-center justify-center">{children}</span>;
 }
@@ -333,6 +377,7 @@ export default function CardSwipersLanding() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
   const [authInfo, setAuthInfo] = useState('');
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
@@ -1422,16 +1467,20 @@ export default function CardSwipersLanding() {
   const handleForgotPassword = async () => {
     setAuthError('');
     setAuthInfo('');
-    if (!authEmail) {
+    const normalizedEmail = normalizeAuthEmail(authEmail);
+
+    if (!normalizedEmail) {
       setAuthError('Enter your account email to receive a reset link.');
       return;
     }
+
+    setAuthEmail(normalizedEmail);
     setIsSendingReset(true);
     try {
-      await sendPasswordResetEmail(auth, authEmail);
+      await sendPasswordResetEmail(auth, normalizedEmail);
       setAuthInfo('Reset link sent. Check your inbox.');
     } catch (error) {
-      setAuthError(error?.message || 'Could not send reset link.');
+      setAuthError(getAuthErrorMessage(error, 'reset'));
     } finally {
       setIsSendingReset(false);
     }
@@ -1439,10 +1488,13 @@ export default function CardSwipersLanding() {
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    if (isAuthSubmitting) return;
+
     setAuthError('');
     setAuthInfo('');
+    const normalizedEmail = normalizeAuthEmail(authEmail);
 
-    if (!authEmail || !authPassword) {
+    if (!normalizedEmail || !authPassword) {
       setAuthError('Email and password are required.');
       return;
     }
@@ -1457,26 +1509,31 @@ export default function CardSwipersLanding() {
       return;
     }
 
+    setAuthEmail(normalizedEmail);
+    setIsAuthSubmitting(true);
+
     try {
       if (authMode === 'create') {
-        const credential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, authPassword);
         const displayName = authDisplayName.trim();
         await updateProfile(credential.user, { displayName });
         await setDoc(
           doc(db, 'users', credential.user.uid),
           {
             displayName,
-            email: credential.user.email || authEmail,
+            email: credential.user.email || normalizedEmail,
             updatedAt: serverTimestamp()
           },
           { merge: true }
         );
       } else {
-        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+        await signInWithEmailAndPassword(auth, normalizedEmail, authPassword);
       }
       setCurrentTab('swipe');
     } catch (error) {
-      setAuthError(error?.message || 'Authentication failed.');
+      setAuthError(getAuthErrorMessage(error, authMode === 'create' ? 'create' : 'login'));
+    } finally {
+      setIsAuthSubmitting(false);
     }
   };
 
@@ -1487,7 +1544,7 @@ export default function CardSwipersLanding() {
       await signInWithPopup(auth, new GoogleAuthProvider());
       setCurrentTab('swipe');
     } catch (error) {
-      setAuthError(error?.message || 'Google sign-in failed.');
+      setAuthError(getAuthErrorMessage(error, 'google'));
     }
   };
 
@@ -2064,6 +2121,7 @@ export default function CardSwipersLanding() {
                     onClick={() => {
                       setAuthMode('login');
                       setAuthError('');
+                      setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
                     className={`${authMode === 'login' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
@@ -2075,6 +2133,7 @@ export default function CardSwipersLanding() {
                     onClick={() => {
                       setAuthMode('create');
                       setAuthError('');
+                      setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
                     className={`${authMode === 'create' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
@@ -2129,20 +2188,39 @@ export default function CardSwipersLanding() {
                   />
                 )}
 
-                {authError && <p className="text-xs text-red-300">{authError}</p>}
-                {authInfo && <p className="text-xs text-emerald-300">{authInfo}</p>}
+                {authError && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2.5">
+                    <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 mt-0.5 text-red-300 shrink-0" aria-hidden="true">
+                      <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M10 6.2v4.8M10 14h.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                    </svg>
+                    <p className="text-xs leading-5 text-red-100">{authError}</p>
+                  </div>
+                )}
+                {authInfo && (
+                  <div className="flex items-start gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3 py-2.5">
+                    <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 mt-0.5 text-emerald-300 shrink-0" aria-hidden="true">
+                      <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="m7 10.1 2 2 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <p className="text-xs leading-5 text-emerald-100">{authInfo}</p>
+                  </div>
+                )}
 
                 <button
                   type="submit"
+                  disabled={isAuthSubmitting}
+                  aria-busy={isAuthSubmitting}
                   className="w-full h-11 px-6 rounded-xl bg-gradient-to-b from-[#FF3B5C] to-[#DC2626] hover:from-[#ff4a68] hover:to-[#c71f1f] text-white text-sm font-semibold shadow-[0_12px_24px_rgba(255,45,85,0.18)] transition-all"
                 >
-                  {authMode === 'create' ? 'Create Account' : 'Log In'}
+                  {isAuthSubmitting ? (authMode === 'create' ? 'Creating account...' : 'Logging in...') : authMode === 'create' ? 'Create Account' : 'Log In'}
                 </button>
 
                 <button
                   type="button"
                   onClick={handleGoogleAuth}
-                  className="w-full h-11 px-6 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/20 text-white text-sm font-semibold transition-colors"
+                  disabled={isAuthSubmitting}
+                  className="w-full h-11 px-6 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/20 text-white text-sm font-semibold transition-colors disabled:opacity-60"
                 >
                   Continue with Google
                 </button>
