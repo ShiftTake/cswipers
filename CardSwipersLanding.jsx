@@ -27,6 +27,7 @@ import {
   where
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
 import logo from './IMG_6089.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
@@ -318,8 +319,9 @@ const scoreCardForUser = (card, profile, likedCards = [], successfulMatches = []
 export default function CardSwipersLanding() {
   const normalizedPath =
     typeof window !== 'undefined' ? window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/' : '/';
+  const isNativeApp = Capacitor.isNativePlatform();
   const isAdminPath = normalizedPath === '/admin' || normalizedPath === '/admin.html';
-  const [currentTab, setCurrentTab] = useState('landing');
+  const [currentTab, setCurrentTab] = useState(isNativeApp ? 'auth' : 'landing');
   const [authMode, setAuthMode] = useState('login');
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
@@ -754,9 +756,9 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     if (currentTab === 'admin' && !hasAdminAccess) {
-      setCurrentTab(isAuthenticated ? 'swipe' : 'landing');
+      setCurrentTab(isAuthenticated ? 'swipe' : (isNativeApp ? 'auth' : 'landing'));
     }
-  }, [currentTab, hasAdminAccess, isAuthenticated]);
+  }, [currentTab, hasAdminAccess, isAuthenticated, isNativeApp]);
 
   useEffect(() => {
     if (!isAdminPath) return;
@@ -1491,7 +1493,7 @@ export default function CardSwipersLanding() {
 
   const navigateToTab = (nextTab) => {
     if (!isAuthenticated) {
-      setCurrentTab('landing');
+      setCurrentTab(isNativeApp ? 'auth' : 'landing');
       return;
     }
     if (nextTab === 'admin' && !(isAdmin || import.meta.env.DEV)) {
@@ -1776,7 +1778,7 @@ export default function CardSwipersLanding() {
                       type="button"
                       onClick={async () => {
                         await signOut(auth);
-                        setCurrentTab('landing');
+                        setCurrentTab(isNativeApp ? 'auth' : 'landing');
                       }}
                       className="h-11 px-4 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
                     >
@@ -1872,7 +1874,7 @@ export default function CardSwipersLanding() {
                       <button
                         onClick={async () => {
                           await signOut(auth);
-                          setCurrentTab('landing');
+                          setCurrentTab(isNativeApp ? 'auth' : 'landing');
                           setAccountMenuOpen(false);
                         }}
                         className="w-full text-left px-4 py-3 text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm"
@@ -2149,13 +2151,15 @@ export default function CardSwipersLanding() {
 
             <div className="text-center pt-5">
               <p className="text-xs text-[#9CA3AF] mb-2">Need help? Contact support@cardswipers.com</p>
-              <button
-                type="button"
-                onClick={() => setCurrentTab('landing')}
-                className="text-[11px] text-[#9CA3AF] hover:text-white underline underline-offset-2 mr-3"
-              >
-                Back to Landing
-              </button>
+              {!isNativeApp && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentTab('landing')}
+                  className="text-[11px] text-[#9CA3AF] hover:text-white underline underline-offset-2 mr-3"
+                >
+                  Back to Landing
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowTermsOfService(true)}
