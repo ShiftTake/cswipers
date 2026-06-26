@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
   GoogleAuthProvider,
+  getRedirectResult,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  signInWithRedirect,
   signInWithPopup,
   signInWithEmailAndPassword,
   updateProfile,
@@ -40,6 +43,24 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
   .filter(Boolean);
 
 const normalizeAuthEmail = (value) => value.trim().toLowerCase();
+
+const getSignInMethodMessage = (methods, flow) => {
+  if (methods.includes('google.com')) {
+    return flow === 'create'
+      ? 'That email is already connected to Google sign-in. Log in with Google instead.'
+      : 'That account uses Google sign-in. Tap Continue with Google instead of using a password.';
+  }
+
+  if (methods.includes('password')) {
+    return flow === 'create'
+      ? 'An account already exists for that email. Log in instead.'
+      : 'Email found, but the password is incorrect. Try again or reset your password.';
+  }
+
+  return flow === 'create'
+    ? 'Could not create account. Please check your details and try again.'
+    : 'No account was found for that email. Create a new account to continue.';
+};
 
 const getAuthErrorMessage = (error, flow = 'login') => {
   const code = String(error?.code || '').toLowerCase();
@@ -379,6 +400,7 @@ export default function CardSwipersLanding() {
   const [authInfo, setAuthInfo] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
+  const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -557,6 +579,30 @@ export default function CardSwipersLanding() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const handleRedirectResult = async () => {
+      if (!isNativeApp) return;
+
+      try {
+        const result = await getRedirectResult(auth);
+        if (!isMounted || !result?.user) return;
+        setAuthInfo('Google sign-in completed.');
+      } catch (error) {
+        if (!isMounted) return;
+        setAuthError(getAuthErrorMessage(error, 'google'));
+        setIsGoogleRedirecting(false);
+      }
+    };
+
+    handleRedirectResult();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isNativeApp]);
 
   useEffect(() => {
     if (!authLoading) return;
@@ -1513,7 +1559,14 @@ export default function CardSwipersLanding() {
     setIsAuthSubmitting(true);
 
     try {
+      const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+
       if (authMode === 'create') {
+        if (signInMethods.length > 0) {
+          setAuthError(getSignInMethodMessage(signInMethods, 'create'));
+          return;
+        }
+
         const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, authPassword);
         const displayName = authDisplayName.trim();
         await updateProfile(credential.user, { displayName });
@@ -1527,6 +1580,16 @@ export default function CardSwipersLanding() {
           { merge: true }
         );
       } else {
+        if (signInMethods.includes('google.com')) {
+          setAuthError(getSignInMethodMessage(signInMethods, 'login'));
+          return;
+        }
+
+        if (signInMethods.length > 0 && !signInMethods.includes('password')) {
+          setAuthError(getSignInMethodMessage(signInMethods, 'login'));
+          return;
+        }
+
         await signInWithEmailAndPassword(auth, normalizedEmail, authPassword);
       }
       setCurrentTab('swipe');
@@ -1541,9 +1604,19 @@ export default function CardSwipersLanding() {
     setAuthError('');
     setAuthInfo('');
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      const provider = new GoogleAuthProvider();
+
+      if (isNativeApp) {
+        setIsGoogleRedirecting(true);
+        setAuthInfo('Opening Google sign-in in your browser...');
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
+      await signInWithPopup(auth, provider);
       setCurrentTab('swipe');
     } catch (error) {
+      setIsGoogleRedirecting(false);
       setAuthError(getAuthErrorMessage(error, 'google'));
     }
   };
@@ -2219,11 +2292,17 @@ export default function CardSwipersLanding() {
                 <button
                   type="button"
                   onClick={handleGoogleAuth}
-                  disabled={isAuthSubmitting}
+                  disabled={isAuthSubmitting || isGoogleRedirecting}
                   className="w-full h-11 px-6 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/20 text-white text-sm font-semibold transition-colors disabled:opacity-60"
                 >
-                  Continue with Google
+                  {isGoogleRedirecting ? 'Opening Google...' : 'Continue with Google'}
                 </button>
+
+                {isNativeApp && (
+                  <p className="text-[11px] leading-5 text-[#9CA3AF]">
+                    On iPhone, Google sign-in may open Safari to finish authentication and return to the app.
+                  </p>
+                )}
               </form>
             </div>
 
