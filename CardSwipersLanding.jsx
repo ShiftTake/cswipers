@@ -109,16 +109,6 @@ const getAuthErrorMessage = (error, flow = 'login') => {
   return 'Could not log in. Please try again.';
 };
 
-const isNetworkAuthIssue = (error) => {
-  const code = String(error?.code || '').toLowerCase();
-  return (
-    code.includes('network-request-failed') ||
-    code.includes('offline') ||
-    code.includes('unavailable') ||
-    code.includes('operation-timeout')
-  );
-};
-
 function NavIcon({ children }) {
   return <span className="w-5 h-5 inline-flex items-center justify-center">{children}</span>;
 }
@@ -1545,19 +1535,21 @@ export default function CardSwipersLanding() {
     setAuthEmail(normalizedEmail);
     setIsSendingReset(true);
     try {
-      const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+      if (!isNativeApp) {
+        const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
 
-      if (signInMethods.includes('google.com')) {
-        setAuthError('That account uses Google sign-in, so no password reset email will be sent. Tap Continue with Google instead.');
-        return;
+        if (signInMethods.includes('google.com')) {
+          setAuthError('That account uses Google sign-in, so no password reset email will be sent. Tap Continue with Google instead.');
+          return;
+        }
+
+        if (signInMethods.length > 0 && !signInMethods.includes('password')) {
+          setAuthError('That account does not use a password login. Please sign in with the method you used when creating it.');
+          return;
+        }
       }
 
-      if (signInMethods.length > 0 && !signInMethods.includes('password')) {
-        setAuthError('That account does not use a password login. Please sign in with the method you used when creating it.');
-        return;
-      }
-
-      await sendPasswordResetEmail(auth, normalizedEmail);
+      await withTimeout(sendPasswordResetEmail(auth, normalizedEmail), 20000, 'Sending reset link timed out');
       setAuthInfo('Reset link sent. Check your inbox and spam folder. It can take a few minutes to arrive.');
     } catch (error) {
       setAuthError(getAuthErrorMessage(error, 'reset'));
@@ -1594,17 +1586,12 @@ export default function CardSwipersLanding() {
 
     try {
       let signInMethods = [];
-      try {
+      if (!isNativeApp) {
         signInMethods = await withTimeout(
           fetchSignInMethodsForEmail(auth, normalizedEmail),
-          10000,
+          15000,
           'Checking sign-in methods timed out'
         );
-      } catch (methodCheckError) {
-        // On native iOS/Android, pre-check requests can intermittently fail even when sign-in can still succeed.
-        if (authMode === 'create' || !isNativeApp || !isNetworkAuthIssue(methodCheckError)) {
-          throw methodCheckError;
-        }
       }
 
       if (authMode === 'create') {
@@ -1615,7 +1602,7 @@ export default function CardSwipersLanding() {
 
         const credential = await withTimeout(
           createUserWithEmailAndPassword(auth, normalizedEmail, authPassword),
-          12000,
+          30000,
           'Creating account timed out'
         );
         const displayName = authDisplayName.trim();
@@ -1646,7 +1633,7 @@ export default function CardSwipersLanding() {
 
         await withTimeout(
           signInWithEmailAndPassword(auth, normalizedEmail, authPassword),
-          20000,
+          30000,
           'Signing in timed out'
         );
       }
@@ -2365,7 +2352,7 @@ export default function CardSwipersLanding() {
             </div>
 
             <div className="text-center pt-5">
-              <p className="text-xs text-[#9CA3AF] mb-2">Need help? Contact support@cardswipers.com</p>
+              <p className="text-xs text-[#9CA3AF] mb-2">Need help? Contact help@cardswipers.com</p>
               {!isNativeApp && (
                 <button
                   type="button"
