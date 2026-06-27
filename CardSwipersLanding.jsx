@@ -109,6 +109,16 @@ const getAuthErrorMessage = (error, flow = 'login') => {
   return 'Could not log in. Please try again.';
 };
 
+const isNetworkAuthIssue = (error) => {
+  const code = String(error?.code || '').toLowerCase();
+  return (
+    code.includes('network-request-failed') ||
+    code.includes('offline') ||
+    code.includes('unavailable') ||
+    code.includes('operation-timeout')
+  );
+};
+
 function NavIcon({ children }) {
   return <span className="w-5 h-5 inline-flex items-center justify-center">{children}</span>;
 }
@@ -1583,11 +1593,19 @@ export default function CardSwipersLanding() {
     setIsAuthSubmitting(true);
 
     try {
-      const signInMethods = await withTimeout(
-        fetchSignInMethodsForEmail(auth, normalizedEmail),
-        10000,
-        'Checking sign-in methods timed out'
-      );
+      let signInMethods = [];
+      try {
+        signInMethods = await withTimeout(
+          fetchSignInMethodsForEmail(auth, normalizedEmail),
+          10000,
+          'Checking sign-in methods timed out'
+        );
+      } catch (methodCheckError) {
+        // On native iOS/Android, pre-check requests can intermittently fail even when sign-in can still succeed.
+        if (authMode === 'create' || !isNativeApp || !isNetworkAuthIssue(methodCheckError)) {
+          throw methodCheckError;
+        }
+      }
 
       if (authMode === 'create') {
         if (signInMethods.length > 0) {
@@ -1628,7 +1646,7 @@ export default function CardSwipersLanding() {
 
         await withTimeout(
           signInWithEmailAndPassword(auth, normalizedEmail, authPassword),
-          12000,
+          20000,
           'Signing in timed out'
         );
       }
