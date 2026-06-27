@@ -88,7 +88,12 @@ const getAuthErrorMessage = (error, flow = 'login') => {
   if (code.includes('too-many-requests')) {
     return 'Too many attempts. Please wait a moment and try again.';
   }
-  if (code.includes('network-request-failed') || code.includes('offline') || code.includes('unavailable')) {
+  if (
+    code.includes('network-request-failed') ||
+    code.includes('offline') ||
+    code.includes('unavailable') ||
+    code.includes('operation-timeout')
+  ) {
     return 'Network issue detected. Check your connection and try again.';
   }
   if (code.includes('popup-closed-by-user')) {
@@ -579,6 +584,13 @@ export default function CardSwipersLanding() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    // Safety valve: once auth state resolves, ensure the submit spinner is not stuck.
+    if (firebaseUser || !authLoading) {
+      setIsAuthSubmitting(false);
+    }
+  }, [firebaseUser, authLoading]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1571,7 +1583,11 @@ export default function CardSwipersLanding() {
     setIsAuthSubmitting(true);
 
     try {
-      const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+      const signInMethods = await withTimeout(
+        fetchSignInMethodsForEmail(auth, normalizedEmail),
+        10000,
+        'Checking sign-in methods timed out'
+      );
 
       if (authMode === 'create') {
         if (signInMethods.length > 0) {
@@ -1579,17 +1595,25 @@ export default function CardSwipersLanding() {
           return;
         }
 
-        const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, authPassword);
+        const credential = await withTimeout(
+          createUserWithEmailAndPassword(auth, normalizedEmail, authPassword),
+          12000,
+          'Creating account timed out'
+        );
         const displayName = authDisplayName.trim();
-        await updateProfile(credential.user, { displayName });
-        await setDoc(
-          doc(db, 'users', credential.user.uid),
-          {
-            displayName,
-            email: credential.user.email || normalizedEmail,
-            updatedAt: serverTimestamp()
-          },
-          { merge: true }
+        await withTimeout(updateProfile(credential.user, { displayName }), 10000, 'Updating profile timed out');
+        await withTimeout(
+          setDoc(
+            doc(db, 'users', credential.user.uid),
+            {
+              displayName,
+              email: credential.user.email || normalizedEmail,
+              updatedAt: serverTimestamp()
+            },
+            { merge: true }
+          ),
+          12000,
+          'Saving profile timed out'
         );
       } else {
         if (signInMethods.includes('google.com')) {
@@ -1602,7 +1626,11 @@ export default function CardSwipersLanding() {
           return;
         }
 
-        await signInWithEmailAndPassword(auth, normalizedEmail, authPassword);
+        await withTimeout(
+          signInWithEmailAndPassword(auth, normalizedEmail, authPassword),
+          12000,
+          'Signing in timed out'
+        );
       }
       setCurrentTab('swipe');
     } catch (error) {
