@@ -1523,8 +1523,20 @@ export default function CardSwipersLanding() {
     setAuthEmail(normalizedEmail);
     setIsSendingReset(true);
     try {
+      const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+
+      if (signInMethods.includes('google.com')) {
+        setAuthError('That account uses Google sign-in, so no password reset email will be sent. Tap Continue with Google instead.');
+        return;
+      }
+
+      if (signInMethods.length > 0 && !signInMethods.includes('password')) {
+        setAuthError('That account does not use a password login. Please sign in with the method you used when creating it.');
+        return;
+      }
+
       await sendPasswordResetEmail(auth, normalizedEmail);
-      setAuthInfo('Reset link sent. Check your inbox.');
+      setAuthInfo('Reset link sent. Check your inbox and spam folder. It can take a few minutes to arrive.');
     } catch (error) {
       setAuthError(getAuthErrorMessage(error, 'reset'));
     } finally {
