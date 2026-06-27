@@ -277,6 +277,17 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
+const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
+
+const ISO_QUICK_OPTIONS = [
+  'Baseball',
+  'Basketball',
+  'Football',
+  'Soccer',
+  'Pokemon',
+  'Cash',
+  'Trade Up'
+];
 
 const normalizeTag = (value) => String(value || '').toLowerCase().trim();
 
@@ -433,6 +444,7 @@ export default function CardSwipersLanding() {
   const [postImagePreview, setPostImagePreview] = useState('');
   const [postImageError, setPostImageError] = useState('');
   const [isPostingCard, setIsPostingCard] = useState(false);
+  const postImageInputRef = useRef(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
@@ -478,6 +490,19 @@ export default function CardSwipersLanding() {
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
+  const postProgressChecks = [
+    Boolean(postImagePreview),
+    Boolean(newCard.title.trim()),
+    Boolean(newCard.brand.trim()),
+    Boolean((newCard.estimatedValue || '').trim()),
+    Boolean((newCard.lookingFor || '').trim())
+  ];
+  const postCompletionCount = postProgressChecks.filter(Boolean).length;
+  const postCompletionPercent = Math.round((postCompletionCount / postProgressChecks.length) * 100);
+  const previewConditionLabel =
+    newCard.gradingCompany === 'Raw (Ungraded)'
+      ? `Raw - ${newCard.rawCondition}`
+      : `${newCard.gradingCompany} ${newCard.grade}`;
 
   const addNotification = useCallback((payload) => {
     const notification = {
@@ -598,6 +623,11 @@ export default function CardSwipersLanding() {
     const handleRedirectResult = async () => {
       if (!isNativeApp) return;
 
+      const hasPendingGoogleRedirect =
+        typeof window !== 'undefined' && window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === '1';
+
+      if (!hasPendingGoogleRedirect) return;
+
       try {
         const result = await getRedirectResult(auth);
         if (!isMounted || !result?.user) return;
@@ -605,6 +635,10 @@ export default function CardSwipersLanding() {
       } catch (error) {
         if (!isMounted) return;
         setAuthError(getAuthErrorMessage(error, 'google'));
+      } finally {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+        }
         setIsGoogleRedirecting(false);
       }
     };
@@ -1479,6 +1513,23 @@ export default function CardSwipersLanding() {
     setPostImageFile(file);
   };
 
+  const toggleLookingForOption = (option) => {
+    const normalized = option.trim();
+    const existing = (newCard.lookingFor || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    const nextValues = existing.includes(normalized)
+      ? existing.filter((value) => value !== normalized)
+      : [...existing, normalized];
+
+    setNewCard({
+      ...newCard,
+      lookingFor: nextValues.join(', ')
+    });
+  };
+
   const handleSendMessage = async () => {
     const trimmedMessage = chatDraft.trim();
     if (!firebaseUser) {
@@ -1652,6 +1703,9 @@ export default function CardSwipersLanding() {
       const provider = new GoogleAuthProvider();
 
       if (isNativeApp) {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, '1');
+        }
         setIsGoogleRedirecting(true);
         setAuthInfo('Opening Google sign-in in your browser...');
         await signInWithRedirect(auth, provider);
@@ -2743,142 +2797,250 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="space-y-6 py-2 max-w-3xl mx-auto">
-            <div>
-              <h2 className="text-2xl font-black">List a Card</h2>
-              <p className="text-xs text-red-100">Add an asset to your binder to start matching trades.</p>
+          <div className="py-2 max-w-6xl mx-auto space-y-6">
+            <div className="rounded-[24px] border border-white/10 bg-[#11161F] px-5 py-5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">+ Card</p>
+                  <h2 className="mt-2 text-[2.05rem] leading-[1.04] font-black tracking-[-0.04em]">Post Your Collectible</h2>
+                  <p className="mt-2 text-sm text-white/65">Show off your best card and get matched with active traders fast.</p>
+                </div>
+                <div className="min-w-[220px] grow sm:grow-0">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Step 1 of 2</p>
+                  <div className="mt-2 h-2.5 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#E11D48] to-[#FB7185] transition-all duration-500"
+                      style={{ width: `${postCompletionPercent}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[11px] text-white/60">{postCompletionCount} of {postProgressChecks.length} fields complete</p>
+                </div>
+              </div>
             </div>
 
-            <form onSubmit={handlePostCard} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-red-100 uppercase">Card Identity</label>
+            <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-6 items-start">
+              <form onSubmit={handlePostCard} className="space-y-5 rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)]">
                 <input
-                  type="text"
-                  placeholder="e.g., 2018 Shohei Ohtani Rookie Card"
-                  value={newCard.title}
-                  onChange={(e) => setNewCard({ ...newCard, title: e.target.value })}
-                  className="w-full p-4 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-red-100 uppercase">Brand/Publisher</label>
-                  <select
-                    value={newCard.brand}
-                    onChange={(e) => setNewCard({ ...newCard, brand: e.target.value })}
-                    className="w-full p-4 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm"
-                  >
-                    {PUBLISHERS.map((group) => (
-                      <optgroup key={group.label} label={group.label}>
-                        {group.options.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-red-100 uppercase">Card Grading Company</label>
-                  <select
-                    value={newCard.gradingCompany}
-                    onChange={(e) => setNewCard({ ...newCard, gradingCompany: e.target.value })}
-                    className="w-full p-4 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm"
-                  >
-                    {GRADING_COMPANIES.map((company) => (
-                      <option key={company} value={company}>
-                        {company}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {newCard.gradingCompany === 'Raw (Ungraded)' ? (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-red-100 uppercase">Raw Condition</label>
-                  <select
-                    value={newCard.rawCondition}
-                    onChange={(e) => setNewCard({ ...newCard, rawCondition: e.target.value })}
-                    className="w-full p-4 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm"
-                  >
-                    {RAW_CONDITIONS.map((condition) => (
-                      <option key={condition} value={condition}>
-                        {condition}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-red-100 uppercase">Numeric Grade</label>
-                  <select
-                    value={newCard.grade}
-                    onChange={(e) => setNewCard({ ...newCard, grade: e.target.value })}
-                    className="w-full p-4 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm"
-                  >
-                    {NUMERIC_GRADES.map((grade) => (
-                      <option key={grade} value={grade}>
-                        {grade}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-red-100 uppercase">Estimated Value (USD)</label>
-                <input
-                  type="text"
-                  placeholder="e.g., 250"
-                  value={newCard.estimatedValue}
-                  onChange={(e) => setNewCard({ ...newCard, estimatedValue: e.target.value })}
-                  className="w-full p-4 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-red-100 uppercase">In Search Of (ISO)</label>
-                <textarea
-                  placeholder="What collectibles do you want in exchange?"
-                  value={newCard.lookingFor}
-                  onChange={(e) => setNewCard({ ...newCard, lookingFor: e.target.value })}
-                  className="w-full p-4 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm resize-none"
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-red-100 uppercase">Card Photo</label>
-                <input
+                  ref={postImageInputRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
                   onChange={handlePostImageChange}
-                  className="w-full p-3 bg-red-950/70 border border-red-400/30 rounded-2xl focus:outline-none focus:border-white text-sm"
+                  className="hidden"
                 />
-                <p className="text-[11px] text-red-100">Use your camera or upload an image from your device.</p>
-                {postImagePreview && (
-                  <img
-                    src={postImagePreview}
-                    alt="Card preview"
-                    className="w-full max-h-64 object-cover rounded-2xl border border-red-400/30"
-                  />
-                )}
-                {postImageError && <p className="text-xs text-red-300">{postImageError}</p>}
-              </div>
 
-              <button
-                type="submit"
-                disabled={isPostingCard}
-                className="w-full py-4 bg-[#E50914] hover:bg-red-700 font-bold rounded-2xl shadow-lg shadow-red-600/10 transition-colors text-sm mt-4"
-              >
-                {isPostingCard ? 'Publishing...' : 'Publish Asset to Feed'}
-              </button>
-            </form>
+                <button
+                  type="button"
+                  onClick={() => postImageInputRef.current?.click()}
+                  className="w-full rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
+                >
+                  <div className="rounded-[14px] overflow-hidden min-h-[230px] bg-[#0A0D13] flex items-center justify-center relative group">
+                    {postImagePreview ? (
+                      <img
+                        src={postImagePreview}
+                        alt="Card preview"
+                        className="w-full h-[260px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                      />
+                    ) : (
+                      <div className="text-center px-4 py-10">
+                        <p className="text-4xl">📷</p>
+                        <p className="mt-3 text-base font-bold text-white">Tap to Upload Card</p>
+                        <p className="mt-1 text-xs text-white/55 tracking-wide">PNG JPG HEIC</p>
+                      </div>
+                    )}
+                    {postImagePreview && (
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-4 py-3 text-left">
+                        <p className="text-xs uppercase tracking-[0.22em] text-white/60">Photo Ready</p>
+                        <p className="text-sm text-white font-semibold">Tap to replace image</p>
+                      </div>
+                    )}
+                  </div>
+                </button>
+
+                {postImageError && <p className="text-xs text-red-300">{postImageError}</p>}
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🪪 Card Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., 2018 Shohei Ohtani Rookie Card"
+                    value={newCard.title}
+                    onChange={(e) => setNewCard({ ...newCard, title: e.target.value })}
+                    className="w-full px-5 py-4 text-base font-semibold bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                  />
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🏷️ Brand</label>
+                    <select
+                      value={newCard.brand}
+                      onChange={(e) => setNewCard({ ...newCard, brand: e.target.value })}
+                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    >
+                      {PUBLISHERS.map((group) => (
+                        <optgroup key={group.label} label={group.label}>
+                          {group.options.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🧾 Grade Company</label>
+                    <select
+                      value={newCard.gradingCompany}
+                      onChange={(e) => setNewCard({ ...newCard, gradingCompany: e.target.value })}
+                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    >
+                      {GRADING_COMPANIES.map((company) => (
+                        <option key={company} value={company}>
+                          {company}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {newCard.gradingCompany === 'Raw (Ungraded)' ? (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🧿 Raw Condition</label>
+                    <select
+                      value={newCard.rawCondition}
+                      onChange={(e) => setNewCard({ ...newCard, rawCondition: e.target.value })}
+                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    >
+                      {RAW_CONDITIONS.map((condition) => (
+                        <option key={condition} value={condition}>
+                          {condition}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">📊 Numeric Grade</label>
+                    <select
+                      value={newCard.grade}
+                      onChange={(e) => setNewCard({ ...newCard, grade: e.target.value })}
+                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    >
+                      {NUMERIC_GRADES.map((grade) => (
+                        <option key={grade} value={grade}>
+                          {grade}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">💵 Estimated Market Value</label>
+                  <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
+                    <span className="text-white/65 font-semibold">$</span>
+                    <input
+                      type="text"
+                      placeholder="250"
+                      value={newCard.estimatedValue}
+                      onChange={(e) => setNewCard({ ...newCard, estimatedValue: e.target.value })}
+                      className="w-full bg-transparent text-base font-semibold focus:outline-none"
+                    />
+                    <span className="text-[11px] uppercase tracking-[0.16em] text-white/45">USD</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🎯 Looking For</label>
+                  <div className="flex flex-wrap gap-2">
+                    {ISO_QUICK_OPTIONS.map((option) => {
+                      const isActive = (newCard.lookingFor || '')
+                        .split(',')
+                        .map((value) => value.trim())
+                        .filter(Boolean)
+                        .includes(option);
+
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => toggleLookingForOption(option)}
+                          className={`px-3.5 py-2 rounded-full text-xs font-semibold border transition-all ${
+                            isActive
+                              ? 'bg-[#E11D48] border-[#E11D48] text-white shadow-[0_6px_16px_rgba(225,29,72,0.32)]'
+                              : 'bg-[#161C27] border-white/10 text-white/80 hover:border-white/25'
+                          }`}
+                        >
+                          {isActive ? '✓ ' : ''}
+                          {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <textarea
+                    placeholder="Add more details or specific trade targets"
+                    value={newCard.lookingFor}
+                    onChange={(e) => setNewCard({ ...newCard, lookingFor: e.target.value })}
+                    className="w-full px-4 py-3.5 bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 text-sm resize-none transition-all"
+                    rows={3}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isPostingCard}
+                  className="w-full h-[60px] bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-70 font-bold rounded-[20px] shadow-[0_16px_30px_rgba(225,29,72,0.26)] transition-all text-sm"
+                >
+                  {isPostingCard ? 'Publishing...' : 'Publish Asset to Feed'}
+                </button>
+              </form>
+
+              <aside className="rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Live Preview</p>
+                  <h3 className="mt-2 text-xl font-black">Your Listing Card</h3>
+                </div>
+
+                <div className="rounded-[20px] bg-[#0D1117] border border-white/10 overflow-hidden">
+                  <div className="h-52 bg-black/40 flex items-center justify-center relative">
+                    {postImagePreview ? (
+                      <img src={postImagePreview} alt="Live card preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-center">
+                        <p className="text-3xl">🃏</p>
+                        <p className="text-xs text-white/55 mt-2">Upload image to preview</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4 space-y-2.5">
+                    <h4 className="text-base font-bold leading-snug">
+                      {newCard.title.trim() || 'Card title will appear here'}
+                    </h4>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="px-3 py-1 rounded-full bg-white/8 border border-white/10 text-xs text-white/80">
+                        {newCard.brand || 'Brand'}
+                      </span>
+                      <span className="text-sm font-bold text-white">
+                        {newCard.estimatedValue?.trim() ? `$${newCard.estimatedValue}` : '$0'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-white/65">{previewConditionLabel}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] bg-[#0D1117] border border-white/10 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Tips</p>
+                  <ul className="mt-2 space-y-1 text-xs text-white/70">
+                    <li>Use bright lighting and fill most of the frame with the card.</li>
+                    <li>Keep the title specific for better match quality.</li>
+                    <li>Add at least one Looking For target to increase responses.</li>
+                  </ul>
+                </div>
+              </aside>
+            </div>
           </div>
         )}
 
