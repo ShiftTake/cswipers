@@ -1,5 +1,8 @@
 {
   "appId": "com.cardswipers.app",
   "appName": "CardSwipers",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "iosScheme": "https"
+  }
 }

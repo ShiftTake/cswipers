@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getAnalytics, isSupported } from 'firebase/analytics';
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { initializeFirestore, memoryLocalCache, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
+import { getAuth, indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -15,15 +16,37 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = initializeFirestore(app, {
-  // Improves reliability on constrained networks/proxies where WebChannel streams get aborted.
-  experimentalAutoDetectLongPolling: true,
-  useFetchStreams: false,
-  localCache: persistentLocalCache({
-    tabManager: persistentSingleTabManager()
-  })
-});
-const auth = getAuth(app);
+const isNativeApp = Capacitor.isNativePlatform();
+
+const db = initializeFirestore(
+  app,
+  isNativeApp
+    ? {
+        // Native webviews are more stable with in-memory cache and forced long polling.
+        experimentalForceLongPolling: true,
+        useFetchStreams: false,
+        localCache: memoryLocalCache()
+      }
+    : {
+        // Improves reliability on constrained networks/proxies where WebChannel streams get aborted.
+        experimentalAutoDetectLongPolling: true,
+        useFetchStreams: false,
+        localCache: persistentLocalCache({
+          tabManager: persistentSingleTabManager()
+        })
+      }
+);
+
+let auth;
+try {
+  // Explicit auth initialization is more predictable in embedded webviews (Capacitor iOS/Android).
+  auth = initializeAuth(app, {
+    persistence: indexedDBLocalPersistence
+  });
+} catch {
+  auth = getAuth(app);
+}
+
 const storage = getStorage(app);
 
 let analytics = null;
