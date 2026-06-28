@@ -440,11 +440,17 @@ export default function CardSwipersLanding() {
     estimatedValue: '',
     lookingFor: ''
   });
-  const [postImageFile, setPostImageFile] = useState(null);
-  const [postImagePreview, setPostImagePreview] = useState('');
   const [postImageError, setPostImageError] = useState('');
   const [isPostingCard, setIsPostingCard] = useState(false);
-  const postImageInputRef = useRef(null);
+  const [postComposerStep, setPostComposerStep] = useState(1);
+  const [postFrontImageFile, setPostFrontImageFile] = useState(null);
+  const [postBackImageFile, setPostBackImageFile] = useState(null);
+  const [postFrontImagePreview, setPostFrontImagePreview] = useState('');
+  const [postBackImagePreview, setPostBackImagePreview] = useState('');
+  const postFrontImageInputRef = useRef(null);
+  const postBackImageInputRef = useRef(null);
+  const [activeCardImageSide, setActiveCardImageSide] = useState('front');
+  const cardImageTouchStartXRef = useRef(0);
   const [chatDraft, setChatDraft] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
@@ -491,7 +497,8 @@ export default function CardSwipersLanding() {
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
   const postProgressChecks = [
-    Boolean(postImagePreview),
+    Boolean(postFrontImagePreview),
+    Boolean(postBackImagePreview),
     Boolean(newCard.title.trim()),
     Boolean(newCard.brand.trim()),
     Boolean((newCard.estimatedValue || '').trim()),
@@ -503,6 +510,16 @@ export default function CardSwipersLanding() {
     newCard.gradingCompany === 'Raw (Ungraded)'
       ? `Raw - ${newCard.rawCondition}`
       : `${newCard.gradingCompany} ${newCard.grade}`;
+
+  const currentCardImages = [
+    currentCard?.imageFrontUrl || currentCard?.imageUrl || '',
+    currentCard?.imageBackUrl || currentCard?.imageUrl || ''
+  ].filter(Boolean);
+  const canToggleCurrentCardImage = currentCardImages.length > 1;
+  const activeCardImageUrl =
+    activeCardImageSide === 'back'
+      ? currentCard?.imageBackUrl || currentCard?.imageUrl || ''
+      : currentCard?.imageFrontUrl || currentCard?.imageUrl || '';
 
   const addNotification = useCallback((payload) => {
     const notification = {
@@ -960,7 +977,9 @@ export default function CardSwipersLanding() {
                 name: data.name,
                 brand: data.brand,
                 condition: data.condition,
-                imageUrl: data.imageUrl || '',
+                imageFrontUrl: data.imageFrontUrl || data.imageUrl || '',
+                imageBackUrl: data.imageBackUrl || data.imageUrl || '',
+                imageUrl: data.imageFrontUrl || data.imageUrl || '',
                 title: data.name,
                 category: data.category || data.brand || 'Cards',
                 tradeValue: data.tradeValue || data.value || '$0',
@@ -1212,6 +1231,10 @@ export default function CardSwipersLanding() {
     return () => unsubscribe();
   }, [activeChat, firebaseUser]);
 
+  useEffect(() => {
+    setActiveCardImageSide('front');
+  }, [currentCard?.id]);
+
   const advanceDeck = () => {
     window.setTimeout(() => {
       setSwipeFeedback(null);
@@ -1368,29 +1391,34 @@ export default function CardSwipersLanding() {
   const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.title || isPostingCard) return;
+    if (!postFrontImageFile || !postBackImageFile) {
+      setPostImageError('Please add both front and back photos before publishing.');
+      return;
+    }
 
     setPostImageError('');
     setIsPostingCard(true);
 
     let createdId = null;
-    let imageUrl = '';
+    let frontImageUrl = '';
+    let backImageUrl = '';
     let didPersist = false;
     const isRawCard = newCard.gradingCompany === 'Raw (Ungraded)';
     const conditionLabel = isRawCard
       ? `Raw - ${newCard.rawCondition}`
       : `${newCard.gradingCompany} ${newCard.grade}`;
 
+    const uploadCardImage = async (file, label) => {
+      const optimizedFile = await compressImageFile(file);
+      const safeFileName = optimizedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const imageRef = ref(storage, `cards/${firebaseUser?.uid || 'anonymous'}/${Date.now()}-${label}-${safeFileName}`);
+      await withTimeout(uploadBytes(imageRef, optimizedFile), 12000, `${label} image upload timed out`);
+      return withTimeout(getDownloadURL(imageRef), 12000, `${label} image URL fetch timed out`);
+    };
+
     try {
-      if (postImageFile) {
-        const optimizedFile = await compressImageFile(postImageFile);
-        const safeFileName = optimizedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const imageRef = ref(
-          storage,
-          `cards/${firebaseUser?.uid || 'anonymous'}/${Date.now()}-${safeFileName}`
-        );
-        await withTimeout(uploadBytes(imageRef, optimizedFile), 12000, 'Image upload timed out');
-        imageUrl = await withTimeout(getDownloadURL(imageRef), 12000, 'Image URL fetch timed out');
-      }
+      frontImageUrl = await uploadCardImage(postFrontImageFile, 'front');
+      backImageUrl = await uploadCardImage(postBackImageFile, 'back');
 
       const docRef = await withTimeout(
         addDoc(collection(db, 'cards'), {
@@ -1410,7 +1438,9 @@ export default function CardSwipersLanding() {
           .split(',')
           .map((value) => value.trim())
           .filter(Boolean),
-        imageUrl,
+        imageFrontUrl: frontImageUrl,
+        imageBackUrl: backImageUrl,
+        imageUrl: frontImageUrl,
         createdAt: serverTimestamp()
         }),
         12000,
@@ -1440,7 +1470,9 @@ export default function CardSwipersLanding() {
       brand: newCard.brand,
       category: newCard.brand,
       condition: conditionLabel,
-      imageUrl,
+      imageFrontUrl: frontImageUrl,
+      imageBackUrl: backImageUrl,
+      imageUrl: frontImageUrl,
       owner: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
       ownerUid: firebaseUser?.uid || null,
       tradeValue: newCard.estimatedValue || '$0',
@@ -1471,7 +1503,7 @@ export default function CardSwipersLanding() {
         name: newCard.title,
         brand: newCard.brand,
         condition: conditionLabel,
-        imageUrl
+        imageUrl: frontImageUrl
       },
       ...prevCollection
     ]);
@@ -1485,12 +1517,15 @@ export default function CardSwipersLanding() {
       estimatedValue: '',
       lookingFor: ''
     });
-    setPostImageFile(null);
-    setPostImagePreview('');
+    setPostComposerStep(1);
+    setPostFrontImageFile(null);
+    setPostBackImageFile(null);
+    setPostFrontImagePreview('');
+    setPostBackImagePreview('');
     setCurrentTab('swipe');
   };
 
-  const handlePostImageChange = (e) => {
+  const handlePostImageChange = (side, e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -1506,11 +1541,21 @@ export default function CardSwipersLanding() {
 
     const reader = new FileReader();
     reader.onload = () => {
-      setPostImagePreview(String(reader.result || ''));
+      const preview = String(reader.result || '');
+      if (side === 'front') {
+        setPostFrontImagePreview(preview);
+        setPostFrontImageFile(file);
+      } else {
+        setPostBackImagePreview(preview);
+        setPostBackImageFile(file);
+      }
       setPostImageError('');
     };
     reader.readAsDataURL(file);
-    setPostImageFile(file);
+
+    if (side === 'front') {
+      setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
+    }
   };
 
   const toggleLookingForOption = (option) => {
@@ -1874,7 +1919,7 @@ export default function CardSwipersLanding() {
         flaggedByUid: firebaseUser.uid,
         flaggedByEmail: firebaseUser.email,
         reason: flagReason,
-        cardImageUrl: currentCard.imageUrl,
+        cardImageUrl: currentCard.imageFrontUrl || currentCard.imageUrl,
         flaggedAt: serverTimestamp(),
         status: 'pending'
       });
@@ -2647,16 +2692,55 @@ export default function CardSwipersLanding() {
                       <div className={`w-full max-w-[520px] min-h-[520px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`}>
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
-                        <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">Featured Listing</div>
-                        <div className="h-full flex flex-col items-center justify-center px-6 pt-14 pb-8 text-center">
-                          {currentCard.imageUrl ? (
+                        <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
+                          {canToggleCurrentCardImage ? 'Front • Back' : 'Featured Listing'}
+                        </div>
+                        <div
+                          className="h-full flex flex-col items-center justify-center px-6 pt-14 pb-8 text-center"
+                          onTouchStart={(event) => {
+                            cardImageTouchStartXRef.current = event.changedTouches?.[0]?.clientX || 0;
+                          }}
+                          onTouchEnd={(event) => {
+                            if (!canToggleCurrentCardImage) return;
+                            const endX = event.changedTouches?.[0]?.clientX || 0;
+                            const deltaX = endX - cardImageTouchStartXRef.current;
+                            if (Math.abs(deltaX) < 40) return;
+                            setActiveCardImageSide((prev) => {
+                              if (deltaX < 0) return 'back';
+                              return 'front';
+                            });
+                          }}
+                        >
+                          {activeCardImageUrl ? (
                             <img
-                              src={currentCard.imageUrl}
-                              alt={currentCard.title}
+                              src={activeCardImageUrl}
+                              alt={`${currentCard.title} ${activeCardImageSide}`}
                               className="max-h-[340px] w-full max-w-[340px] object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]"
                             />
                           ) : (
                             <div className="text-[11rem] leading-none drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]">{currentCard.imageEmoji}</div>
+                          )}
+                          {canToggleCurrentCardImage && (
+                            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-2 py-1">
+                              <button
+                                type="button"
+                                onClick={() => setActiveCardImageSide('front')}
+                                className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                                  activeCardImageSide === 'front' ? 'bg-white text-black' : 'text-white/80 hover:text-white'
+                                }`}
+                              >
+                                Front
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setActiveCardImageSide('back')}
+                                className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                                  activeCardImageSide === 'back' ? 'bg-white text-black' : 'text-white/80 hover:text-white'
+                                }`}
+                              >
+                                Back
+                              </button>
+                            </div>
                           )}
                           <div className="mt-8 space-y-2">
                             <p className="text-[11px] uppercase tracking-[0.28em] text-white/45 font-semibold">{currentCard.category}</p>
@@ -2806,7 +2890,7 @@ export default function CardSwipersLanding() {
                   <p className="mt-2 text-sm text-white/65">Show off your best card and get matched with active traders fast.</p>
                 </div>
                 <div className="min-w-[220px] grow sm:grow-0">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Step 1 of 2</p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Step {postComposerStep} of 2</p>
                   <div className="mt-2 h-2.5 rounded-full bg-white/10 overflow-hidden">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-[#E11D48] to-[#FB7185] transition-all duration-500"
@@ -2821,43 +2905,102 @@ export default function CardSwipersLanding() {
             <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-6 items-start">
               <form onSubmit={handlePostCard} className="space-y-5 rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)]">
                 <input
-                  ref={postImageInputRef}
+                  ref={postFrontImageInputRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={handlePostImageChange}
+                  onChange={(event) => handlePostImageChange('front', event)}
+                  className="hidden"
+                />
+                <input
+                  ref={postBackImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => handlePostImageChange('back', event)}
                   className="hidden"
                 />
 
-                <button
-                  type="button"
-                  onClick={() => postImageInputRef.current?.click()}
-                  className="w-full rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
-                >
-                  <div className="rounded-[14px] overflow-hidden min-h-[230px] bg-[#0A0D13] flex items-center justify-center relative group">
-                    {postImagePreview ? (
-                      <img
-                        src={postImagePreview}
-                        alt="Card preview"
-                        className="w-full h-[260px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                      />
+                <div className="space-y-3">
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => postFrontImageInputRef.current?.click()}
+                      className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
+                    >
+                      <div className="rounded-[14px] overflow-hidden min-h-[170px] bg-[#0A0D13] flex items-center justify-center relative group">
+                        {postFrontImagePreview ? (
+                          <img
+                            src={postFrontImagePreview}
+                            alt="Front card preview"
+                            className="w-full h-[190px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <div className="text-center px-4 py-8">
+                            <p className="text-3xl">📷</p>
+                            <p className="mt-2 text-sm font-bold text-white">Take Front Photo</p>
+                            <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
+                          </div>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
+                          <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{postFrontImagePreview ? '✓ Front Captured' : 'Front of Card'}</p>
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => postBackImageInputRef.current?.click()}
+                      className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
+                    >
+                      <div className="rounded-[14px] overflow-hidden min-h-[170px] bg-[#0A0D13] flex items-center justify-center relative group">
+                        {postBackImagePreview ? (
+                          <img
+                            src={postBackImagePreview}
+                            alt="Back card preview"
+                            className="w-full h-[190px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <div className="text-center px-4 py-8">
+                            <p className="text-3xl">📷</p>
+                            <p className="mt-2 text-sm font-bold text-white">Take Back Photo</p>
+                            <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
+                          </div>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
+                          <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{postBackImagePreview ? '✓ Back Captured' : 'Back of Card'}</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#0D1117] px-4 py-3">
+                    <p className="text-xs text-white/70">Step {postComposerStep} of 2: {postComposerStep === 1 ? 'Capture photos' : 'Enter details manually'}</p>
+                    {postComposerStep === 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => setPostComposerStep(2)}
+                        disabled={!postFrontImagePreview || !postBackImagePreview}
+                        className="px-4 py-2 rounded-full text-xs font-semibold bg-[#E11D48] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Continue
+                      </button>
                     ) : (
-                      <div className="text-center px-4 py-10">
-                        <p className="text-4xl">📷</p>
-                        <p className="mt-3 text-base font-bold text-white">Tap to Upload Card</p>
-                        <p className="mt-1 text-xs text-white/55 tracking-wide">PNG JPG HEIC</p>
-                      </div>
-                    )}
-                    {postImagePreview && (
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-4 py-3 text-left">
-                        <p className="text-xs uppercase tracking-[0.22em] text-white/60">Photo Ready</p>
-                        <p className="text-sm text-white font-semibold">Tap to replace image</p>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPostComposerStep(1)}
+                        className="px-4 py-2 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20"
+                      >
+                        Edit Photos
+                      </button>
                     )}
                   </div>
-                </button>
+                </div>
 
                 {postImageError && <p className="text-xs text-red-300">{postImageError}</p>}
+
+                {postComposerStep === 2 && (
+                  <>
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🪪 Card Name</label>
@@ -2996,6 +3139,8 @@ export default function CardSwipersLanding() {
                 >
                   {isPostingCard ? 'Publishing...' : 'Publish Asset to Feed'}
                 </button>
+                  </>
+                )}
               </form>
 
               <aside className="rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-4">
@@ -3006,12 +3151,12 @@ export default function CardSwipersLanding() {
 
                 <div className="rounded-[20px] bg-[#0D1117] border border-white/10 overflow-hidden">
                   <div className="h-52 bg-black/40 flex items-center justify-center relative">
-                    {postImagePreview ? (
-                      <img src={postImagePreview} alt="Live card preview" className="w-full h-full object-cover" />
+                    {postFrontImagePreview ? (
+                      <img src={postFrontImagePreview} alt="Live card preview" className="w-full h-full object-cover" />
                     ) : (
                       <div className="text-center">
                         <p className="text-3xl">🃏</p>
-                        <p className="text-xs text-white/55 mt-2">Upload image to preview</p>
+                        <p className="text-xs text-white/55 mt-2">Capture front photo to preview</p>
                       </div>
                     )}
                   </div>
@@ -3028,6 +3173,7 @@ export default function CardSwipersLanding() {
                       </span>
                     </div>
                     <p className="text-xs text-white/65">{previewConditionLabel}</p>
+                    <p className="text-[11px] text-white/55">{postBackImagePreview ? 'Front + Back ready for swipe viewers' : 'Add a back photo for full listing quality'}</p>
                   </div>
                 </div>
 
