@@ -6,7 +6,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "assets:generate": "npx capacitor-assets generate --ios --android",
+    "ios:sync": "npm run assets:generate && npx cap sync ios",
+    "android:sync": "npm run assets:generate && npx cap sync android",
+    "mobile:sync": "npm run assets:generate && npx cap sync",
+    "ios:testflight:setup": "cd ios/App && bundle install",
+    "ios:testflight:validate": "npm run build && npm run ios:sync && cd ios/App && bundle exec fastlane validate",
+    "ios:testflight": "npm run build && npm run ios:sync && cd ios/App && bundle exec fastlane testflight"
   },
   "repository": {
     "type": "git",
@@ -29,6 +36,7 @@
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.4.1",
     "vite": "^7.1.3"
   }
