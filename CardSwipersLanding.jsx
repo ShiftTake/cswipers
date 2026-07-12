@@ -963,6 +963,13 @@ export default function CardSwipersLanding() {
   }, [currentTab, isAuthenticated, hasAdminAccess]);
 
   useEffect(() => {
+    if (authLoading || isAuthenticated) return;
+    if (currentTab !== 'auth' && currentTab !== 'landing') {
+      setCurrentTab('auth');
+    }
+  }, [authLoading, isAuthenticated, currentTab]);
+
+  useEffect(() => {
     const loadPersistedData = async () => {
       try {
         // Wrap card loading in a timeout to prevent hanging when Firestore is unreachable
@@ -2040,7 +2047,7 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
-      {!isAuthScreen && (
+      {(isAuthenticated || isLandingScreen) && (
       <header className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
