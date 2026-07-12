@@ -412,6 +412,7 @@ export default function CardSwipersLanding() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showStartupSplash, setShowStartupSplash] = useState(isNativeApp);
   const [authError, setAuthError] = useState('');
   const [authInfo, setAuthInfo] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
@@ -484,6 +485,7 @@ export default function CardSwipersLanding() {
   const [flagReason, setFlagReason] = useState('');
   const [flagCardId, setFlagCardId] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const splashStartTimeRef = useRef(Date.now());
   const hasHydratedPendingInterests = useRef(false);
   const hasHydratedMatches = useRef(false);
   const pendingInterestIdsRef = useRef(new Set());
@@ -677,6 +679,28 @@ export default function CardSwipersLanding() {
 
     return () => clearTimeout(timeoutId);
   }, [authLoading]);
+
+  useEffect(() => {
+    if (!isNativeApp) {
+      setShowStartupSplash(false);
+      return;
+    }
+
+    if (authLoading) {
+      const maxWaitId = setTimeout(() => {
+        setShowStartupSplash(false);
+      }, 5000);
+      return () => clearTimeout(maxWaitId);
+    }
+
+    const elapsed = Date.now() - splashStartTimeRef.current;
+    const remaining = Math.max(0, 1200 - elapsed);
+    const hideId = setTimeout(() => {
+      setShowStartupSplash(false);
+    }, remaining);
+
+    return () => clearTimeout(hideId);
+  }, [authLoading, isNativeApp]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1993,6 +2017,19 @@ export default function CardSwipersLanding() {
 
   return (
     <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+      {showStartupSplash && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0B0F19]">
+          <div className="text-center px-6">
+            <div className="mx-auto w-28 h-28 rounded-3xl bg-white/5 border border-white/10 shadow-[0_30px_90px_rgba(0,0,0,0.5)] flex items-center justify-center">
+              <img src={logo} alt="CardSwipers splash" className="w-20 h-20 rounded-2xl object-cover" />
+            </div>
+            <p className="mt-6 text-sm tracking-[0.22em] uppercase text-white/65">CardSwipers</p>
+            <div className="mt-5 w-24 h-1.5 rounded-full bg-white/10 overflow-hidden mx-auto">
+              <div className="h-full w-1/2 bg-gradient-to-r from-[#E11D48] to-[#F59E0B] animate-pulse" />
+            </div>
+          </div>
+        </div>
+      )}
       {isLandingScreen && (
         <>
           <div className="absolute -top-36 -left-20 w-[28rem] h-[28rem] rounded-full bg-[#D72638]/20 blur-3xl pointer-events-none" />
@@ -2003,6 +2040,7 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
+      {!isAuthScreen && (
       <header className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -2070,27 +2108,6 @@ export default function CardSwipersLanding() {
               </>
             )}
 
-            {isAuthScreen && (
-              <div className="flex items-center gap-5">
-                <button
-                  type="button"
-                  onClick={() => setShowHelp(true)}
-                  className="text-sm text-neutral-300 hover:text-white transition-colors"
-                >
-                  Support
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode((prev) => (prev === 'login' ? 'create' : 'login'));
-                    setAuthError('');
-                  }}
-                  className="h-9 px-4 rounded-lg border border-white/15 hover:border-white/30 text-sm text-white/90 hover:text-white transition-colors"
-                >
-                  {authMode === 'login' ? 'Create Account' : 'Log In'}
-                </button>
-              </div>
-            )}
             {isCoreAppScreen && isAuthenticated && (
               <div className="flex items-center gap-2">
                 <button
@@ -2164,6 +2181,7 @@ export default function CardSwipersLanding() {
           </div>
         </div>
       </header>
+      )}
 
       <main className="flex-grow w-full px-4 sm:px-6 lg:px-8 overflow-y-auto">
         <div className="max-w-6xl mx-auto w-full">
@@ -2319,20 +2337,19 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'auth' && (
           <div className="h-full flex flex-col justify-center items-center text-center px-4 py-10">
-            <div className="w-full max-w-[520px] bg-[#171A22]/90 text-white rounded-2xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(0,0,0,0.35)] border border-white/[0.06] backdrop-blur-[20px]">
+            <div className="w-full max-w-[460px] bg-white text-[#111827] rounded-3xl p-7 sm:p-8 shadow-[0_30px_90px_rgba(0,0,0,0.35)] border border-black/5">
               <div className="space-y-2 text-left">
-                <h1 className="text-[42px] leading-[1.04] font-bold tracking-[-0.04em] text-white">
-                  {authMode === 'login' ? 'Welcome back' : 'Create your account'}
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#6B7280] font-semibold">Secure Access</p>
+                <h1 className="text-[34px] leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]">
+                  {authMode === 'login' ? 'Sign in' : 'Create account'}
                 </h1>
-                <p className="text-sm text-[#9CA3AF]">
-                  {authMode === 'login'
-                    ? 'Trade confidently with active collectors, real-time messaging, and secure transaction workflows.'
-                    : 'Join thousands of collectors trading cards with confidence every day.'}
+                <p className="text-sm text-[#6B7280]">
+                  {authMode === 'login' ? 'Enter your credentials to continue.' : 'Set up your account in less than a minute.'}
                 </p>
               </div>
 
               <form onSubmit={handleAuthSubmit} className="mt-6 space-y-3 text-left">
-                <div className="flex items-center gap-5 text-sm pb-1">
+                <div className="inline-flex items-center rounded-xl p-1 bg-[#F3F4F6] border border-[#E5E7EB] text-sm">
                   <button
                     type="button"
                     onClick={() => {
@@ -2341,7 +2358,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${authMode === 'login' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
+                    className={`px-4 py-1.5 rounded-lg transition-colors ${authMode === 'login' ? 'bg-white text-[#111827] font-semibold shadow-sm' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Log In
                   </button>
@@ -2353,7 +2370,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${authMode === 'create' ? 'text-white font-semibold' : 'text-[#9CA3AF] hover:text-white'} transition-colors`}
+                    className={`px-4 py-1.5 rounded-lg transition-colors ${authMode === 'create' ? 'bg-white text-[#111827] font-semibold shadow-sm' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Create Account
                   </button>
@@ -2365,7 +2382,7 @@ export default function CardSwipersLanding() {
                     value={authDisplayName}
                     onChange={(e) => setAuthDisplayName(e.target.value)}
                     placeholder="Display name"
-                    className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
+                    className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
                   />
                 )}
 
@@ -2374,14 +2391,14 @@ export default function CardSwipersLanding() {
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
                   placeholder="Email"
-                  className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
+                  className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
                 />
                 <input
                   type="password"
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   placeholder="Password"
-                  className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
+                  className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
                 />
 
                 {authMode === 'login' && (
@@ -2389,7 +2406,7 @@ export default function CardSwipersLanding() {
                     type="button"
                     onClick={handleForgotPassword}
                     disabled={isSendingReset}
-                    className="text-xs text-[#9CA3AF] hover:text-white underline underline-offset-2 disabled:opacity-60"
+                    className="text-xs text-[#6B7280] hover:text-[#111827] underline underline-offset-2 disabled:opacity-60"
                   >
                     {isSendingReset ? 'Sending reset link...' : 'Forgot Password?'}
                   </button>
@@ -2401,7 +2418,7 @@ export default function CardSwipersLanding() {
                     value={authConfirmPassword}
                     onChange={(e) => setAuthConfirmPassword(e.target.value)}
                     placeholder="Confirm password"
-                    className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-[#9CA3AF] focus:outline-none focus:border-white/20"
+                    className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
                   />
                 )}
 
@@ -2428,7 +2445,7 @@ export default function CardSwipersLanding() {
                   type="submit"
                   disabled={isAuthSubmitting}
                   aria-busy={isAuthSubmitting}
-                  className="w-full h-11 px-6 rounded-xl bg-gradient-to-b from-[#FF3B5C] to-[#DC2626] hover:from-[#ff4a68] hover:to-[#c71f1f] text-white text-sm font-semibold shadow-[0_12px_24px_rgba(255,45,85,0.18)] transition-all"
+                  className="w-full h-11 px-6 rounded-xl bg-[#111827] hover:bg-[#0B0F19] text-white text-sm font-semibold transition-all"
                 >
                   {isAuthSubmitting ? (authMode === 'create' ? 'Creating account...' : 'Logging in...') : authMode === 'create' ? 'Create Account' : 'Log In'}
                 </button>
@@ -2437,13 +2454,13 @@ export default function CardSwipersLanding() {
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={isAuthSubmitting || isGoogleRedirecting}
-                  className="w-full h-11 px-6 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/20 text-white text-sm font-semibold transition-colors disabled:opacity-60"
+                  className="w-full h-11 px-6 rounded-xl bg-white border border-[#D1D5DB] hover:border-[#9CA3AF] text-[#111827] text-sm font-semibold transition-colors disabled:opacity-60"
                 >
                   {isGoogleRedirecting ? 'Opening Google...' : 'Continue with Google'}
                 </button>
 
                 {isNativeApp && (
-                  <p className="text-[11px] leading-5 text-[#9CA3AF]">
+                  <p className="text-[11px] leading-5 text-[#6B7280]">
                     On iPhone, Google sign-in may open Safari to finish authentication and return to the app.
                   </p>
                 )}
