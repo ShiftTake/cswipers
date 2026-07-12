@@ -694,7 +694,7 @@ export default function CardSwipersLanding() {
     }
 
     const elapsed = Date.now() - splashStartTimeRef.current;
-    const remaining = Math.max(0, 1200 - elapsed);
+    const remaining = Math.max(0, 2200 - elapsed);
     const hideId = setTimeout(() => {
       setShowStartupSplash(false);
     }, remaining);
