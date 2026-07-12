@@ -32,7 +32,6 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
-import logo from './IMG_6089.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 
@@ -277,7 +276,44 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
+const ENABLE_PAYMENT_PIPELINE = false;
+const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
+const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
+const MARKETPLACE_FEE_RATE = 0.02;
+const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
+
+const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
+
+const formatMoney = (value) => {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2
+  }).format(Number.isFinite(amount) ? amount : 0);
+};
+
+const formatListingDate = (value) => {
+  if (!value) return 'Listed today';
+  const date = value?.toDate?.() || value;
+  const parsedDate = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(parsedDate.getTime())) return 'Listed today';
+  return `Listed ${parsedDate.toLocaleDateString()}`;
+};
+
+const toDateValue = (value) => {
+  const date = value?.toDate?.() || value;
+  const parsedDate = date instanceof Date ? date : new Date(date || 0);
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+};
+
+const calculateMarketplaceSplit = (grossAmount) => {
+  const gross = Number(grossAmount || 0);
+  const marketplaceFee = Number((gross * MARKETPLACE_FEE_RATE).toFixed(2));
+  const sellerPayout = Number((gross - marketplaceFee).toFixed(2));
+  return { gross, marketplaceFee, sellerPayout };
+};
 
 const ISO_QUICK_OPTIONS = [
   'Baseball',
@@ -439,6 +475,9 @@ export default function CardSwipersLanding() {
     rawCondition: 'Near Mint - Mint',
     grade: '10 Gem Mint',
     estimatedValue: '',
+    buyNowPrice: '',
+    sellerState: '',
+    saleMode: 'trade_and_sale',
     lookingFor: ''
   });
   const [postImageError, setPostImageError] = useState('');
@@ -458,8 +497,11 @@ export default function CardSwipersLanding() {
   const [incomingInterests, setIncomingInterests] = useState([]);
   const [outgoingInterests, setOutgoingInterests] = useState([]);
   const [matches, setMatches] = useState([]);
+  const [purchaseIntents, setPurchaseIntents] = useState([]);
+  const [premiumSubscriptions, setPremiumSubscriptions] = useState([]);
+  const [sellerVerifications, setSellerVerifications] = useState([]);
   const [showInterestModal, setShowInterestModal] = useState(false);
-  const [pendingInterestType, setPendingInterestType] = useState(INTEREST_TYPES[0]);
+  const [pendingInterestType, setPendingInterestType] = useState(MARKETPLACE_ACTION_TYPES[0]);
   const [interestBusy, setInterestBusy] = useState(false);
   const [interestError, setInterestError] = useState('');
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -504,6 +546,8 @@ export default function CardSwipersLanding() {
     Boolean(newCard.title.trim()),
     Boolean(newCard.brand.trim()),
     Boolean((newCard.estimatedValue || '').trim()),
+    Boolean((newCard.buyNowPrice || '').trim()),
+    Boolean((newCard.sellerState || '').trim()),
     Boolean((newCard.lookingFor || '').trim())
   ];
   const postCompletionCount = postProgressChecks.filter(Boolean).length;
@@ -933,6 +977,57 @@ export default function CardSwipersLanding() {
   }, [isAdmin, currentTab]);
 
   useEffect(() => {
+    if (!isAdmin || currentTab !== 'admin') {
+      setPurchaseIntents([]);
+      setPremiumSubscriptions([]);
+      setSellerVerifications([]);
+      return;
+    }
+
+    const purchaseQuery = query(collection(db, 'purchaseIntents'), limit(1000));
+    const subscriptionQuery = query(collection(db, 'subscriptions'), limit(500));
+    const verificationQuery = query(collection(db, 'sellerVerifications'), limit(500));
+
+    let unsubPurchases = () => {};
+    let unsubSubscriptions = () => {};
+    let unsubVerifications = () => {};
+
+    const loadMarketplaceLedger = async () => {
+      try {
+        const [purchaseSnapshot, subscriptionSnapshot, verificationSnapshot] = await Promise.all([
+          getDocs(purchaseQuery),
+          getDocs(subscriptionQuery),
+          getDocs(verificationQuery)
+        ]);
+
+        setPurchaseIntents(purchaseSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+        setPremiumSubscriptions(subscriptionSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+        setSellerVerifications(verificationSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      } catch (error) {
+        console.error('Failed loading marketplace ledger for admin:', error);
+      }
+
+      unsubPurchases = onSnapshot(purchaseQuery, (snapshot) => {
+        setPurchaseIntents(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      });
+      unsubSubscriptions = onSnapshot(subscriptionQuery, (snapshot) => {
+        setPremiumSubscriptions(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      });
+      unsubVerifications = onSnapshot(verificationQuery, (snapshot) => {
+        setSellerVerifications(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      });
+    };
+
+    loadMarketplaceLedger();
+
+    return () => {
+      unsubPurchases();
+      unsubSubscriptions();
+      unsubVerifications();
+    };
+  }, [isAdmin, currentTab]);
+
+  useEffect(() => {
     if (currentTab === 'admin' && !hasAdminAccess) {
       setCurrentTab(isAuthenticated ? 'swipe' : (isNativeApp ? 'auth' : 'landing'));
     }
@@ -1026,6 +1121,13 @@ export default function CardSwipersLanding() {
                 memberSince: data.memberSince || '2026',
                 responseTime: data.responseTime || 'Replies same day',
                 completedTrades: data.completedTrades || 0,
+                  listedAt: data.listedAt || data.createdAt || null,
+                  listedAtLabel: formatListingDate(data.listedAt || data.createdAt || null),
+                  buyNowPrice: data.buyNowPrice || data.tradeValue || data.value || '$0',
+                  saleMode: data.saleMode || 'trade_and_sale',
+                  sellerState: normalizeStateCode(data.sellerState || ''),
+                  sellerVerificationStatus: data.sellerVerificationStatus || 'unverified',
+                  sellerVerified: Boolean(data.sellerVerified || data.sellerVerificationStatus === 'verified'),
                 collection: []
               };
             })
@@ -1319,10 +1421,52 @@ export default function CardSwipersLanding() {
       return;
     }
 
-    setPendingInterestType(INTEREST_TYPES[0]);
+    setPendingInterestType(MARKETPLACE_ACTION_TYPES[0]);
     setInterestError('');
     setShowInterestModal(true);
     setSwipeFeedback(null);
+  };
+
+  const handleInstantPurchase = async (card = currentCard, options = {}) => {
+    if (!card || !firebaseUser) return;
+    const shouldAdvanceDeck = Boolean(options?.advanceAfterPurchase);
+
+    const grossAmount = parseDollarValue(card.buyNowPrice || card.tradeValue || card.value);
+    const { marketplaceFee, sellerPayout } = calculateMarketplaceSplit(grossAmount);
+    const taxState = normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || card.sellerState || '');
+    const escrowAmount = Number((grossAmount - marketplaceFee).toFixed(2));
+
+    await addDoc(collection(db, 'purchaseIntents'), {
+      buyerUid: firebaseUser.uid,
+      buyerName: firebaseUser.displayName || firebaseUser.email || 'Buyer',
+      sellerUid: card.ownerUid || null,
+      sellerName: card.owner || 'Collector',
+      cardId: card.id,
+      cardTitle: card.title,
+      cardBrand: card.brand || '',
+      listingPrice: grossAmount,
+      marketplaceFeeRate: MARKETPLACE_FEE_RATE,
+      marketplaceFeeAmount: marketplaceFee,
+      sellerPayoutAmount: sellerPayout,
+      taxState,
+      taxStatus: 'needs-stripe-tax',
+      taxAmount: 0,
+      escrowAmount,
+      escrowStatus: 'pending',
+      status: 'requires_payment',
+      paymentProvider: 'stripe',
+      saleMode: 'instant_purchase',
+      listedAt: card.listedAt || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    if (shouldAdvanceDeck) {
+      const nextDeck = deck.filter((listing) => listing.id !== card.id);
+      setDeck(nextDeck);
+      setSwipeFeedback('like');
+      advanceDeck();
+    }
   };
 
   const handleSendInterest = async () => {
@@ -1337,6 +1481,12 @@ export default function CardSwipersLanding() {
     setSwipeFeedback('like');
 
     try {
+      if (pendingInterestType === INSTANT_PURCHASE_ACTION) {
+        await withTimeout(handleInstantPurchase(currentCard), 12000, 'Instant purchase timed out');
+        advanceDeck();
+        return;
+      }
+
       await withTimeout(
         addDoc(collection(db, 'interests'), {
         fromUserId: firebaseUser.uid,
@@ -1469,6 +1619,13 @@ export default function CardSwipersLanding() {
           .split(',')
           .map((value) => value.trim())
           .filter(Boolean),
+        buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
+        saleMode: newCard.saleMode || 'trade_and_sale',
+        sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
+        sellerVerified: currentUserProfile?.verificationStatus === 'verified',
+        sellerVerificationStatus: currentUserProfile?.verificationStatus || 'unverified',
+        verifiedSellerBadge: currentUserProfile?.verificationStatus === 'verified',
+        listedAt: serverTimestamp(),
         imageFrontUrl: frontImageUrl,
         imageBackUrl: backImageUrl,
         imageUrl: frontImageUrl,
@@ -1509,6 +1666,14 @@ export default function CardSwipersLanding() {
       tradeValue: newCard.estimatedValue || '$0',
       avgMarketValue: newCard.estimatedValue || '$0',
       recentComps: newCard.estimatedValue || '$0',
+      buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
+      saleMode: newCard.saleMode || 'trade_and_sale',
+      sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
+      sellerVerified: currentUserProfile?.verificationStatus === 'verified',
+      sellerVerificationStatus: currentUserProfile?.verificationStatus || 'unverified',
+      verifiedSellerBadge: currentUserProfile?.verificationStatus === 'verified',
+      listedAt: new Date(),
+      listedAtLabel: `Listed ${new Date().toLocaleDateString()}`,
       detailLine: conditionLabel,
       cardColor: 'from-blue-600/20 to-blue-500/20',
       borderColor: 'border-blue-500/40',
@@ -1546,6 +1711,9 @@ export default function CardSwipersLanding() {
       rawCondition: 'Near Mint - Mint',
       grade: '10 Gem Mint',
       estimatedValue: '',
+      buyNowPrice: '',
+      sellerState: '',
+      saleMode: 'trade_and_sale',
       lookingFor: ''
     });
     setPostComposerStep(1);
@@ -2022,15 +2190,72 @@ export default function CardSwipersLanding() {
     return haystack.includes(queryText);
   });
 
+  const currentDate = new Date();
+  const isSameMonth = (value) => {
+    const date = toDateValue(value);
+    return Boolean(date) && date.getMonth() === currentDate.getMonth() && date.getFullYear() === currentDate.getFullYear();
+  };
+  const isSameYear = (value) => {
+    const date = toDateValue(value);
+    return Boolean(date) && date.getFullYear() === currentDate.getFullYear();
+  };
+
+  const completedSaleStatuses = new Set(['released', 'completed', 'fulfilled']);
+  const escrowStatuses = new Set(['pending', 'requires_payment', 'in_escrow', 'held']);
+  const adminPurchaseRecords = purchaseIntents || [];
+  const completedPurchases = adminPurchaseRecords.filter((record) => completedSaleStatuses.has(String(record.status || '').toLowerCase()) || String(record.escrowStatus || '').toLowerCase() === 'released');
+  const monthlyCompletedPurchases = completedPurchases.filter((record) => isSameMonth(record.createdAt || record.updatedAt || record.listedAt));
+  const ytdCompletedPurchases = completedPurchases.filter((record) => isSameYear(record.createdAt || record.updatedAt || record.listedAt));
+  const currentEscrowPurchases = adminPurchaseRecords.filter((record) => escrowStatuses.has(String(record.escrowStatus || record.status || '').toLowerCase()));
+
+  const marketplaceTotals = completedPurchases.reduce(
+    (totals, record) => {
+      const grossAmount = parseDollarValue(record.listingPrice || record.grossAmount || record.totalAmount || 0);
+      const marketplaceFee = parseDollarValue(record.marketplaceFeeAmount || (grossAmount * MARKETPLACE_FEE_RATE).toFixed(2));
+      const sellerPayout = parseDollarValue(record.sellerPayoutAmount || (grossAmount - marketplaceFee).toFixed(2));
+      return {
+        totalSales: totals.totalSales + grossAmount,
+        monthlySales: totals.monthlySales + (isSameMonth(record.createdAt || record.updatedAt || record.listedAt) ? grossAmount : 0),
+        ytdSales: totals.ytdSales + (isSameYear(record.createdAt || record.updatedAt || record.listedAt) ? grossAmount : 0),
+        platformFees: totals.platformFees + marketplaceFee,
+        sellerPayouts: totals.sellerPayouts + sellerPayout
+      };
+    },
+    { totalSales: 0, monthlySales: 0, ytdSales: 0, platformFees: 0, sellerPayouts: 0 }
+  );
+
+  const premiumMRR = premiumSubscriptions.reduce((total, subscription) => {
+    const status = String(subscription.status || '').toLowerCase();
+    if (status && status !== 'active') return total;
+    return total + parseDollarValue(subscription.amount || VERIFIED_SELLER_SUBSCRIPTION_PRICE);
+  }, 0);
+
+  const verifiedSellerCount = sellerVerifications.filter((record) => String(record.status || '').toLowerCase() === 'verified').length;
+  const marketplaceStatsByUser = adminPurchaseRecords.reduce((accumulator, record) => {
+    const sellerUid = record.sellerUid || record.ownerUid || record.userId;
+    if (!sellerUid) return accumulator;
+    const grossAmount = parseDollarValue(record.listingPrice || record.grossAmount || record.totalAmount || 0);
+    const marketplaceFee = parseDollarValue(record.marketplaceFeeAmount || (grossAmount * MARKETPLACE_FEE_RATE).toFixed(2));
+    const escrowAmount = parseDollarValue(record.escrowAmount || grossAmount);
+    const currentEntry = accumulator[sellerUid] || { salesTotal: 0, escrowTotal: 0, orderCount: 0 };
+    const saleClosed = completedSaleStatuses.has(String(record.status || '').toLowerCase()) || String(record.escrowStatus || '').toLowerCase() === 'released';
+    accumulator[sellerUid] = {
+      salesTotal: currentEntry.salesTotal + (saleClosed ? grossAmount : 0),
+      escrowTotal: currentEntry.escrowTotal + (escrowStatuses.has(String(record.escrowStatus || record.status || '').toLowerCase()) ? escrowAmount : 0),
+      orderCount: currentEntry.orderCount + 1,
+      feeTotal: (currentEntry.feeTotal || 0) + marketplaceFee
+    };
+    return accumulator;
+  }, {});
+
   return (
     <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0B0F19]">
           <div className="text-center px-6">
-            <div className="mx-auto w-28 h-28 rounded-3xl bg-white/5 border border-white/10 shadow-[0_30px_90px_rgba(0,0,0,0.5)] flex items-center justify-center">
-              <img src={logo} alt="CardSwipers splash" className="w-20 h-20 rounded-2xl object-cover" />
+            <div className="mx-auto w-[280px] sm:w-[320px] rounded-3xl bg-white/5 border border-white/10 shadow-[0_30px_90px_rgba(0,0,0,0.5)] overflow-hidden">
+              <img src={heroCards} alt="CardSwipers splash" className="w-full h-auto object-cover" />
             </div>
-            <p className="mt-6 text-sm tracking-[0.22em] uppercase text-white/65">CardSwipers</p>
             <div className="mt-5 w-24 h-1.5 rounded-full bg-white/10 overflow-hidden mx-auto">
               <div className="h-full w-1/2 bg-gradient-to-r from-[#E11D48] to-[#F59E0B] animate-pulse" />
             </div>
@@ -2049,16 +2274,7 @@ export default function CardSwipersLanding() {
 
       {(isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <img src={logo} alt="CardSwipers logo" className="w-9 h-9 rounded-lg shadow-md shadow-red-600/30 object-cover" />
-            <span
-              className="text-[1.72rem] font-extrabold tracking-[0.005em] italic text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.35)]"
-              style={{ transform: 'skewX(-7deg)', fontFamily: '"Montserrat", sans-serif' }}
-            >
-              CardSwipers
-            </span>
-          </div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-end">
 
           <div className="flex items-center">
             {isLandingScreen && (
@@ -2346,7 +2562,6 @@ export default function CardSwipersLanding() {
           <div className="h-full flex flex-col justify-center items-center text-center px-4 py-10">
             <div className="w-full max-w-[460px] bg-white text-[#111827] rounded-3xl p-7 sm:p-8 shadow-[0_30px_90px_rgba(0,0,0,0.35)] border border-black/5">
               <div className="space-y-2 text-left">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#6B7280] font-semibold">Secure Access</p>
                 <h1 className="text-[34px] leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]">
                   {authMode === 'login' ? 'Sign in' : 'Create account'}
                 </h1>
@@ -2522,6 +2737,13 @@ export default function CardSwipersLanding() {
             firebaseUser={firebaseUser}
             adminActionUserId={adminActionUserId}
             handleToggleUserStatus={handleToggleUserStatus}
+            marketplaceTotals={marketplaceTotals}
+            premiumMRR={premiumMRR}
+            verifiedSellerCount={verifiedSellerCount}
+            currentEscrowTotal={currentEscrowPurchases.reduce((total, record) => total + parseDollarValue(record.escrowAmount || record.listingPrice || record.grossAmount || 0), 0)}
+            marketplaceStatsByUser={marketplaceStatsByUser}
+            sellerVerifications={sellerVerifications}
+            premiumSubscriptions={premiumSubscriptions}
           />
         )}
 
@@ -2701,6 +2923,11 @@ export default function CardSwipersLanding() {
                         <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 uppercase tracking-wider">
                           Active Listing
                         </span>
+                        {currentCard.sellerVerified && (
+                          <span className="bg-emerald-500/20 text-emerald-200 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-400/30 uppercase tracking-wider">
+                            Verified Seller
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
@@ -2779,10 +3006,12 @@ export default function CardSwipersLanding() {
                         <div className="space-y-2 min-w-0">
                           <h2 className="text-[2rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
                           <p className="text-sm text-white/70 font-medium">{currentCard.detailLine}</p>
+                          <p className="text-xs text-white/55">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Listed at</p>
                           <p className="text-2xl font-bold text-white">{currentCard.tradeValue}</p>
+                          <p className="text-[11px] text-white/50 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>
                         </div>
                       </div>
 
@@ -2799,7 +3028,7 @@ export default function CardSwipersLanding() {
                     </div>
                   </div>
 
-                  <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="grid sm:grid-cols-4 gap-3">
                     <button
                       onClick={() => handleSwipe('pass')}
                       className="min-h-[68px] rounded-2xl bg-white/[0.04] border border-white/10 text-white shadow-lg hover:border-white/20 hover:bg-white/[0.06] transition-all px-4 py-3 text-left"
@@ -2839,10 +3068,25 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
                     </button>
+                    {ENABLE_PAYMENT_PIPELINE && (
+                      <button
+                        onClick={() => handleInstantPurchase(currentCard, { advanceAfterPurchase: true })}
+                        className="min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-4 py-3 text-left"
+                        type="button"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="w-10 h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white font-black">$</span>
+                          <div>
+                            <p className="font-semibold">Buy Now</p>
+                            <p className="text-xs text-white/75">{currentCard.buyNowPrice || currentCard.tradeValue}</p>
+                          </div>
+                        </div>
+                      </button>
+                    )}
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/65">
-                    Pass hides this listing for 30 days. Interested sends a trade intent request to the owner. Match chat opens only after owner acceptance.
+                    Pass hides this listing for 30 days. Interested opens negotiation.
                   </div>
                 </div>
 
@@ -3117,6 +3361,56 @@ export default function CardSwipersLanding() {
                       className="w-full bg-transparent text-base font-semibold focus:outline-none"
                     />
                     <span className="text-[11px] uppercase tracking-[0.16em] text-white/45">USD</span>
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">💸 Buy Now Price</label>
+                    <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
+                      <span className="text-white/65 font-semibold">$</span>
+                      <input
+                        type="text"
+                        placeholder={newCard.estimatedValue || '250'}
+                        value={newCard.buyNowPrice}
+                        onChange={(e) => setNewCard({ ...newCard, buyNowPrice: e.target.value })}
+                        className="w-full bg-transparent text-base font-semibold focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">📍 Seller State</label>
+                    <input
+                      type="text"
+                      placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
+                      value={newCard.sellerState}
+                      onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
+                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🧭 Sale Mode</label>
+                  <div className="grid sm:grid-cols-3 gap-2">
+                    {[
+                      { value: 'trade_only', label: 'Trade Only' },
+                      { value: 'sale_only', label: 'Buy Now Only' },
+                      { value: 'trade_and_sale', label: 'Trade + Sale' }
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setNewCard({ ...newCard, saleMode: option.value })}
+                        className={`px-3 py-3 rounded-[18px] text-xs font-semibold border transition-all ${
+                          newCard.saleMode === option.value
+                            ? 'bg-[#E11D48] border-[#E11D48] text-white shadow-[0_6px_16px_rgba(225,29,72,0.32)]'
+                            : 'bg-[#161C27] border-white/10 text-white/80 hover:border-white/25'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -3527,7 +3821,7 @@ export default function CardSwipersLanding() {
         <div className="fixed inset-0 bg-black/70 z-[65] flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Send Trade Interest</h3>
+              <h3 className="text-lg font-bold">Choose Action</h3>
               <button
                 type="button"
                 onClick={() => setShowInterestModal(false)}
@@ -3536,9 +3830,13 @@ export default function CardSwipersLanding() {
                 Close
               </button>
             </div>
-            <p className="text-sm text-white/75">Choose why you are swiping right on {currentCard.title}.</p>
+            <p className="text-sm text-white/75">
+              {ENABLE_PAYMENT_PIPELINE
+                ? `Choose whether you want to negotiate or buy ${currentCard.title} at the listed price.`
+                : `Choose whether you want to negotiate for ${currentCard.title}.`}
+            </p>
             <div className="grid grid-cols-2 gap-2">
-              {INTEREST_TYPES.map((type) => (
+              {MARKETPLACE_ACTION_TYPES.map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -3555,7 +3853,7 @@ export default function CardSwipersLanding() {
               onClick={handleSendInterest}
               className="w-full py-3 rounded-xl bg-[#E50914] hover:bg-red-700 font-semibold text-sm disabled:opacity-60"
             >
-              {interestBusy ? 'Sending...' : 'Send Interest'}
+              {interestBusy ? 'Submitting...' : pendingInterestType === INSTANT_PURCHASE_ACTION ? 'Start Purchase' : 'Send Trade Request'}
             </button>
             {interestError && <p className="text-xs text-red-300">{interestError}</p>}
           </div>
