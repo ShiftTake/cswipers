@@ -8,12 +8,13 @@
     "preview": "vite preview",
     "test": "echo \"Error: no test specified\" && exit 1",
     "assets:generate": "npx capacitor-assets generate --ios --android",
-    "ios:sync": "npm run assets:generate && npx cap sync ios",
-    "android:sync": "npm run assets:generate && npx cap sync android",
-    "mobile:sync": "npm run assets:generate && npx cap sync",
+    "capacitor:sync:before": "npm run build && npm run assets:generate",
+    "ios:sync": "npx cap sync ios",
+    "android:sync": "npx cap sync android",
+    "mobile:sync": "npx cap sync",
     "ios:testflight:setup": "cd ios/App && bundle install",
-    "ios:testflight:validate": "npm run build && npm run ios:sync && cd ios/App && bundle exec fastlane validate",
-    "ios:testflight": "npm run build && npm run ios:sync && cd ios/App && bundle exec fastlane testflight"
+    "ios:testflight:validate": "npm run ios:sync && cd ios/App && bundle exec fastlane validate",
+    "ios:testflight": "npm run ios:sync && cd ios/App && bundle exec fastlane testflight"
   },
   "repository": {
     "type": "git",
