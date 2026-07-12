@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 import { Capacitor } from '@capacitor/core';
 import { initializeFirestore, memoryLocalCache, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
-import { getAuth, indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
+import { browserLocalPersistence, getAuth, indexedDBLocalPersistence, initializeAuth, setPersistence } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -45,6 +45,12 @@ try {
   });
 } catch {
   auth = getAuth(app);
+}
+
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch(() => {
+    // Keep the current auth instance if persistence fallback cannot be applied.
+  });
 }
 
 const storage = getStorage(app);

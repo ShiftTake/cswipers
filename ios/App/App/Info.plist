@@ -22,6 +22,12 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>CardSwipers uses your camera so you can capture front and back photos of your cards.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CardSwipers needs photo library access so you can upload card photos from your device.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CardSwipers may save processed card photos to your library when you choose to do so.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
