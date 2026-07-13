@@ -32,7 +32,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
-import logo from './IMG_6089.png';
+import authHeroImage from './image (3).png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 
@@ -2561,13 +2561,14 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className={`h-full flex flex-col items-center px-4 pt-20 pb-10 relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFFDFE] via-[#FDECEF] to-[#D90429]' : ''}`}>
+          <div className={`h-full flex flex-col items-center px-4 pt-20 pb-10 relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFFDFE] via-[#FCEEF1] to-[#D90429]' : ''}`}>
             {isNativeApp && (
               <>
-                <div className="absolute -top-28 -left-24 w-[26rem] h-[26rem] rounded-full bg-white/80" />
-                <div className="absolute top-24 right-[-8rem] w-[22rem] h-[22rem] rounded-full bg-[#FCE6EA]/95" />
-                <div className="absolute bottom-[-8rem] left-[-8rem] w-[24rem] h-[24rem] rounded-full bg-[#E60028]" />
-                <img src={logo} alt="CardSwipers mark" className="w-[76px] h-[76px] object-contain relative z-10 mb-10 mt-2 drop-shadow-[0_10px_24px_rgba(230,0,40,0.18)]" />
+                <div className="absolute -top-44 -left-24 w-[28rem] h-[28rem] rounded-full bg-white/95" />
+                <div className="absolute top-16 right-[-9rem] w-[24rem] h-[24rem] rounded-full bg-[#F8E9ED]" />
+                <div className="absolute bottom-[-9rem] left-[-7rem] w-[22rem] h-[22rem] rounded-full bg-[#E60028]" />
+                <div className="absolute bottom-[-10rem] right-[-6rem] w-[20rem] h-[20rem] rounded-full bg-[#EF233C]/90" />
+                <img src={authHeroImage} alt="CardSwipers mark" className="w-[84px] h-[84px] object-contain relative z-10 mb-10 mt-2" />
               </>
             )}
 
@@ -2663,7 +2664,7 @@ export default function CardSwipersLanding() {
                     type="button"
                     onClick={handleForgotPassword}
                     disabled={isSendingReset}
-                    className="text-[34px] text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60"
+                    className="self-start text-xs text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60"
                   >
                     {isSendingReset ? 'Sending reset link...' : 'Forgot Password?'}
                   </button>
