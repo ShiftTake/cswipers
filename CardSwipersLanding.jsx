@@ -32,6 +32,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
+import logo from './IMG_6089.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 
@@ -444,6 +445,7 @@ export default function CardSwipersLanding() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -2559,11 +2561,21 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className="h-full flex flex-col justify-center items-center text-center px-4 py-10">
-            <div className="w-full max-w-[460px] bg-white text-[#111827] rounded-3xl p-7 sm:p-8 shadow-[0_30px_90px_rgba(0,0,0,0.35)] border border-black/5">
-              <div className="space-y-2 text-left">
+          <div className={`h-full flex flex-col items-center px-4 pt-24 pb-10 relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFFDFE] via-[#FDECEF] to-[#D90429]' : ''}`}>
+            {isNativeApp && (
+              <>
+                <div className="absolute -top-28 -left-24 w-[26rem] h-[26rem] rounded-full bg-white/80" />
+                <div className="absolute top-20 right-[-9rem] w-[24rem] h-[24rem] rounded-full bg-[#FCE6EA]/95" />
+                <div className="absolute bottom-[-8rem] left-[-7rem] w-[22rem] h-[22rem] rounded-full bg-[#EF233C]" />
+                <div className="absolute bottom-[-8rem] right-[-6rem] w-[20rem] h-[20rem] rounded-full bg-[#EF233C]/85" />
+                <img src={logo} alt="CardSwipers mark" className="w-20 h-20 object-contain relative z-10 mb-8 mt-2" />
+              </>
+            )}
+
+            <div className={`w-full ${isNativeApp ? 'max-w-[520px]' : 'max-w-[460px]'} bg-white text-[#111827] rounded-3xl p-7 sm:p-8 shadow-[0_30px_90px_rgba(0,0,0,0.22)] border border-black/5 relative z-10`}>
+              <div className="space-y-2 text-center">
                 <h1 className="text-[34px] leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]">
-                  {authMode === 'login' ? 'Sign in' : 'Create account'}
+                  {authMode === 'login' ? 'Sign in' : 'Create Account'}
                 </h1>
                 <p className="text-sm text-[#6B7280]">
                   {authMode === 'login' ? 'Enter your credentials to continue.' : 'Set up your account in less than a minute.'}
@@ -2571,7 +2583,7 @@ export default function CardSwipersLanding() {
               </div>
 
               <form onSubmit={handleAuthSubmit} className="mt-6 space-y-3 text-left">
-                <div className="inline-flex items-center rounded-xl p-1 bg-[#F3F4F6] border border-[#E5E7EB] text-sm">
+                <div className="w-full grid grid-cols-2 rounded-2xl p-1 bg-[#F3F4F6] border border-[#E5E7EB] text-sm">
                   <button
                     type="button"
                     onClick={() => {
@@ -2580,7 +2592,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`px-4 py-1.5 rounded-lg transition-colors ${authMode === 'login' ? 'bg-white text-[#111827] font-semibold shadow-sm' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`h-12 rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Log In
                   </button>
@@ -2592,7 +2604,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`px-4 py-1.5 rounded-lg transition-colors ${authMode === 'create' ? 'bg-white text-[#111827] font-semibold shadow-sm' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`h-12 rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Create Account
                   </button>
@@ -2604,31 +2616,55 @@ export default function CardSwipersLanding() {
                     value={authDisplayName}
                     onChange={(e) => setAuthDisplayName(e.target.value)}
                     placeholder="Display name"
-                    className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
+                    className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40"
                   />
                 )}
 
-                <input
-                  type="email"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  placeholder="Email"
-                  className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
-                />
-                <input
-                  type="password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  placeholder="Password"
-                  className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
-                />
+                <label className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3">
+                  <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-[#E60028]" aria-hidden="true">
+                    <path d="M4 7.5h16v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-9Z" stroke="currentColor" strokeWidth="1.8" />
+                    <path d="m5 8 7 5 7-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <input
+                    type="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="Email"
+                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
+                  />
+                </label>
+
+                <label className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3">
+                  <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-[#E60028]" aria-hidden="true">
+                    <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                    <path d="M8 10V8a4 4 0 1 1 8 0v2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                  <input
+                    type={showAuthPassword ? 'text' : 'password'}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Password"
+                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthPassword((prev) => !prev)}
+                    className="text-[#9CA3AF] hover:text-[#6B7280]"
+                    aria-label={showAuthPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" aria-hidden="true">
+                      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" stroke="currentColor" strokeWidth="1.8" />
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+                    </svg>
+                  </button>
+                </label>
 
                 {authMode === 'login' && (
                   <button
                     type="button"
                     onClick={handleForgotPassword}
                     disabled={isSendingReset}
-                    className="text-xs text-[#6B7280] hover:text-[#111827] underline underline-offset-2 disabled:opacity-60"
+                    className="text-[34px] text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60"
                   >
                     {isSendingReset ? 'Sending reset link...' : 'Forgot Password?'}
                   </button>
@@ -2636,30 +2672,30 @@ export default function CardSwipersLanding() {
 
                 {authMode === 'create' && (
                   <input
-                    type="password"
+                    type={showAuthPassword ? 'text' : 'password'}
                     value={authConfirmPassword}
                     onChange={(e) => setAuthConfirmPassword(e.target.value)}
                     placeholder="Confirm password"
-                    className="w-full px-4 py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#9CA3AF]"
+                    className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40"
                   />
                 )}
 
                 {authError && (
                   <div className="flex items-start gap-2 rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2.5">
-                    <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 mt-0.5 text-red-300 shrink-0" aria-hidden="true">
+                    <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 mt-0.5 text-red-500 shrink-0" aria-hidden="true">
                       <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
                       <path d="M10 6.2v4.8M10 14h.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                     </svg>
-                    <p className="text-xs leading-5 text-red-100">{authError}</p>
+                    <p className="text-xs leading-5 text-red-600">{authError}</p>
                   </div>
                 )}
                 {authInfo && (
                   <div className="flex items-start gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3 py-2.5">
-                    <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 mt-0.5 text-emerald-300 shrink-0" aria-hidden="true">
+                    <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 mt-0.5 text-emerald-600 shrink-0" aria-hidden="true">
                       <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
                       <path d="m7 10.1 2 2 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    <p className="text-xs leading-5 text-emerald-100">{authInfo}</p>
+                    <p className="text-xs leading-5 text-emerald-700">{authInfo}</p>
                   </div>
                 )}
 
@@ -2667,7 +2703,7 @@ export default function CardSwipersLanding() {
                   type="submit"
                   disabled={isAuthSubmitting}
                   aria-busy={isAuthSubmitting}
-                  className="w-full h-11 px-6 rounded-xl bg-[#111827] hover:bg-[#0B0F19] text-white text-sm font-semibold transition-all"
+                  className="w-full h-14 px-6 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white text-lg font-semibold transition-all"
                 >
                   {isAuthSubmitting ? (authMode === 'create' ? 'Creating account...' : 'Logging in...') : authMode === 'create' ? 'Create Account' : 'Log In'}
                 </button>
@@ -2676,8 +2712,9 @@ export default function CardSwipersLanding() {
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={isAuthSubmitting || isGoogleRedirecting}
-                  className="w-full h-11 px-6 rounded-xl bg-white border border-[#D1D5DB] hover:border-[#9CA3AF] text-[#111827] text-sm font-semibold transition-colors disabled:opacity-60"
+                  className="w-full h-14 px-6 rounded-2xl bg-white border border-[#E60028]/65 hover:border-[#E60028] text-[#111827] text-lg font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-3"
                 >
+                  <span className="text-xl font-bold text-[#4285F4]">G</span>
                   {isGoogleRedirecting ? 'Opening Google...' : 'Continue with Google'}
                 </button>
 
@@ -2689,8 +2726,8 @@ export default function CardSwipersLanding() {
               </form>
             </div>
 
-            <div className="text-center pt-5">
-              <p className="text-xs text-[#9CA3AF] mb-2">Need help? Contact help@cardswipers.com</p>
+            <div className={`text-center pt-6 relative z-10 ${isNativeApp ? 'text-white' : ''}`}>
+              <p className={`text-xs mb-2 ${isNativeApp ? 'text-white' : 'text-[#9CA3AF]'}`}>Need help? Contact help@cardswipers.com</p>
               {!isNativeApp && (
                 <button
                   type="button"
@@ -2703,18 +2740,18 @@ export default function CardSwipersLanding() {
               <button
                 type="button"
                 onClick={() => setShowTermsOfService(true)}
-                className="text-[11px] text-[#9CA3AF] hover:text-white underline underline-offset-2 mr-3"
+                className={`text-[11px] underline underline-offset-2 mr-3 ${isNativeApp ? 'text-white/95 hover:text-white' : 'text-[#9CA3AF] hover:text-white'}`}
               >
                 Terms of Service
               </button>
               <button
                 type="button"
                 onClick={() => setShowPrivacyPolicy(true)}
-                className="text-[11px] text-[#9CA3AF] hover:text-white underline underline-offset-2"
+                className={`text-[11px] underline underline-offset-2 ${isNativeApp ? 'text-white/95 hover:text-white' : 'text-[#9CA3AF] hover:text-white'}`}
               >
                 Privacy Policy
               </button>
-              <p className="text-[10px] text-[#9CA3AF] mt-2">© 2026 CardSwipers. All rights reserved.</p>
+              <p className={`text-[10px] mt-2 ${isNativeApp ? 'text-white/95' : 'text-[#9CA3AF]'}`}>© 2026 CardSwipers. All rights reserved.</p>
             </div>
           </div>
         )}
