@@ -1904,19 +1904,6 @@ export default function CardSwipersLanding() {
         );
         const displayName = authDisplayName.trim();
         await withTimeout(updateProfile(credential.user, { displayName }), 10000, 'Updating profile timed out');
-        await withTimeout(
-          setDoc(
-            doc(db, 'users', credential.user.uid),
-            {
-              displayName,
-              email: credential.user.email || normalizedEmail,
-              updatedAt: serverTimestamp()
-            },
-            { merge: true }
-          ),
-          12000,
-          'Saving profile timed out'
-        );
       } else {
         if (signInMethods.includes('google.com')) {
           setAuthError(getSignInMethodMessage(signInMethods, 'login'));
@@ -1971,7 +1958,7 @@ export default function CardSwipersLanding() {
       setCurrentTab(isNativeApp ? 'auth' : 'landing');
       return;
     }
-    if (nextTab === 'admin' && !(isAdmin || import.meta.env.DEV)) {
+    if (nextTab === 'admin' && !canAccessAdmin) {
       setCurrentTab('swipe');
       return;
     }
@@ -2182,7 +2169,7 @@ export default function CardSwipersLanding() {
   const isAuthScreen = currentTab === 'auth';
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
   const showPersistentMobileDock = isNativeApp && !isLandingScreen && !isAuthScreen;
-  const canAccessAdmin = hasAdminAccess;
+  const canAccessAdmin = hasAdminAccess && !isNativeApp;
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
   const deactivatedUsers = adminUsers.filter((user) => user.status === 'deactivated').length;
