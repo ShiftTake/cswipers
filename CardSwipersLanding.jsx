@@ -2604,11 +2604,11 @@ export default function CardSwipersLanding() {
                       'radial-gradient(120% 82% at 12% 6%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%), radial-gradient(95% 74% at 88% 24%, rgba(246,225,232,0.92) 0%, rgba(246,225,232,0) 70%), linear-gradient(162deg, rgba(225,7,46,0) 56%, rgba(225,7,46,0.92) 100%)'
                   }}
                 />
-                <img src={authHeroImage} alt="CardSwipers mark" className="w-[116px] h-[116px] object-contain relative z-10 mb-8 mt-1" />
+                <img src={authHeroImage} alt="CardSwipers mark" className="w-[132px] h-[132px] object-contain relative z-10 mb-7 mt-7" />
               </>
             )}
 
-            <div className={`w-full ${isNativeApp ? 'max-w-[500px]' : 'max-w-[460px]'} bg-white text-[#111827] rounded-[34px] p-7 sm:p-8 shadow-[0_26px_70px_rgba(0,0,0,0.18)] border border-black/5 relative z-10`}>
+            <div className={`w-full ${isNativeApp ? 'max-w-[420px]' : 'max-w-[460px]'} bg-white text-[#111827] rounded-[30px] p-6 sm:p-7 shadow-[0_24px_60px_rgba(0,0,0,0.16)] border border-black/5 relative z-10`}>
               <div className="space-y-2 text-center">
                 <h1 className="text-[34px] leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]">
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
