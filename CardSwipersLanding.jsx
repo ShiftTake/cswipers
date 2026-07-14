@@ -2181,6 +2181,7 @@ export default function CardSwipersLanding() {
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
+  const showPersistentMobileDock = isNativeApp && !isLandingScreen && !isAuthScreen;
   const canAccessAdmin = hasAdminAccess;
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
@@ -2435,7 +2436,9 @@ export default function CardSwipersLanding() {
       </header>
       )}
 
-      <main className="flex-grow w-full px-4 sm:px-6 lg:px-8 overflow-y-auto">
+      <main
+        className={`flex-grow w-full px-4 sm:px-6 lg:px-8 overflow-y-auto ${showPersistentMobileDock ? 'pb-36' : ''}`}
+      >
         <div className="max-w-6xl mx-auto w-full">
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
@@ -4279,8 +4282,11 @@ export default function CardSwipersLanding() {
         </div>
       )}
 
-      {currentTab !== 'landing' && currentTab !== 'auth' && (
-      <footer className="bg-[#111827]/92 backdrop-blur-md border-t border-white/10 py-2 px-4 sticky bottom-0 z-50">
+      {showPersistentMobileDock && (
+      <footer
+        className="bg-[#111827]/95 backdrop-blur-md border-t border-white/10 py-2 px-4 fixed inset-x-0 bottom-0 z-50"
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+      >
         <div className="max-w-6xl mx-auto">
         <nav className="flex justify-around items-center">
           <button
