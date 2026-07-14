@@ -2564,11 +2564,20 @@ export default function CardSwipersLanding() {
           <div className={`h-full flex flex-col items-center px-4 pt-20 pb-10 relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFFDFE] via-[#FCEEF1] to-[#D90429]' : ''}`}>
             {isNativeApp && (
               <>
-                <div className="absolute -top-44 -left-24 w-[28rem] h-[28rem] rounded-full bg-white/95" />
-                <div className="absolute top-16 right-[-9rem] w-[24rem] h-[24rem] rounded-full bg-[#F8E9ED]" />
-                <div className="absolute bottom-[-9rem] left-[-7rem] w-[22rem] h-[22rem] rounded-full bg-[#E60028]" />
-                <div className="absolute bottom-[-10rem] right-[-6rem] w-[20rem] h-[20rem] rounded-full bg-[#EF233C]/90" />
-                <img src={authHeroImage} alt="CardSwipers mark" className="w-[84px] h-[84px] object-contain relative z-10 mb-10 mt-2" />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: 'linear-gradient(180deg, #FFFDFE 0%, #F9EDF1 48%, #DE0730 100%)'
+                  }}
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      'radial-gradient(120% 82% at 12% 6%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%), radial-gradient(95% 74% at 88% 24%, rgba(246,225,232,0.92) 0%, rgba(246,225,232,0) 70%), linear-gradient(162deg, rgba(225,7,46,0) 56%, rgba(225,7,46,0.92) 100%)'
+                  }}
+                />
+                <img src={authHeroImage} alt="CardSwipers mark" className="w-[116px] h-[116px] object-contain relative z-10 mb-8 mt-1" />
               </>
             )}
 
@@ -2712,9 +2721,19 @@ export default function CardSwipersLanding() {
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={isAuthSubmitting || isGoogleRedirecting}
-                  className="w-full h-14 px-6 rounded-2xl bg-white border border-[#E60028]/65 hover:border-[#E60028] text-[#111827] text-lg font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-3"
+                  className="w-full h-14 px-6 rounded-2xl bg-white border border-[#D4D8DE] hover:border-[#BAC0C8] text-[#111827] text-base font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5"
                 >
-                  <span className="text-xl font-bold text-[#4285F4]">G</span>
+                  <span
+                    className="text-[22px] font-bold leading-none"
+                    style={{
+                      background: 'conic-gradient(from 15deg, #4285F4 0deg 95deg, #34A853 95deg 190deg, #FBBC05 190deg 285deg, #EA4335 285deg 360deg)',
+                      WebkitBackgroundClip: 'text',
+                      color: 'transparent'
+                    }}
+                    aria-hidden="true"
+                  >
+                    G
+                  </span>
                   {isGoogleRedirecting ? 'Opening Google...' : 'Continue with Google'}
                 </button>
 
