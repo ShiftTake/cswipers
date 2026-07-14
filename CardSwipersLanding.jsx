@@ -2253,13 +2253,40 @@ export default function CardSwipersLanding() {
   return (
     <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {showStartupSplash && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0B0F19]">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
+          <style>{`
+            @keyframes csSplashBounce {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(-10px); }
+            }
+            @keyframes csSplashPulse {
+              0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+              50% { transform: scale(1.06); filter: drop-shadow(0 8px 20px rgba(255,255,255,0.26)); }
+            }
+            @keyframes csSplashSwipe {
+              0% { transform: translateX(-185%) rotate(-18deg); opacity: 0; }
+              20% { opacity: 0.82; }
+              60% { opacity: 0.82; }
+              100% { transform: translateX(185%) rotate(-18deg); opacity: 0; }
+            }
+          `}</style>
           <div className="text-center px-6">
-            <div className="mx-auto w-[280px] sm:w-[320px] rounded-3xl bg-white/5 border border-white/10 shadow-[0_30px_90px_rgba(0,0,0,0.5)] overflow-hidden">
-              <img src={heroCards} alt="CardSwipers splash" className="w-full h-auto object-cover" />
+            <div className="relative mx-auto w-[140px] h-[140px]" style={{ animation: 'csSplashBounce 1.55s ease-in-out infinite' }}>
+              <img
+                src={authHeroImage}
+                alt="CardSwipers splash"
+                className="w-full h-full object-contain"
+                style={{ animation: 'csSplashPulse 1.55s ease-in-out infinite' }}
+              />
+              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
+                <div
+                  className="absolute -top-[20%] -left-[18%] h-[145%] w-16 bg-gradient-to-r from-transparent via-white/80 to-transparent blur-[2px]"
+                  style={{ animation: 'csSplashSwipe 1.25s linear infinite' }}
+                />
+              </div>
             </div>
-            <div className="mt-5 w-24 h-1.5 rounded-full bg-white/10 overflow-hidden mx-auto">
-              <div className="h-full w-1/2 bg-gradient-to-r from-[#E11D48] to-[#F59E0B] animate-pulse" />
+            <div className="mt-8 w-24 h-[2px] rounded-full bg-white/20 overflow-hidden mx-auto">
+              <div className="h-full w-1/2 rounded-full bg-white/75" style={{ animation: 'csSplashSwipe 1.25s linear infinite' }} />
             </div>
           </div>
         </div>
