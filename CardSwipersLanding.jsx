@@ -43,6 +43,8 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
   .filter(Boolean);
 
 const normalizeAuthEmail = (value) => value.trim().toLowerCase();
+const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
+const ADMIN_CANONICAL_PATH = '/adminmanagement';
 
 const getSignInMethodMessage = (methods, flow) => {
   if (methods.includes('google.com')) {
@@ -439,7 +441,7 @@ export default function CardSwipersLanding() {
   const normalizedPath =
     typeof window !== 'undefined' ? window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/' : '/';
   const isNativeApp = Capacitor.isNativePlatform();
-  const isAdminPath = normalizedPath === '/admin' || normalizedPath === '/admin.html';
+  const isAdminPath = ADMIN_PATHS.has(normalizedPath);
   const [currentTab, setCurrentTab] = useState(isNativeApp ? 'auth' : 'landing');
   const [authMode, setAuthMode] = useState('login');
   const [authDisplayName, setAuthDisplayName] = useState('');
@@ -1220,11 +1222,11 @@ export default function CardSwipersLanding() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const currentPath = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
-    if (currentTab === 'admin' && currentPath !== '/admin') {
-      window.history.replaceState({}, '', '/admin');
+    if (currentTab === 'admin' && !ADMIN_PATHS.has(currentPath)) {
+      window.history.replaceState({}, '', ADMIN_CANONICAL_PATH);
       return;
     }
-    if (currentTab !== 'admin' && currentPath === '/admin') {
+    if (currentTab !== 'admin' && ADMIN_PATHS.has(currentPath)) {
       if (!isAuthenticated || hasAdminAccess) {
         return;
       }
