@@ -277,7 +277,7 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
-const ENABLE_PAYMENT_PIPELINE = false;
+const ENABLE_PAYMENT_PIPELINE = true;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
@@ -529,6 +529,19 @@ export default function CardSwipersLanding() {
   const [flagReason, setFlagReason] = useState('');
   const [flagCardId, setFlagCardId] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [verificationForm, setVerificationForm] = useState({
+    legalName: '',
+    birthDate: '',
+    phone: '',
+    email: '',
+    verificationTypes: ['buyer', 'seller'],
+    notes: ''
+  });
+  const [verificationDocFile, setVerificationDocFile] = useState(null);
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
+  const [verificationInfo, setVerificationInfo] = useState('');
+  const verificationDocInputRef = useRef(null);
   const splashStartTimeRef = useRef(Date.now());
   const hasHydratedPendingInterests = useRef(false);
   const hasHydratedMatches = useRef(false);
@@ -542,6 +555,14 @@ export default function CardSwipersLanding() {
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
+  const buyerVerificationStatus = String(
+    currentUserProfile?.buyerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
+  ).toLowerCase();
+  const sellerVerificationStatus = String(
+    currentUserProfile?.sellerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
+  ).toLowerCase();
+  const hasBuyerPaymentAccess = buyerVerificationStatus === 'verified' || buyerVerificationStatus === 'pending';
+  const hasSellerPaymentAccess = sellerVerificationStatus === 'verified' || sellerVerificationStatus === 'pending';
   const postProgressChecks = [
     Boolean(postFrontImagePreview),
     Boolean(postBackImagePreview),
@@ -598,6 +619,27 @@ export default function CardSwipersLanding() {
     matchIdsRef.current = new Set();
     unreadMatchIdsRef.current = new Set();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setVerificationForm((prev) => ({
+        ...prev,
+        legalName: '',
+        birthDate: '',
+        phone: '',
+        email: ''
+      }));
+      return;
+    }
+
+    setVerificationForm((prev) => ({
+      ...prev,
+      legalName: currentUserProfile?.legalName || firebaseUser.displayName || prev.legalName,
+      birthDate: currentUserProfile?.birthDate || prev.birthDate,
+      phone: currentUserProfile?.phone || prev.phone,
+      email: currentUserProfile?.email || firebaseUser.email || prev.email
+    }));
+  }, [firebaseUser, currentUserProfile]);
 
   useEffect(() => {
     if (!firebaseUser) return;
@@ -786,6 +828,12 @@ export default function CardSwipersLanding() {
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || '',
+          legalName: firebaseUser.displayName || '',
+          birthDate: '',
+          phone: '',
+          verificationStatus: 'unverified',
+          buyerVerificationStatus: 'unverified',
+          sellerVerificationStatus: 'unverified',
           status: 'active',
           role: declaredAdmin ? 'admin' : 'user',
           settings: {},
@@ -817,6 +865,12 @@ export default function CardSwipersLanding() {
           uid: profile.uid || firebaseUser.uid,
           email: profile.email || firebaseUser.email || '',
           displayName: profile.displayName || firebaseUser.displayName || '',
+          legalName: profile.legalName || profile.displayName || firebaseUser.displayName || '',
+          birthDate: profile.birthDate || '',
+          phone: profile.phone || '',
+          verificationStatus: profile.verificationStatus || 'unverified',
+          buyerVerificationStatus: profile.buyerVerificationStatus || profile.verificationStatus || 'unverified',
+          sellerVerificationStatus: profile.sellerVerificationStatus || profile.verificationStatus || 'unverified',
           status: profile.status || 'active',
           role: profile.role || 'user',
           settings: profile.settings || {},
@@ -1432,6 +1486,18 @@ export default function CardSwipersLanding() {
   const handleInstantPurchase = async (card = currentCard, options = {}) => {
     if (!card || !firebaseUser) return;
     const shouldAdvanceDeck = Boolean(options?.advanceAfterPurchase);
+    const listingSellerStatus = String(card.sellerVerificationStatus || 'unverified').toLowerCase();
+
+    if (!hasBuyerPaymentAccess) {
+      setAuthError('Buyer verification is required before instant purchase. Submit verification in My Trading Binder.');
+      setCurrentTab('collection');
+      return;
+    }
+
+    if (!(listingSellerStatus === 'verified' || listingSellerStatus === 'pending')) {
+      setAuthError('This seller is not pending/verified yet for payment purchases. Use trade request for now.');
+      return;
+    }
 
     const grossAmount = parseDollarValue(card.buyNowPrice || card.tradeValue || card.value);
     const { marketplaceFee, sellerPayout } = calculateMarketplaceSplit(grossAmount);
@@ -1574,6 +1640,10 @@ export default function CardSwipersLanding() {
   const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.title || isPostingCard) return;
+    if (newCard.saleMode !== 'trade_only' && !hasSellerPaymentAccess) {
+      setPostImageError('Seller verification is required before posting Buy Now listings. Submit verification below and continue trading while pending.');
+      return;
+    }
     if (!postFrontImageFile || !postBackImageFile) {
       setPostImageError('Please add both front and back photos before publishing.');
       return;
@@ -1590,6 +1660,9 @@ export default function CardSwipersLanding() {
     const conditionLabel = isRawCard
       ? `Raw - ${newCard.rawCondition}`
       : `${newCard.gradingCompany} ${newCard.grade}`;
+
+    const sellerVerificationProfileStatus =
+      String(currentUserProfile?.sellerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified').toLowerCase();
 
     const uploadCardImage = async (file, label) => {
       const optimizedFile = await compressImageFile(file);
@@ -1624,9 +1697,9 @@ export default function CardSwipersLanding() {
         buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
         saleMode: newCard.saleMode || 'trade_and_sale',
         sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
-        sellerVerified: currentUserProfile?.verificationStatus === 'verified',
-        sellerVerificationStatus: currentUserProfile?.verificationStatus || 'unverified',
-        verifiedSellerBadge: currentUserProfile?.verificationStatus === 'verified',
+        sellerVerified: sellerVerificationProfileStatus === 'verified',
+        sellerVerificationStatus: sellerVerificationProfileStatus,
+        verifiedSellerBadge: sellerVerificationProfileStatus === 'verified',
         listedAt: serverTimestamp(),
         imageFrontUrl: frontImageUrl,
         imageBackUrl: backImageUrl,
@@ -1671,9 +1744,9 @@ export default function CardSwipersLanding() {
       buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
       saleMode: newCard.saleMode || 'trade_and_sale',
       sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
-      sellerVerified: currentUserProfile?.verificationStatus === 'verified',
-      sellerVerificationStatus: currentUserProfile?.verificationStatus || 'unverified',
-      verifiedSellerBadge: currentUserProfile?.verificationStatus === 'verified',
+      sellerVerified: sellerVerificationProfileStatus === 'verified',
+      sellerVerificationStatus: sellerVerificationProfileStatus,
+      verifiedSellerBadge: sellerVerificationProfileStatus === 'verified',
       listedAt: new Date(),
       listedAtLabel: `Listed ${new Date().toLocaleDateString()}`,
       detailLine: conditionLabel,
@@ -1774,6 +1847,180 @@ export default function CardSwipersLanding() {
       ...newCard,
       lookingFor: nextValues.join(', ')
     });
+  };
+
+  const toggleVerificationType = (type) => {
+    setVerificationForm((prev) => {
+      const currentTypes = Array.isArray(prev.verificationTypes) ? prev.verificationTypes : [];
+      const nextTypes = currentTypes.includes(type)
+        ? currentTypes.filter((entry) => entry !== type)
+        : [...currentTypes, type];
+      return {
+        ...prev,
+        verificationTypes: nextTypes
+      };
+    });
+  };
+
+  const handleVerificationDocumentChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setVerificationError('Please upload a JPG, PNG, or WEBP image for your ID.');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setVerificationError('Verification image must be under 12MB.');
+      return;
+    }
+    setVerificationDocFile(file);
+    setVerificationError('');
+  };
+
+  const handleSubmitVerificationRequest = async () => {
+    if (!firebaseUser || verificationBusy) return;
+
+    const legalName = String(verificationForm.legalName || '').trim();
+    const birthDate = String(verificationForm.birthDate || '').trim();
+    const phone = String(verificationForm.phone || '').trim();
+    const email = String(verificationForm.email || firebaseUser.email || '').trim().toLowerCase();
+    const verificationTypes = Array.isArray(verificationForm.verificationTypes)
+      ? verificationForm.verificationTypes
+      : [];
+
+    if (!legalName || !birthDate || !phone || !email) {
+      setVerificationError('Legal name, birth date, phone, and email are all required.');
+      return;
+    }
+    if (verificationTypes.length === 0) {
+      setVerificationError('Select buyer and/or seller verification.');
+      return;
+    }
+    if (!verificationDocFile) {
+      setVerificationError('Upload a government-issued license/ID to continue.');
+      return;
+    }
+
+    setVerificationBusy(true);
+    setVerificationError('');
+    setVerificationInfo('');
+
+    try {
+      const optimizedFile = await compressImageFile(verificationDocFile);
+      const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const docPath = `verification-docs/${firebaseUser.uid}/${Date.now()}-${safeName}`;
+      const verificationDocRef = ref(storage, docPath);
+
+      await withTimeout(uploadBytes(verificationDocRef, optimizedFile), 15000, 'Verification upload timed out');
+      const verificationDocumentUrl = await withTimeout(getDownloadURL(verificationDocRef), 12000, 'Verification URL fetch timed out');
+
+      await withTimeout(
+        addDoc(collection(db, 'sellerVerifications'), {
+          userId: firebaseUser.uid,
+          uid: firebaseUser.uid,
+          userEmail: email,
+          email,
+          legalName,
+          birthDate,
+          phone,
+          status: 'pending',
+          buyerStatus: verificationTypes.includes('buyer') ? 'pending' : 'not_requested',
+          sellerStatus: verificationTypes.includes('seller') ? 'pending' : 'not_requested',
+          verificationTypes,
+          verificationDocumentUrl,
+          verificationDocumentPath: docPath,
+          notes: String(verificationForm.notes || '').trim(),
+          reviewedBy: null,
+          reviewedAt: null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }),
+        12000,
+        'Verification submission timed out'
+      );
+
+      const nextUserPayload = {
+        legalName,
+        birthDate,
+        phone,
+        email,
+        verificationStatus: 'pending',
+        verificationSubmittedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      if (verificationTypes.includes('buyer')) {
+        nextUserPayload.buyerVerificationStatus = 'pending';
+      }
+      if (verificationTypes.includes('seller')) {
+        nextUserPayload.sellerVerificationStatus = 'pending';
+      }
+
+      await withTimeout(updateDoc(doc(db, 'users', firebaseUser.uid), nextUserPayload), 10000, 'Profile update timed out');
+
+      setVerificationInfo('Verification submitted. CS support will review your request in 1-2 days. You can continue trading while status is pending.');
+      setVerificationDocFile(null);
+      if (verificationDocInputRef.current) {
+        verificationDocInputRef.current.value = '';
+      }
+    } catch (error) {
+      console.error('Failed to submit verification request:', error);
+      const isNetworkIssue =
+        String(error?.code || '').includes('offline') ||
+        String(error?.code || '').includes('unavailable') ||
+        String(error?.code || '').includes('operation-timeout');
+      setVerificationError(
+        isNetworkIssue
+          ? 'Network issue while submitting verification. Please try again.'
+          : 'Unable to submit verification request right now. Please try again.'
+      );
+    } finally {
+      setVerificationBusy(false);
+    }
+  };
+
+  const handleAdminReviewVerification = async (record, decision) => {
+    if (!firebaseUser || !record?.id || !record?.userId) return;
+
+    const normalizedDecision = String(decision || '').toLowerCase();
+    if (normalizedDecision !== 'verified' && normalizedDecision !== 'rejected') return;
+
+    const requestedTypes = Array.isArray(record.verificationTypes) ? record.verificationTypes : [];
+    const nextBuyerStatus =
+      requestedTypes.includes('buyer')
+        ? normalizedDecision
+        : (record.buyerStatus || 'not_requested');
+    const nextSellerStatus =
+      requestedTypes.includes('seller')
+        ? normalizedDecision
+        : (record.sellerStatus || 'not_requested');
+    const overallStatus =
+      nextBuyerStatus === 'verified' || nextSellerStatus === 'verified'
+        ? 'verified'
+        : normalizedDecision;
+
+    try {
+      await updateDoc(doc(db, 'sellerVerifications', record.id), {
+        status: normalizedDecision,
+        buyerStatus: nextBuyerStatus,
+        sellerStatus: nextSellerStatus,
+        reviewedBy: firebaseUser.uid,
+        reviewerEmail: firebaseUser.email || '',
+        reviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      await updateDoc(doc(db, 'users', record.userId), {
+        verificationStatus: overallStatus,
+        buyerVerificationStatus: nextBuyerStatus,
+        sellerVerificationStatus: nextSellerStatus,
+        verificationReviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed to review verification request:', error);
+      setAdminUsersError('Failed to update verification request. Please try again.');
+    }
   };
 
   const handleSendMessage = async () => {
@@ -2817,6 +3064,7 @@ export default function CardSwipersLanding() {
             marketplaceStatsByUser={marketplaceStatsByUser}
             sellerVerifications={sellerVerifications}
             premiumSubscriptions={premiumSubscriptions}
+            handleAdminReviewVerification={handleAdminReviewVerification}
           />
         )}
 
@@ -3144,14 +3392,19 @@ export default function CardSwipersLanding() {
                     {ENABLE_PAYMENT_PIPELINE && (
                       <button
                         onClick={() => handleInstantPurchase(currentCard, { advanceAfterPurchase: true })}
-                        className="min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-4 py-3 text-left"
+                        disabled={!hasBuyerPaymentAccess}
+                        className="min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-4 py-3 text-left disabled:opacity-55 disabled:cursor-not-allowed"
                         type="button"
                       >
                         <div className="flex items-center gap-3">
                           <span className="w-10 h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white font-black">$</span>
                           <div>
                             <p className="font-semibold">Buy Now</p>
-                            <p className="text-xs text-white/75">{currentCard.buyNowPrice || currentCard.tradeValue}</p>
+                            <p className="text-xs text-white/75">
+                              {hasBuyerPaymentAccess
+                                ? (currentCard.buyNowPrice || currentCard.tradeValue)
+                                : 'Buyer verification required'}
+                            </p>
                           </div>
                         </div>
                       </button>
@@ -3591,6 +3844,107 @@ export default function CardSwipersLanding() {
               <button onClick={() => setCurrentTab('post')} className="bg-[#E50914] text-white text-xs font-bold px-3 py-2 rounded-xl" type="button">
                 + Add
               </button>
+            </div>
+
+            <div className="rounded-2xl border border-red-400/30 bg-red-950/40 p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-red-200">Verification Center</p>
+                  <h3 className="text-lg font-bold">Buyer & Seller Verification</h3>
+                  <p className="text-xs text-red-100 mt-1">Upload your license/ID once. CS support reviews in 1-2 days. You can keep trading while pending.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                    Buyer: {buyerVerificationStatus}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                    Seller: {sellerVerificationStatus}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={verificationForm.legalName}
+                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, legalName: event.target.value }))}
+                  placeholder="Legal full name"
+                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                />
+                <input
+                  type="date"
+                  value={verificationForm.birthDate}
+                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, birthDate: event.target.value }))}
+                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                />
+                <input
+                  type="tel"
+                  value={verificationForm.phone}
+                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, phone: event.target.value }))}
+                  placeholder="Phone number"
+                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                />
+                <input
+                  type="email"
+                  value={verificationForm.email}
+                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, email: event.target.value }))}
+                  placeholder="Email"
+                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {['buyer', 'seller'].map((type) => {
+                  const selected = verificationForm.verificationTypes.includes(type);
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => toggleVerificationType(type)}
+                      className={`px-3 py-1.5 rounded-full text-xs border ${selected ? 'bg-[#E50914] border-[#E50914]' : 'bg-white/10 border-white/20 hover:border-white/35'}`}
+                    >
+                      {selected ? '✓ ' : ''}{type === 'buyer' ? 'Verify Buyer' : 'Verify Seller'}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2">
+                <input
+                  ref={verificationDocInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleVerificationDocumentChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => verificationDocInputRef.current?.click()}
+                  className="px-3 py-2 rounded-xl border border-white/20 bg-white/10 text-xs font-semibold"
+                >
+                  {verificationDocFile ? `ID selected: ${verificationDocFile.name}` : 'Upload Driver License / Government ID'}
+                </button>
+                <textarea
+                  rows={2}
+                  value={verificationForm.notes}
+                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, notes: event.target.value }))}
+                  placeholder="Optional notes for CS support"
+                  className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={verificationBusy}
+                  onClick={handleSubmitVerificationRequest}
+                  className="px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#E11D48] text-sm font-semibold disabled:opacity-60"
+                >
+                  {verificationBusy ? 'Submitting...' : 'Submit Verification'}
+                </button>
+                {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
+                {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
