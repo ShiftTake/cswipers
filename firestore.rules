@@ -58,6 +58,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /offers/{offerId} {
+      allow read: if isAdmin() || (signedIn() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      ));
+      allow create: if signedIn() && request.resource.data.fromUserId == request.auth.uid;
+      allow update: if isAdmin() || (signedIn() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      ));
+      allow delete: if false;
+    }
+
     match /reviews/{reviewId} {
       allow read: if signedIn();
       allow create: if signedIn() &&

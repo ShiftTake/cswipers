@@ -22,6 +22,7 @@ export default function AdminPanel({
   verifiedSellerCount,
   currentEscrowTotal,
   marketplaceStatsByUser,
+  ratingStatsByUser,
   sellerVerifications,
   premiumSubscriptions,
   handleAdminReviewVerification
@@ -242,8 +243,9 @@ export default function AdminPanel({
             <div className="col-span-1">Status</div>
             <div className="col-span-2">Verification</div>
             <div className="col-span-2">Sales</div>
+            <div className="col-span-1">Ratings</div>
             <div className="col-span-1">Created</div>
-            <div className="col-span-2 text-right">Actions</div>
+            <div className="col-span-1 text-right">Actions</div>
           </div>
 
           {adminUsersLoading ? (
@@ -259,6 +261,9 @@ export default function AdminPanel({
               const isSelf = userRecord.uid === firebaseUser?.uid;
               const isProcessing = adminActionUserId === userRecord.uid;
               const userMetrics = marketplaceStatsByUser?.[userRecord.uid] || { salesTotal: 0, orderCount: 0 };
+              const userRatings = ratingStatsByUser?.[userRecord.uid] || {};
+              const buyerRating = userRatings.buyer;
+              const sellerRating = userRatings.seller;
 
               return (
                 <div key={userRecord.uid || userRecord.id} className="grid grid-cols-12 gap-2 px-4 py-3 text-sm border-t border-red-500/20 items-center">
@@ -283,8 +288,12 @@ export default function AdminPanel({
                     <p className="font-semibold text-white">{formatMoney(userMetrics.salesTotal)}</p>
                     <p className="text-red-200">{userMetrics.orderCount || 0} orders</p>
                   </div>
+                  <div className="col-span-1 text-xs text-red-100">
+                    <p>B: {buyerRating?.count ? `${buyerRating.average.toFixed(1)}★` : 'N/A'}</p>
+                    <p>S: {sellerRating?.count ? `${sellerRating.average.toFixed(1)}★` : 'N/A'}</p>
+                  </div>
                   <div className="col-span-1 text-xs text-red-100">{createdDate}</div>
-                  <div className="col-span-2 flex justify-end">
+                  <div className="col-span-1 flex justify-end">
                     <button
                       type="button"
                       onClick={() => handleToggleUserStatus(userRecord)}

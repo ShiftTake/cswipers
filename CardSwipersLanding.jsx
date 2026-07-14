@@ -470,6 +470,9 @@ export default function CardSwipersLanding() {
   const [myCollection, setMyCollection] = useState([]);
   const [messages, setMessages] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
+  const [chatOffers, setChatOffers] = useState([]);
+  const [offerDraftAmount, setOfferDraftAmount] = useState('');
+  const [offerBusy, setOfferBusy] = useState(false);
 
   const [newCard, setNewCard] = useState({
     title: '',
@@ -667,6 +670,9 @@ export default function CardSwipersLanding() {
     if (firebaseUser) return;
     setNotifications([]);
     setShowNotificationsPanel(false);
+    setChatOffers([]);
+    setOfferDraftAmount('');
+    setOfferBusy(false);
     setUserPurchaseIntents([]);
     setReviews([]);
     setReviewDrafts({});
@@ -1503,6 +1509,7 @@ export default function CardSwipersLanding() {
   useEffect(() => {
     if (!activeChat?.id) {
       setChatMessages([]);
+      setChatOffers([]);
       return;
     }
 
@@ -1532,6 +1539,32 @@ export default function CardSwipersLanding() {
 
     return () => unsubscribe();
   }, [activeChat, firebaseUser]);
+
+  useEffect(() => {
+    if (!activeChat?.id) {
+      setChatOffers([]);
+      return;
+    }
+
+    const offersQuery = query(
+      collection(db, 'offers'),
+      where('matchId', '==', activeChat.id),
+      limit(120)
+    );
+
+    const unsubscribe = onSnapshot(offersQuery, (snapshot) => {
+      const offers = snapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        .sort((a, b) => {
+          const aSec = a.createdAt?.seconds || 0;
+          const bSec = b.createdAt?.seconds || 0;
+          return aSec - bSec;
+        });
+      setChatOffers(offers);
+    });
+
+    return () => unsubscribe();
+  }, [activeChat]);
 
   useEffect(() => {
     setActiveCardImageSide('front');
@@ -2271,6 +2304,132 @@ export default function CardSwipersLanding() {
           ? 'Network issue while sending message. Please try again.'
           : 'Failed to send message. Please try again.';
       setAuthError(errorMessage);
+    }
+  };
+
+  const handleSendOffer = async () => {
+    if (!firebaseUser || !activeChat?.id || offerBusy) return;
+
+    const amount = parseDollarValue(offerDraftAmount);
+    if (!amount || amount <= 0) {
+      setAuthError('Enter a valid offer amount.');
+      return;
+    }
+
+    const fromUserId = firebaseUser.uid;
+    const participants = Array.isArray(activeChat.participants) ? activeChat.participants : [];
+    const toUserId = participants.find((uid) => uid !== fromUserId) || activeChat.counterpartyUserId;
+    if (!toUserId) {
+      setAuthError('Unable to determine who should receive this offer.');
+      return;
+    }
+
+    const sellerUid = activeChat.ownerUserId || null;
+    const buyerUid = activeChat.requesterUserId || null;
+
+    setOfferBusy(true);
+    setAuthError('');
+    try {
+      await addDoc(collection(db, 'offers'), {
+        matchId: activeChat.id,
+        cardId: activeChat.cardId || null,
+        cardTitle: activeChat.cardTitle || '',
+        buyerUid,
+        sellerUid,
+        fromUserId,
+        fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
+        toUserId,
+        amount,
+        currency: 'USD',
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      const summaryMessage = `Offer sent: ${formatMoney(amount)}`;
+      await updateDoc(doc(db, 'matches', activeChat.id), {
+        lastMessage: summaryMessage,
+        unreadBy: [toUserId],
+        updatedAt: serverTimestamp()
+      });
+
+      setOfferDraftAmount('');
+    } catch (error) {
+      console.error('Failed to send offer:', error);
+      setAuthError('Unable to send offer right now. Please try again.');
+    } finally {
+      setOfferBusy(false);
+    }
+  };
+
+  const handleOfferDecision = async (offer, decision) => {
+    if (!firebaseUser || !activeChat?.id || !offer?.id) return;
+
+    const normalized = String(decision || '').toLowerCase();
+    const isCounter = normalized === 'counter';
+    const nextStatus = isCounter ? 'countered' : normalized;
+
+    if (!['accepted', 'rejected', 'countered'].includes(nextStatus)) {
+      return;
+    }
+
+    if (offer.toUserId !== firebaseUser.uid) {
+      setAuthError('Only the offer recipient can take this action.');
+      return;
+    }
+
+    let counterAmount = null;
+    if (isCounter) {
+      const raw = window.prompt('Enter your counter-offer amount (USD):', String(offer.amount || ''));
+      if (raw === null) return;
+      counterAmount = parseDollarValue(raw);
+      if (!counterAmount || counterAmount <= 0) {
+        setAuthError('Counter offer must be greater than $0.');
+        return;
+      }
+    }
+
+    try {
+      await updateDoc(doc(db, 'offers', offer.id), {
+        status: nextStatus,
+        decidedBy: firebaseUser.uid,
+        decidedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      const fromUserId = firebaseUser.uid;
+      const participants = Array.isArray(activeChat.participants) ? activeChat.participants : [];
+      const toUserId = participants.find((uid) => uid !== fromUserId) || offer.fromUserId;
+
+      let summaryMessage = `Offer ${nextStatus}: ${formatMoney(offer.amount || 0)}`;
+      if (isCounter && counterAmount) {
+        await addDoc(collection(db, 'offers'), {
+          matchId: activeChat.id,
+          cardId: offer.cardId || activeChat.cardId || null,
+          cardTitle: offer.cardTitle || activeChat.cardTitle || '',
+          buyerUid: offer.buyerUid || activeChat.requesterUserId || null,
+          sellerUid: offer.sellerUid || activeChat.ownerUserId || null,
+          fromUserId,
+          fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
+          toUserId,
+          amount: counterAmount,
+          currency: 'USD',
+          status: 'pending',
+          parentOfferId: offer.id,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        summaryMessage = `Counter offer sent: ${formatMoney(counterAmount)}`;
+      }
+
+      await updateDoc(doc(db, 'matches', activeChat.id), {
+        lastMessage: summaryMessage,
+        unreadBy: [toUserId],
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed to update offer decision:', error);
+      setAuthError('Unable to update this offer. Please try again.');
     }
   };
 
@@ -3274,6 +3433,7 @@ export default function CardSwipersLanding() {
             verifiedSellerCount={verifiedSellerCount}
             currentEscrowTotal={currentEscrowPurchases.reduce((total, record) => total + parseDollarValue(record.escrowAmount || record.listingPrice || record.grossAmount || 0), 0)}
             marketplaceStatsByUser={marketplaceStatsByUser}
+            ratingStatsByUser={ratingStatsByUser}
             sellerVerifications={sellerVerifications}
             premiumSubscriptions={premiumSubscriptions}
             handleAdminReviewVerification={handleAdminReviewVerification}
@@ -4338,6 +4498,75 @@ export default function CardSwipersLanding() {
                     ◀ Back
                   </button>
                   <h3 className="font-bold text-base">Chatting with @{activeChat.counterpartyName || activeChat.user}</h3>
+                </div>
+
+                <div className="rounded-2xl border border-red-400/30 bg-red-950/35 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <p className="text-xs uppercase tracking-wider text-red-100 font-bold">Offer Negotiation</p>
+                    <p className="text-xs text-red-200">You can send offers above or below the listing price.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter offer amount"
+                      value={offerDraftAmount}
+                      onChange={(event) => setOfferDraftAmount(event.target.value)}
+                      className="flex-grow p-2.5 bg-red-950 border border-red-400/30 rounded-xl text-xs focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSendOffer}
+                      disabled={offerBusy}
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-[#E50914] hover:bg-[#cc070e] disabled:opacity-60"
+                    >
+                      {offerBusy ? 'Sending...' : 'Send Offer'}
+                    </button>
+                  </div>
+
+                  {chatOffers.length > 0 && (
+                    <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                      {chatOffers.map((offer) => {
+                        const fromSelf = offer.fromUserId === firebaseUser?.uid;
+                        const isIncomingPending = !fromSelf && String(offer.status || '').toLowerCase() === 'pending';
+                        return (
+                          <div
+                            key={offer.id}
+                            className={`rounded-xl border px-3 py-2 text-xs ${fromSelf ? 'bg-[#E50914]/20 border-[#E50914]/40' : 'bg-black/25 border-white/15'}`}
+                          >
+                            <p className="font-semibold">
+                              {fromSelf ? 'You offered' : `${offer.fromUserName || 'Collector'} offered`} {formatMoney(offer.amount || 0)}
+                            </p>
+                            <p className="text-[11px] text-white/70 mt-1">Status: {offer.status || 'pending'}</p>
+                            {isIncomingPending && (
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOfferDecision(offer, 'accepted')}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 font-bold"
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOfferDecision(offer, 'rejected')}
+                                  className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 font-bold"
+                                >
+                                  Reject
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOfferDecision(offer, 'counter')}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 font-bold"
+                                >
+                                  Counter
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div data-chat-messages className="flex-grow bg-red-900/20 rounded-2xl p-4 flex flex-col justify-end space-y-3 min-h-[300px] overflow-y-auto">
