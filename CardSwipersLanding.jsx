@@ -2588,7 +2588,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className={`h-full flex flex-col items-center px-4 pt-20 pb-10 relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFFDFE] via-[#FCEEF1] to-[#D90429]' : ''}`}>
+          <div className={`min-h-[calc(100vh-2rem)] flex flex-col justify-center items-center px-4 py-6 relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFFDFE] via-[#FCEEF1] to-[#D90429]' : ''}`}>
             {isNativeApp && (
               <>
                 <div
@@ -2604,22 +2604,22 @@ export default function CardSwipersLanding() {
                       'radial-gradient(120% 82% at 12% 6%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%), radial-gradient(95% 74% at 88% 24%, rgba(246,225,232,0.92) 0%, rgba(246,225,232,0) 70%), linear-gradient(162deg, rgba(225,7,46,0) 56%, rgba(225,7,46,0.92) 100%)'
                   }}
                 />
-                <img src={authHeroImage} alt="CardSwipers mark" className="w-[132px] h-[132px] object-contain relative z-10 mb-7 mt-7" />
+                <img src={authHeroImage} alt="CardSwipers mark" className="w-[232px] h-[232px] object-contain relative z-10 mb-2 mt-4" />
               </>
             )}
 
-            <div className={`w-full ${isNativeApp ? 'max-w-[420px]' : 'max-w-[460px]'} bg-white text-[#111827] rounded-[30px] p-6 sm:p-7 shadow-[0_24px_60px_rgba(0,0,0,0.16)] border border-black/5 relative z-10`}>
+            <div className={`w-full ${isNativeApp ? 'max-w-[300px]' : 'max-w-[460px]'} bg-white text-[#111827] rounded-[26px] ${isNativeApp ? 'p-4' : 'p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
               <div className="space-y-2 text-center">
-                <h1 className="text-[34px] leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]">
+                <h1 className={`${isNativeApp ? 'text-[28px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
                 </h1>
-                <p className="text-sm text-[#6B7280]">
+                <p className={`${isNativeApp ? 'text-[10px]' : 'text-sm'} text-[#6B7280]`}>
                   {authMode === 'login' ? 'Enter your credentials to continue.' : 'Set up your account in less than a minute.'}
                 </p>
               </div>
 
-              <form onSubmit={handleAuthSubmit} className="mt-6 space-y-3 text-left">
-                <div className="w-full grid grid-cols-2 rounded-2xl p-1 bg-[#F3F4F6] border border-[#E5E7EB] text-sm">
+              <form onSubmit={handleAuthSubmit} className={`mt-4 ${isNativeApp ? 'space-y-2.5' : 'space-y-3'} text-left`}>
+                <div className={`w-full grid grid-cols-2 rounded-2xl p-1 bg-[#F3F4F6] border border-[#E5E7EB] ${isNativeApp ? 'text-xs' : 'text-sm'}`}>
                   <button
                     type="button"
                     onClick={() => {
@@ -2628,7 +2628,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`h-12 rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`${isNativeApp ? 'h-9' : 'h-12'} rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Log In
                   </button>
@@ -2640,7 +2640,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`h-12 rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`${isNativeApp ? 'h-9' : 'h-12'} rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Create Account
                   </button>
@@ -2652,12 +2652,12 @@ export default function CardSwipersLanding() {
                     value={authDisplayName}
                     onChange={(e) => setAuthDisplayName(e.target.value)}
                     placeholder="Display name"
-                    className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40"
+                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
                   />
                 )}
 
-                <label className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3">
-                  <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-[#E60028]" aria-hidden="true">
+                <label className={`w-full ${isNativeApp ? 'h-10' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3`}>
+                  <svg viewBox="0 0 24 24" fill="none" className={`${isNativeApp ? 'w-4 h-4' : 'w-6 h-6'} text-[#E60028]`} aria-hidden="true">
                     <path d="M4 7.5h16v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-9Z" stroke="currentColor" strokeWidth="1.8" />
                     <path d="m5 8 7 5 7-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
@@ -2666,12 +2666,12 @@ export default function CardSwipersLanding() {
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                     placeholder="Email"
-                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
+                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
                   />
                 </label>
 
-                <label className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3">
-                  <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-[#E60028]" aria-hidden="true">
+                <label className={`w-full ${isNativeApp ? 'h-10' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3`}>
+                  <svg viewBox="0 0 24 24" fill="none" className={`${isNativeApp ? 'w-4 h-4' : 'w-6 h-6'} text-[#E60028]`} aria-hidden="true">
                     <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
                     <path d="M8 10V8a4 4 0 1 1 8 0v2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                   </svg>
@@ -2680,7 +2680,7 @@ export default function CardSwipersLanding() {
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="Password"
-                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
+                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
                   />
                   <button
                     type="button"
@@ -2688,7 +2688,7 @@ export default function CardSwipersLanding() {
                     className="text-[#9CA3AF] hover:text-[#6B7280]"
                     aria-label={showAuthPassword ? 'Hide password' : 'Show password'}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" className={`${isNativeApp ? 'w-4 h-4' : 'w-6 h-6'}`} aria-hidden="true">
                       <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" stroke="currentColor" strokeWidth="1.8" />
                       <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
                     </svg>
@@ -2700,7 +2700,7 @@ export default function CardSwipersLanding() {
                     type="button"
                     onClick={handleForgotPassword}
                     disabled={isSendingReset}
-                    className="self-start text-xs text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60"
+                    className={`${isNativeApp ? 'self-start text-[9px]' : 'self-start text-xs'} text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60`}
                   >
                     {isSendingReset ? 'Sending reset link...' : 'Forgot Password?'}
                   </button>
@@ -2712,7 +2712,7 @@ export default function CardSwipersLanding() {
                     value={authConfirmPassword}
                     onChange={(e) => setAuthConfirmPassword(e.target.value)}
                     placeholder="Confirm password"
-                    className="w-full h-14 px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40"
+                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
                   />
                 )}
 
@@ -2739,7 +2739,7 @@ export default function CardSwipersLanding() {
                   type="submit"
                   disabled={isAuthSubmitting}
                   aria-busy={isAuthSubmitting}
-                  className="w-full h-14 px-6 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white text-lg font-semibold transition-all"
+                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-lg'} px-6 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold transition-all`}
                 >
                   {isAuthSubmitting ? (authMode === 'create' ? 'Creating account...' : 'Logging in...') : authMode === 'create' ? 'Create Account' : 'Log In'}
                 </button>
@@ -2748,10 +2748,10 @@ export default function CardSwipersLanding() {
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={isAuthSubmitting || isGoogleRedirecting}
-                  className="w-full h-14 px-6 rounded-2xl bg-white border border-[#D4D8DE] hover:border-[#BAC0C8] text-[#111827] text-base font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5"
+                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-base'} px-6 rounded-2xl bg-white border border-[#D4D8DE] hover:border-[#BAC0C8] text-[#111827] font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5`}
                 >
                   <span
-                    className="text-[22px] font-bold leading-none"
+                    className={`${isNativeApp ? 'text-base' : 'text-[22px]'} font-bold leading-none`}
                     style={{
                       background: 'conic-gradient(from 15deg, #4285F4 0deg 95deg, #34A853 95deg 190deg, #FBBC05 190deg 285deg, #EA4335 285deg 360deg)',
                       WebkitBackgroundClip: 'text',
@@ -2765,15 +2765,15 @@ export default function CardSwipersLanding() {
                 </button>
 
                 {isNativeApp && (
-                  <p className="text-[11px] leading-5 text-[#6B7280]">
+                  <p className={`${isNativeApp ? 'text-[9px] leading-4' : 'text-[11px] leading-5'} text-[#6B7280]`}>
                     On iPhone, Google sign-in may open Safari to finish authentication and return to the app.
                   </p>
                 )}
               </form>
             </div>
 
-            <div className={`text-center pt-7 relative z-10 ${isNativeApp ? 'text-white' : ''}`}>
-              <p className={`text-xs mb-2 ${isNativeApp ? 'text-white' : 'text-[#9CA3AF]'}`}>Need help? Contact help@cardswipers.com</p>
+            <div className={`text-center ${isNativeApp ? 'pt-4' : 'pt-7'} relative z-10 ${isNativeApp ? 'text-white' : ''}`}>
+              <p className={`${isNativeApp ? 'text-[10px]' : 'text-xs'} mb-2 ${isNativeApp ? 'text-white' : 'text-[#9CA3AF]'}`}>Need help? Contact help@cardswipers.com</p>
               {!isNativeApp && (
                 <button
                   type="button"
@@ -2786,18 +2786,18 @@ export default function CardSwipersLanding() {
               <button
                 type="button"
                 onClick={() => setShowTermsOfService(true)}
-                className={`text-[11px] underline underline-offset-2 mr-3 ${isNativeApp ? 'text-white/95 hover:text-white' : 'text-[#9CA3AF] hover:text-white'}`}
+                className={`${isNativeApp ? 'text-[10px]' : 'text-[11px]'} underline underline-offset-2 mr-3 ${isNativeApp ? 'text-white/95 hover:text-white' : 'text-[#9CA3AF] hover:text-white'}`}
               >
                 Terms of Service
               </button>
               <button
                 type="button"
                 onClick={() => setShowPrivacyPolicy(true)}
-                className={`text-[11px] underline underline-offset-2 ${isNativeApp ? 'text-white/95 hover:text-white' : 'text-[#9CA3AF] hover:text-white'}`}
+                className={`${isNativeApp ? 'text-[10px]' : 'text-[11px]'} underline underline-offset-2 ${isNativeApp ? 'text-white/95 hover:text-white' : 'text-[#9CA3AF] hover:text-white'}`}
               >
                 Privacy Policy
               </button>
-              <p className={`text-[10px] mt-2 ${isNativeApp ? 'text-white/95' : 'text-[#9CA3AF]'}`}>© 2026 CardSwipers. All rights reserved.</p>
+              <p className={`${isNativeApp ? 'text-[9px]' : 'text-[10px]'} mt-2 ${isNativeApp ? 'text-white/95' : 'text-[#9CA3AF]'}`}>© 2026 CardSwipers. All rights reserved.</p>
             </div>
           </div>
         )}
