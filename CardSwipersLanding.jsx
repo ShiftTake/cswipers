@@ -282,6 +282,7 @@ const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
 const MARKETPLACE_FEE_RATE = 0.02;
+const VERIFIED_BUYER_SUBSCRIPTION_PRICE = 19.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
 
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
@@ -500,8 +501,12 @@ export default function CardSwipersLanding() {
   const [outgoingInterests, setOutgoingInterests] = useState([]);
   const [matches, setMatches] = useState([]);
   const [purchaseIntents, setPurchaseIntents] = useState([]);
+  const [userPurchaseIntents, setUserPurchaseIntents] = useState([]);
   const [premiumSubscriptions, setPremiumSubscriptions] = useState([]);
   const [sellerVerifications, setSellerVerifications] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [reviewDrafts, setReviewDrafts] = useState({});
+  const [reviewBusyByPurchaseId, setReviewBusyByPurchaseId] = useState({});
   const [showInterestModal, setShowInterestModal] = useState(false);
   const [pendingInterestType, setPendingInterestType] = useState(MARKETPLACE_ACTION_TYPES[0]);
   const [interestBusy, setInterestBusy] = useState(false);
@@ -555,6 +560,32 @@ export default function CardSwipersLanding() {
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
+  const ratingStatsByUser = reviews.reduce((accumulator, review) => {
+    const reviewedUid = review.reviewedUid;
+    if (!reviewedUid) return accumulator;
+    const reviewedRole = String(review.reviewedRole || '').toLowerCase();
+    const ratingValue = Number(review.rating || 0);
+    if (!Number.isFinite(ratingValue) || ratingValue <= 0) return accumulator;
+
+    const existing = accumulator[reviewedUid] || {
+      buyer: { total: 0, count: 0, average: 0 },
+      seller: { total: 0, count: 0, average: 0 }
+    };
+
+    if (reviewedRole === 'buyer' || reviewedRole === 'seller') {
+      const roleBucket = existing[reviewedRole];
+      roleBucket.total += ratingValue;
+      roleBucket.count += 1;
+      roleBucket.average = Number((roleBucket.total / roleBucket.count).toFixed(2));
+    }
+
+    accumulator[reviewedUid] = existing;
+    return accumulator;
+  }, {});
+
+  const currentSellerRating = currentCard?.ownerUid ? ratingStatsByUser[currentCard.ownerUid]?.seller : null;
+  const currentUserBuyerRating = firebaseUser?.uid ? ratingStatsByUser[firebaseUser.uid]?.buyer : null;
+  const currentUserSellerRating = firebaseUser?.uid ? ratingStatsByUser[firebaseUser.uid]?.seller : null;
   const buyerVerificationStatus = String(
     currentUserProfile?.buyerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
   ).toLowerCase();
@@ -563,6 +594,29 @@ export default function CardSwipersLanding() {
   ).toLowerCase();
   const hasBuyerPaymentAccess = buyerVerificationStatus === 'verified' || buyerVerificationStatus === 'pending';
   const hasSellerPaymentAccess = sellerVerificationStatus === 'verified' || sellerVerificationStatus === 'pending';
+  const existingReviewKeys = new Set(
+    reviews.map((review) => `${review.purchaseId || ''}:${review.reviewerUid || ''}`)
+  );
+  const reviewableTransactions = userPurchaseIntents
+    .filter((record) => {
+      const saleClosed =
+        ['released', 'completed', 'fulfilled'].includes(String(record.status || '').toLowerCase()) ||
+        String(record.escrowStatus || '').toLowerCase() === 'released';
+      if (!saleClosed || !firebaseUser?.uid) return false;
+      const reviewKey = `${record.id}:${firebaseUser.uid}`;
+      return !existingReviewKeys.has(reviewKey);
+    })
+    .map((record) => {
+      const isBuyer = record.buyerUid === firebaseUser?.uid;
+      return {
+        ...record,
+        reviewerRole: isBuyer ? 'buyer' : 'seller',
+        reviewedRole: isBuyer ? 'seller' : 'buyer',
+        counterpartyUid: isBuyer ? record.sellerUid : record.buyerUid,
+        counterpartyName: isBuyer ? (record.sellerName || 'Seller') : (record.buyerName || 'Buyer')
+      };
+    })
+    .filter((record) => Boolean(record.counterpartyUid));
   const postProgressChecks = [
     Boolean(postFrontImagePreview),
     Boolean(postBackImagePreview),
@@ -613,6 +667,10 @@ export default function CardSwipersLanding() {
     if (firebaseUser) return;
     setNotifications([]);
     setShowNotificationsPanel(false);
+    setUserPurchaseIntents([]);
+    setReviews([]);
+    setReviewDrafts({});
+    setReviewBusyByPurchaseId({});
     hasHydratedPendingInterests.current = false;
     hasHydratedMatches.current = false;
     pendingInterestIdsRef.current = new Set();
@@ -1082,6 +1140,61 @@ export default function CardSwipersLanding() {
       unsubVerifications();
     };
   }, [isAdmin, currentTab]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setUserPurchaseIntents([]);
+      return;
+    }
+
+    const buyerQuery = query(collection(db, 'purchaseIntents'), where('buyerUid', '==', firebaseUser.uid), limit(500));
+    const sellerQuery = query(collection(db, 'purchaseIntents'), where('sellerUid', '==', firebaseUser.uid), limit(500));
+
+    const purchaseMapRef = new Map();
+    const applySnapshot = (snapshot) => {
+      snapshot.docs.forEach((docSnap) => {
+        purchaseMapRef.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+      });
+      const merged = Array.from(purchaseMapRef.values()).sort((a, b) => {
+        const aSec = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
+        const bSec = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
+        return bSec - aSec;
+      });
+      setUserPurchaseIntents(merged);
+    };
+
+    const unsubBuyer = onSnapshot(buyerQuery, applySnapshot, (error) => {
+      console.error('Failed loading buyer purchases:', error);
+    });
+    const unsubSeller = onSnapshot(sellerQuery, applySnapshot, (error) => {
+      console.error('Failed loading seller purchases:', error);
+    });
+
+    return () => {
+      unsubBuyer();
+      unsubSeller();
+    };
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setReviews([]);
+      return;
+    }
+
+    const reviewsQuery = query(collection(db, 'reviews'), limit(1500));
+    const unsubscribe = onSnapshot(
+      reviewsQuery,
+      (snapshot) => {
+        setReviews(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        console.error('Failed loading reviews:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
 
   useEffect(() => {
     if (currentTab === 'admin' && !hasAdminAccess) {
@@ -1878,6 +1991,71 @@ export default function CardSwipersLanding() {
     setVerificationError('');
   };
 
+  const handleReviewDraftChange = (purchaseId, field, value) => {
+    setReviewDrafts((prev) => ({
+      ...prev,
+      [purchaseId]: {
+        rating: Number(prev[purchaseId]?.rating || 5),
+        comment: String(prev[purchaseId]?.comment || ''),
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSubmitTransactionReview = async (transaction) => {
+    if (!firebaseUser || !transaction?.id || !transaction?.counterpartyUid) return;
+
+    const draft = reviewDrafts[transaction.id] || {};
+    const rating = Math.max(1, Math.min(5, Number(draft.rating || 5)));
+    const comment = String(draft.comment || '').trim();
+
+    if (!comment) {
+      setAuthError('Please add a short review comment before submitting.');
+      return;
+    }
+
+    const reviewId = `${transaction.id}_${firebaseUser.uid}`;
+
+    setReviewBusyByPurchaseId((prev) => ({ ...prev, [transaction.id]: true }));
+    setAuthError('');
+
+    try {
+      await setDoc(doc(db, 'reviews', reviewId), {
+        purchaseId: transaction.id,
+        cardId: transaction.cardId || null,
+        cardTitle: transaction.cardTitle || '',
+        reviewerUid: firebaseUser.uid,
+        reviewerName: firebaseUser.displayName || firebaseUser.email || 'Collector',
+        reviewerRole: transaction.reviewerRole,
+        reviewedUid: transaction.counterpartyUid,
+        reviewedName: transaction.counterpartyName,
+        reviewedRole: transaction.reviewedRole,
+        rating,
+        comment,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      await updateDoc(doc(db, 'purchaseIntents', transaction.id), {
+        ...(transaction.reviewerRole === 'buyer'
+          ? { buyerReviewed: true, buyerReviewedAt: serverTimestamp() }
+          : { sellerReviewed: true, sellerReviewedAt: serverTimestamp() }),
+        updatedAt: serverTimestamp()
+      });
+
+      setReviewDrafts((prev) => {
+        const next = { ...prev };
+        delete next[transaction.id];
+        return next;
+      });
+    } catch (error) {
+      console.error('Failed to submit transaction review:', error);
+      setAuthError('Unable to submit review right now. Please try again.');
+    } finally {
+      setReviewBusyByPurchaseId((prev) => ({ ...prev, [transaction.id]: false }));
+    }
+  };
+
   const handleSubmitVerificationRequest = async () => {
     if (!firebaseUser || verificationBusy) return;
 
@@ -1951,9 +2129,39 @@ export default function CardSwipersLanding() {
       };
       if (verificationTypes.includes('buyer')) {
         nextUserPayload.buyerVerificationStatus = 'pending';
+        await setDoc(
+          doc(db, 'subscriptions', `verified_buyer_${firebaseUser.uid}`),
+          {
+            userId: firebaseUser.uid,
+            email,
+            planType: 'verified_buyer',
+            planName: 'Verified Buyer',
+            amount: VERIFIED_BUYER_SUBSCRIPTION_PRICE,
+            billingInterval: 'monthly',
+            status: 'pending_verification',
+            updatedAt: serverTimestamp(),
+            createdAt: serverTimestamp()
+          },
+          { merge: true }
+        );
       }
       if (verificationTypes.includes('seller')) {
         nextUserPayload.sellerVerificationStatus = 'pending';
+        await setDoc(
+          doc(db, 'subscriptions', `verified_seller_${firebaseUser.uid}`),
+          {
+            userId: firebaseUser.uid,
+            email,
+            planType: 'verified_seller',
+            planName: 'Verified Seller',
+            amount: VERIFIED_SELLER_SUBSCRIPTION_PRICE,
+            billingInterval: 'monthly',
+            status: 'pending_verification',
+            updatedAt: serverTimestamp(),
+            createdAt: serverTimestamp()
+          },
+          { merge: true }
+        );
       }
 
       await withTimeout(updateDoc(doc(db, 'users', firebaseUser.uid), nextUserPayload), 10000, 'Profile update timed out');
@@ -2464,7 +2672,11 @@ export default function CardSwipersLanding() {
   const premiumMRR = premiumSubscriptions.reduce((total, subscription) => {
     const status = String(subscription.status || '').toLowerCase();
     if (status && status !== 'active') return total;
-    return total + parseDollarValue(subscription.amount || VERIFIED_SELLER_SUBSCRIPTION_PRICE);
+    const planType = String(subscription.planType || '').toLowerCase();
+    const defaultAmount = planType.includes('buyer')
+      ? VERIFIED_BUYER_SUBSCRIPTION_PRICE
+      : VERIFIED_SELLER_SUBSCRIPTION_PRICE;
+    return total + parseDollarValue(subscription.amount || defaultAmount);
   }, 0);
 
   const verifiedSellerCount = sellerVerifications.filter((record) => String(record.status || '').toLowerCase() === 'verified').length;
@@ -3249,6 +3461,11 @@ export default function CardSwipersLanding() {
                             Verified Seller
                           </span>
                         )}
+                        {currentSellerRating?.count > 0 && (
+                          <span className="bg-amber-500/15 text-amber-100 text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300/30 tracking-wider">
+                            Seller Rating {currentSellerRating.average.toFixed(1)} ★ ({currentSellerRating.count})
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
@@ -3860,6 +4077,12 @@ export default function CardSwipersLanding() {
                   <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
                     Seller: {sellerVerificationStatus}
                   </span>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                    Buyer Rating: {currentUserBuyerRating?.count ? `${currentUserBuyerRating.average.toFixed(1)} ★ (${currentUserBuyerRating.count})` : 'No reviews yet'}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                    Seller Rating: {currentUserSellerRating?.count ? `${currentUserSellerRating.average.toFixed(1)} ★ (${currentUserSellerRating.count})` : 'No reviews yet'}
+                  </span>
                 </div>
               </div>
 
@@ -3942,6 +4165,7 @@ export default function CardSwipersLanding() {
                 >
                   {verificationBusy ? 'Submitting...' : 'Submit Verification'}
                 </button>
+                <p className="text-xs text-red-100">Verified Buyer plan: ${VERIFIED_BUYER_SUBSCRIPTION_PRICE.toFixed(2)}/month</p>
                 {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
                 {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
               </div>
@@ -4029,6 +4253,53 @@ export default function CardSwipersLanding() {
                         <p className="text-xs text-red-100">Sent as: {interest.interestType}</p>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {reviewableTransactions.length > 0 && (
+                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Completed Deals Awaiting Your Review</h3>
+                    {reviewableTransactions.slice(0, 8).map((transaction) => {
+                      const draft = reviewDrafts[transaction.id] || { rating: 5, comment: '' };
+                      const isSubmitting = Boolean(reviewBusyByPurchaseId[transaction.id]);
+                      return (
+                        <div key={transaction.id} className="rounded-xl border border-red-400/20 bg-black/20 p-3 space-y-2">
+                          <p className="text-sm font-semibold">
+                            {transaction.cardTitle || 'Completed Transaction'}
+                          </p>
+                          <p className="text-xs text-red-100">
+                            Leave a {transaction.reviewedRole} review for {transaction.counterpartyName}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-red-100">Rating</label>
+                            <select
+                              value={draft.rating}
+                              onChange={(event) => handleReviewDraftChange(transaction.id, 'rating', Number(event.target.value))}
+                              className="px-2 py-1 rounded-lg bg-red-950 border border-red-400/30 text-xs"
+                            >
+                              {[5, 4, 3, 2, 1].map((value) => (
+                                <option key={value} value={value}>{value} ★</option>
+                              ))}
+                            </select>
+                          </div>
+                          <textarea
+                            rows={2}
+                            value={draft.comment}
+                            onChange={(event) => handleReviewDraftChange(transaction.id, 'comment', event.target.value)}
+                            placeholder="Share your experience"
+                            className="w-full px-3 py-2 rounded-lg bg-red-950 border border-red-400/30 text-xs focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => handleSubmitTransactionReview(transaction)}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-[#E50914] hover:bg-[#cc070e] disabled:opacity-60"
+                          >
+                            {isSubmitting ? 'Submitting...' : 'Submit Review'}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

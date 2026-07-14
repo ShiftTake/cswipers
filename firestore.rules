@@ -58,6 +58,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /reviews/{reviewId} {
+      allow read: if signedIn();
+      allow create: if signedIn() &&
+        request.resource.data.reviewerUid == request.auth.uid &&
+        !exists(/databases/$(database)/documents/reviews/$(reviewId));
+      allow update, delete: if false;
+    }
+
     match /swipes/{swipeId} {
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
