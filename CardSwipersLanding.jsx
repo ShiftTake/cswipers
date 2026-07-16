@@ -33,6 +33,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
 import authHeroImage from './image (3).png';
+import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 
@@ -3198,32 +3199,40 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className={`min-h-[calc(100vh-2rem)] flex flex-col justify-center items-center px-4 py-6 relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFFDFE] via-[#FCEEF1] to-[#D90429]' : ''}`}>
+          <div className={`min-h-[100dvh] w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0' : 'justify-center py-6 px-4'} items-center relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}>
             {isNativeApp && (
               <>
+                <img
+                  src={authBackdropImage}
+                  alt=""
+                  aria-hidden="true"
+                  className="absolute left-1/2 top-1/2 h-[150%] w-[150%] -translate-x-1/2 -translate-y-1/2 object-cover"
+                />
                 <div
                   className="absolute inset-0"
                   style={{
-                    background: 'linear-gradient(180deg, #FFFDFE 0%, #F9EDF1 48%, #DE0730 100%)'
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.84) 0%, rgba(255,217,226,0.58) 44%, rgba(217,4,41,0.70) 100%)'
                   }}
                 />
                 <div
                   className="absolute inset-0"
                   style={{
                     background:
-                      'radial-gradient(120% 82% at 12% 6%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%), radial-gradient(95% 74% at 88% 24%, rgba(246,225,232,0.92) 0%, rgba(246,225,232,0) 70%), linear-gradient(162deg, rgba(225,7,46,0) 56%, rgba(225,7,46,0.92) 100%)'
+                      'radial-gradient(115% 85% at 8% 8%, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0) 60%), radial-gradient(120% 96% at 92% 20%, rgba(255,227,233,0.68) 0%, rgba(255,227,233,0) 70%), linear-gradient(170deg, rgba(225,7,46,0) 44%, rgba(217,4,41,0.88) 100%)'
                   }}
                 />
-                <img src={authHeroImage} alt="CardSwipers mark" className="w-[232px] h-[232px] object-contain relative z-10 mb-2 mt-4" />
+                <div className="relative z-10 w-full max-w-[780px] px-3 mb-2">
+                  <img src={authHeroImage} alt="CardSwipers mark" className="w-full h-auto max-h-[270px] object-contain" />
+                </div>
               </>
             )}
 
-            <div className={`w-full ${isNativeApp ? 'max-w-[300px]' : 'max-w-[460px]'} bg-white text-[#111827] rounded-[26px] ${isNativeApp ? 'p-4' : 'p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
+            <div className={`w-full ${isNativeApp ? 'max-w-[500px]' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[34px] p-6' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
               <div className="space-y-2 text-center">
-                <h1 className={`${isNativeApp ? 'text-[28px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
+                <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
                 </h1>
-                <p className={`${isNativeApp ? 'text-[10px]' : 'text-sm'} text-[#6B7280]`}>
+                <p className={`${isNativeApp ? 'text-[11px]' : 'text-sm'} text-[#6B7280]`}>
                   {authMode === 'login' ? 'Enter your credentials to continue.' : 'Set up your account in less than a minute.'}
                 </p>
               </div>
@@ -3238,7 +3247,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${isNativeApp ? 'h-9' : 'h-12'} rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Log In
                   </button>
@@ -3250,7 +3259,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${isNativeApp ? 'h-9' : 'h-12'} rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
                   >
                     Create Account
                   </button>
@@ -3310,7 +3319,7 @@ export default function CardSwipersLanding() {
                     type="button"
                     onClick={handleForgotPassword}
                     disabled={isSendingReset}
-                    className={`${isNativeApp ? 'self-start text-[9px]' : 'self-start text-xs'} text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60`}
+                    className={`${isNativeApp ? 'self-start text-[15px]' : 'self-start text-xs'} text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60`}
                   >
                     {isSendingReset ? 'Sending reset link...' : 'Forgot Password?'}
                   </button>
