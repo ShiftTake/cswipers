@@ -3188,7 +3188,7 @@ export default function CardSwipersLanding() {
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
-  const showPersistentMobileDock = isNativeApp && !isLandingScreen && !isAuthScreen;
+  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen;
   const canAccessAdmin = hasAdminAccess && !isNativeApp;
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
@@ -3263,7 +3263,7 @@ export default function CardSwipersLanding() {
   }, {});
 
   return (
-    <div className={`text-white font-sans flex flex-col relative ${isNativeApp ? 'h-[100dvh] overflow-hidden' : 'min-h-screen overflow-hidden'} ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+    <div className={`text-white font-sans flex flex-col relative h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
           <style>{`
@@ -3448,7 +3448,7 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full px-4 sm:px-6 lg:px-8 overflow-y-auto overscroll-y-contain ${showPersistentMobileDock ? 'pb-36' : ''}`}
+        className={`flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain ${isAuthScreen ? 'px-0' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-36' : ''}`}
       >
         <div className="max-w-6xl mx-auto w-full">
         {currentTab === 'landing' && (
