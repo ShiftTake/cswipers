@@ -2860,7 +2860,7 @@ export default function CardSwipersLanding() {
   }, {});
 
   return (
-    <div className={`min-h-screen text-white font-sans flex flex-col justify-between relative overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+    <div className={`text-white font-sans flex flex-col relative ${isNativeApp ? 'h-[100dvh] overflow-hidden' : 'min-h-screen overflow-hidden'} ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
           <style>{`
@@ -3045,7 +3045,7 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-grow w-full px-4 sm:px-6 lg:px-8 overflow-y-auto ${showPersistentMobileDock ? 'pb-36' : ''}`}
+        className={`flex-1 min-h-0 w-full px-4 sm:px-6 lg:px-8 overflow-y-auto overscroll-y-contain ${showPersistentMobileDock ? 'pb-36' : ''}`}
       >
         <div className="max-w-6xl mx-auto w-full">
         {currentTab === 'landing' && (
@@ -5136,8 +5136,8 @@ export default function CardSwipersLanding() {
 
       {showPersistentMobileDock && (
       <footer
-        className="bg-[#111827]/95 backdrop-blur-md border-t border-white/10 py-2 px-4 fixed inset-x-0 bottom-0 z-50"
-        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+        className="bg-[#111827]/95 backdrop-blur-md border-t border-white/10 py-2 px-4 fixed bottom-0 left-0 right-0 z-50"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
       >
         <div className="max-w-6xl mx-auto">
         <nav className="flex justify-around items-center">
