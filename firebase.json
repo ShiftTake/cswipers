@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "source": "functions"
+  },
   "firestore": {
     "rules": "firestore.rules"
   },
@@ -16,6 +19,14 @@
       {
         "source": "/adminmanagement",
         "destination": "/adminmanagement.html"
+      },
+      {
+        "source": "/create-payment-intent",
+        "function": "createPaymentIntent"
+      },
+      {
+        "source": "/release-seller-funds",
+        "function": "releaseSellerFunds"
       },
       {
         "source": "**",
