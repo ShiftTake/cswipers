@@ -13,6 +13,10 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
+        "source": "/terms",
+        "destination": "/terms.html"
+      },
+      {
         "source": "/admin",
         "destination": "/admin.html"
       },
@@ -29,6 +33,10 @@
         "function": "createPaymentIntent"
       },
       {
+        "source": "/api/orders/create-payment-intent",
+        "function": "createOrderPaymentIntent"
+      },
+      {
         "source": "/release-seller-funds",
         "function": "releaseSellerFunds"
       },
@@ -37,8 +45,36 @@
         "function": "releaseSellerFunds"
       },
       {
+        "source": "/api/orders/accept-delivery",
+        "function": "acceptDelivery"
+      },
+      {
+        "source": "/api/orders/open-dispute",
+        "function": "openDispute"
+      },
+      {
         "source": "/api/submit-tracking",
         "function": "submitTracking"
+      },
+      {
+        "source": "/api/orders/submit-tracking",
+        "function": "submitTracking"
+      },
+      {
+        "source": "/api/webhooks/shipping",
+        "function": "shippingWebhook"
+      },
+      {
+        "source": "/api/webhooks/stripe",
+        "function": "stripeEscrowWebhook"
+      },
+      {
+        "source": "/api/admin/disputes",
+        "function": "getAdminDisputes"
+      },
+      {
+        "source": "/api/admin/resolve-dispute",
+        "function": "resolveAdminDispute"
       },
       {
         "source": "**",

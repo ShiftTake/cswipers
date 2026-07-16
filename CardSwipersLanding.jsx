@@ -619,6 +619,8 @@ export default function CardSwipersLanding() {
   const [trackingDrafts, setTrackingDrafts] = useState({});
   const [trackingBusyByPurchaseId, setTrackingBusyByPurchaseId] = useState({});
   const [releaseBusyByPurchaseId, setReleaseBusyByPurchaseId] = useState({});
+  const [disputeDrafts, setDisputeDrafts] = useState({});
+  const [disputeBusyByPurchaseId, setDisputeBusyByPurchaseId] = useState({});
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingIntroVisible, setOnboardingIntroVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
@@ -1024,6 +1026,9 @@ export default function CardSwipersLanding() {
           sellerVerificationStatus: 'unverified',
           status: 'active',
           role: declaredAdmin ? 'admin' : 'user',
+          tos_accepted: false,
+          tos_accepted_at: null,
+          tos_version_accepted: null,
           settings: {},
           binderId: firebaseUser.uid,
           createdAt: serverTimestamp(),
@@ -1061,6 +1066,9 @@ export default function CardSwipersLanding() {
           sellerVerificationStatus: profile.sellerVerificationStatus || profile.verificationStatus || 'unverified',
           status: profile.status || 'active',
           role: profile.role || 'user',
+          tos_accepted: Boolean(profile.tos_accepted),
+          tos_accepted_at: profile.tos_accepted_at || null,
+          tos_version_accepted: profile.tos_version_accepted || null,
           settings: profile.settings || {},
           binderId: profile.binderId || firebaseUser.uid,
           createdAt: profile.createdAt,
@@ -1809,15 +1817,27 @@ export default function CardSwipersLanding() {
     });
 
     try {
-      const response = await fetch(`${ESCROW_API_BASE}/create-payment-intent`, {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/create-payment-intent`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
         body: JSON.stringify({
           itemPrice: baseAmount,
           currency: 'usd',
-          orderId
+          orderId,
+          buyerId: firebaseUser.uid,
+          sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || '',
+          sellerUserId: card.ownerUid || null,
+          sellerName: card.owner || 'Collector',
+          cardId: card.id,
+          cardTitle: card.title,
+          cardBrand: card.brand || '',
+          buyerShippingAddress: {
+            postal_code: currentUserProfile?.shippingZip || currentUserProfile?.postalCode || '',
+            state: currentUserProfile?.state || currentUserProfile?.shippingState || ''
+          }
         })
       });
       const payload = await response.json();
@@ -1910,10 +1930,11 @@ export default function CardSwipersLanding() {
     setVerificationInfo('');
 
     try {
-      const response = await fetch(`${ESCROW_API_BASE}/submit-tracking`, {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/submit-tracking`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
         body: JSON.stringify({
           orderId: transaction.orderId,
@@ -1961,14 +1982,14 @@ export default function CardSwipersLanding() {
     setAuthError('');
 
     try {
-      const response = await fetch(`${ESCROW_API_BASE}/release-seller-funds`, {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/accept-delivery`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
         body: JSON.stringify({
-          orderId: transaction.orderId,
-          connectedAccountId
+          orderId: transaction.orderId
         })
       });
       const payload = await response.json();
@@ -1992,6 +2013,52 @@ export default function CardSwipersLanding() {
       setAuthError(error.message || 'Unable to release seller funds.');
     } finally {
       setReleaseBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
+    }
+  };
+
+  const handleOpenOrderDispute = async (transaction) => {
+    if (!transaction?.orderId || !transaction?.isBuyer) return;
+
+    const disputeReason = String(disputeDrafts[transaction.orderId] || '').trim();
+    if (!disputeReason) {
+      setAuthError('Enter a dispute reason before opening a dispute.');
+      return;
+    }
+
+    setDisputeBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
+    setAuthError('');
+
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/open-dispute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({
+          orderId: transaction.orderId,
+          disputeReason
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to open dispute.');
+      }
+
+      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
+        status: 'disputed',
+        escrowStatus: 'disputed',
+        disputeReason,
+        updatedAt: serverTimestamp()
+      });
+
+      setAuthInfo(`Dispute opened for ${transaction.cardTitle || 'this order'}. CardSwipers admin will review the shipment and transaction history.`);
+    } catch (error) {
+      console.error('Failed to open dispute:', error);
+      setAuthError(error.message || 'Unable to open dispute.');
+    } finally {
+      setDisputeBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
     }
   };
 
@@ -2839,6 +2906,24 @@ export default function CardSwipersLanding() {
         );
         const displayName = authDisplayName.trim();
         await withTimeout(updateProfile(credential.user, { displayName }), 10000, 'Updating profile timed out');
+        await withTimeout(
+          setDoc(
+            doc(db, 'users', credential.user.uid),
+            {
+              uid: credential.user.uid,
+              email: normalizedEmail,
+              displayName,
+              legalName: displayName,
+              tos_accepted: true,
+              tos_accepted_at: serverTimestamp(),
+              tos_version_accepted: 'v1.1',
+              updatedAt: serverTimestamp()
+            },
+            { merge: true }
+          ),
+          12000,
+          'Saving Terms acceptance timed out'
+        );
       } else {
         if (signInMethods.includes('google.com')) {
           setAuthError(getSignInMethodMessage(signInMethods, 'login'));
@@ -4838,6 +4923,7 @@ export default function CardSwipersLanding() {
                       const trackingDraft = trackingDrafts[transaction.orderId] || { carrier: '', trackingNumber: '', trackingUrl: '' };
                       const trackingBusy = Boolean(trackingBusyByPurchaseId[transaction.orderId]);
                       const releaseBusy = Boolean(releaseBusyByPurchaseId[transaction.orderId]);
+                      const disputeBusy = Boolean(disputeBusyByPurchaseId[transaction.orderId]);
                       return (
                         <div key={transaction.orderId} className="rounded-xl border border-red-400/20 bg-black/20 p-3 space-y-3">
                           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -4899,6 +4985,19 @@ export default function CardSwipersLanding() {
                             </div>
                           )}
 
+                          {transaction.isBuyer && (
+                            <textarea
+                              rows={2}
+                              value={disputeDrafts[transaction.orderId] || ''}
+                              onChange={(event) => setDisputeDrafts((prev) => ({
+                                ...prev,
+                                [transaction.orderId]: event.target.value
+                              }))}
+                              placeholder="If needed, explain the dispute reason before the 48-hour timer expires"
+                              className="w-full px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none resize-none"
+                            />
+                          )}
+
                           <div className="flex flex-wrap gap-2">
                             {transaction.isSeller && (
                               <button
@@ -4912,14 +5011,24 @@ export default function CardSwipersLanding() {
                             )}
 
                             {transaction.isBuyer && (
-                              <button
-                                type="button"
-                                disabled={releaseBusy}
-                                onClick={() => handleReleaseSellerFundsEarly(transaction)}
-                                className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
-                              >
-                                {releaseBusy ? 'Releasing...' : 'Release Seller Funds Early'}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={releaseBusy}
+                                  onClick={() => handleReleaseSellerFundsEarly(transaction)}
+                                  className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
+                                >
+                                  {releaseBusy ? 'Releasing...' : 'Accept Delivery & Release Funds'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={disputeBusy}
+                                  onClick={() => handleOpenOrderDispute(transaction)}
+                                  className="px-3 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                >
+                                  {disputeBusy ? 'Opening dispute...' : 'Open Dispute'}
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -5763,6 +5872,14 @@ export default function CardSwipersLanding() {
             <p className="text-sm leading-relaxed">
               By using CardSwipers, you agree to the inspection and dispute policy, and you acknowledge that abuse,
               fraud, chargebacks, or materially inaccurate listings can result in account action.
+            </p>
+            <p className="text-sm leading-relaxed">
+              CardSwipers is not a bank or licensed escrow agent. Our maximum liability for any escrow transaction is
+              capped at the 2% platform fee collected from the buyer for that transaction.
+            </p>
+            <p className="text-sm leading-relaxed">
+              Both parties agree that CardSwipers administrators may review shipment history and transaction evidence to
+              resolve disputes, and that those platform dispute outcomes are binding for the escrow workflow.
             </p>
           </div>
         </div>

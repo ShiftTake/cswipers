@@ -1,23 +1,32 @@
 const crypto = require('crypto');
 const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const Stripe = require('stripe');
 
 admin.initializeApp();
 
 const db = admin.firestore();
-const stripeSecret = defineSecret('STRIPE_SECRET_KEY');
 
-const ORDERS_COLLECTION = 'paymentOrders';
+const stripeSecret = defineSecret('STRIPE_SECRET_KEY');
+const stripeWebhookSecret = defineSecret('STRIPE_WEBHOOK_SECRET');
+const shippoApiKey = defineSecret('SHIPPO_API_KEY');
+const shippingWebhookSecret = defineSecret('SHIPPING_WEBHOOK_SECRET');
+
+const ORDERS_COLLECTION = 'orders';
+const PURCHASE_INTENTS_COLLECTION = 'purchaseIntents';
+const USERS_COLLECTION = 'users';
 const DEFAULT_CURRENCY = 'usd';
 const PLATFORM_FEE_RATE = 0.02;
-const PURCHASE_INTENTS_COLLECTION = 'purchaseIntents';
+const DISPUTE_WINDOW_MS = 48 * 60 * 60 * 1000;
+const TOS_VERSION = 'v1.1';
+const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
 
 function setCorsHeaders(res) {
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Webhook-Secret, stripe-signature');
 }
 
 function sendJson(res, statusCode, payload) {
@@ -36,10 +45,22 @@ function getStripeClient() {
   });
 }
 
-function toCents(value) {
+function assertMethod(req, methods) {
+  if (req.method === 'OPTIONS') {
+    return 'options';
+  }
+
+  if (!methods.includes(req.method)) {
+    throw new Error('Method not allowed.');
+  }
+
+  return null;
+}
+
+function toCents(value, fieldName = 'amount') {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue) || numericValue <= 0) {
-    throw new Error('itemPrice must be a positive number.');
+    throw new Error(`${fieldName} must be a positive number.`);
   }
 
   return Math.round(numericValue * 100);
@@ -67,258 +88,720 @@ function buildTransferGroup(orderId) {
   return orderId.startsWith('ORDER_ID_') ? orderId : `ORDER_ID_${orderId}`;
 }
 
-function assertPost(req) {
-  if (req.method === 'OPTIONS') {
-    return 'options';
-  }
-
-  if (req.method !== 'POST') {
-    throw new Error('Method not allowed.');
-  }
-
-  return null;
+function platformFeeCentsFromBase(baseAmountCents) {
+  return Math.round(baseAmountCents * PLATFORM_FEE_RATE);
 }
 
-exports.createPaymentIntent = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+function nowTimestamp() {
+  return admin.firestore.Timestamp.now();
+}
+
+function serverTimestamp() {
+  return admin.firestore.FieldValue.serverTimestamp();
+}
+
+function addMilliseconds(timestamp, milliseconds) {
+  const date = timestamp?.toDate?.() || timestamp;
+  return admin.firestore.Timestamp.fromMillis(new Date(date).getTime() + milliseconds);
+}
+
+function getBearerToken(req) {
+  const authorization = String(req.headers.authorization || '');
+  if (!authorization.toLowerCase().startsWith('bearer ')) {
+    return '';
+  }
+
+  return authorization.slice(7).trim();
+}
+
+async function requireAuth(req) {
+  const token = getBearerToken(req);
+  if (!token) {
+    throw new Error('Missing bearer token.');
+  }
+
+  return admin.auth().verifyIdToken(token);
+}
+
+function getAdminEmails() {
+  return new Set(
+    String(process.env.ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+async function requireAdmin(req) {
+  const decodedToken = await requireAuth(req);
+  const adminEmails = getAdminEmails();
+  const email = String(decodedToken.email || '').toLowerCase();
+  if (!email || !adminEmails.has(email)) {
+    throw new Error('Admin access required.');
+  }
+
+  return decodedToken;
+}
+
+async function getUserProfile(userId) {
+  if (!userId) return null;
+  const snap = await db.collection(USERS_COLLECTION).doc(userId).get();
+  return snap.exists ? snap.data() : null;
+}
+
+function ensureTosAccepted(profile) {
+  if (!profile?.tos_accepted) {
+    throw new Error('User must accept the Terms of Service before placing escrow orders.');
+  }
+}
+
+function mapOrderToLegacyPurchaseIntent(order) {
+  return {
+    orderId: order.order_id,
+    buyerUid: order.buyer_id,
+    buyerName: order.buyer_name || 'Buyer',
+    sellerUid: order.seller_user_id || null,
+    sellerName: order.seller_name || 'Seller',
+    sellerConnectedAccountId: order.seller_id || null,
+    cardId: order.card_id || null,
+    cardTitle: order.card_title || 'Escrow Order',
+    cardBrand: order.card_brand || '',
+    listingPrice: Number((order.amount_base || 0) / 100),
+    chargedTotalAmount: Number((order.amount_charged || 0) / 100),
+    marketplaceFeeRate: PLATFORM_FEE_RATE,
+    marketplaceFeeAmount: Number(((order.amount_charged || 0) - (order.amount_base || 0)) / 100),
+    sellerPayoutAmount: Number((order.amount_base || 0) / 100),
+    escrowAmount: Number((order.amount_base || 0) / 100),
+    paymentIntentId: order.stripe_payment_intent_id || null,
+    transferGroup: order.transfer_group,
+    status: order.status,
+    escrowStatus: order.status,
+    paymentProvider: 'stripe',
+    saleMode: 'instant_purchase',
+    trackingNumber: order.tracking_number || null,
+    shippingCarrier: order.carrier || null,
+    trackingUrl: order.tracking_url || null,
+    shippingApiTrackerId: order.shipping_api_tracker_id || null,
+    disputeReason: order.dispute_reason || null,
+    disputeTimerExpiresAt: order.dispute_timer_expires_at || null,
+    tosAccepted: Boolean(order.tos_accepted),
+    tosAcceptedAt: order.tos_accepted_at || null,
+    tosVersionAccepted: order.tos_version_accepted || null,
+    createdAt: order.created_at || serverTimestamp(),
+    updatedAt: order.updated_at || serverTimestamp()
+  };
+}
+
+async function syncPurchaseIntentMirror(orderId, orderData) {
+  await db.collection(PURCHASE_INTENTS_COLLECTION).doc(orderId).set(mapOrderToLegacyPurchaseIntent(orderData), { merge: true });
+}
+
+async function getOrderOrThrow(orderId) {
+  const orderRef = db.collection(ORDERS_COLLECTION).doc(orderId);
+  const orderSnap = await orderRef.get();
+  if (!orderSnap.exists) {
+    throw new Error('Order not found.');
+  }
+
+  return { orderRef, order: orderSnap.data() };
+}
+
+async function createShippoTracker(carrier, trackingNumber) {
+  const apiKey = shippoApiKey.value() || process.env.SHIPPO_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing SHIPPO_API_KEY secret.');
+  }
+
+  const response = await fetch('https://api.goshippo.com/tracks/', {
+    method: 'POST',
+    headers: {
+      Authorization: `ShippoToken ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      carrier,
+      tracking_number: trackingNumber
+    })
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload?.detail || payload?.error || 'Shipping API rejected the tracking details.');
+  }
+
+  return payload;
+}
+
+function extractShippoDestinationZip(shippoTracker) {
+  return String(
+    shippoTracker?.address_to?.zip ||
+      shippoTracker?.address_to?.postal_code ||
+      shippoTracker?.destination_zip ||
+      ''
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function normalizePostalCode(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+async function validateTrackingAgainstOrder(order, carrier, trackingNumber, destinationZipHint) {
+  const tracker = await createShippoTracker(carrier, trackingNumber);
+  const orderZip = normalizePostalCode(order.buyer_shipping_address?.postal_code || order.buyer_shipping_zip || '');
+  const trackerZip = extractShippoDestinationZip(tracker);
+  const destinationZip = normalizePostalCode(destinationZipHint || trackerZip);
+
+  if (orderZip && destinationZip && orderZip !== destinationZip) {
+    throw new Error('Tracking destination zip does not match the buyer shipping address on file.');
+  }
+
+  return {
+    trackerId: tracker.object_id || tracker.id || null,
+    trackingUrl: tracker.tracking_url_provider || null,
+    carrier: String(tracker.carrier || carrier || '').trim(),
+    trackingNumber: String(tracker.tracking_number || trackingNumber || '').trim(),
+    deliveryStatus: String(tracker.tracking_status?.status || tracker.status || '').trim().toLowerCase(),
+    destinationZip: destinationZip || orderZip || ''
+  };
+}
+
+async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadata = {}) {
+  const { orderRef, order } = await getOrderOrThrow(orderId);
+
+  if (String(order.stripe_transfer_id || '').trim()) {
+    return {
+      order,
+      transferId: order.stripe_transfer_id,
+      status: 'funds_already_released'
+    };
+  }
+
+  const baseAmountCents = Number(order.amount_base || 0);
+  if (!baseAmountCents || baseAmountCents <= 0) {
+    throw new Error('Stored base amount is missing or invalid for this order.');
+  }
+
+  const connectedAccountId = String(connectedAccountIdOverride || order.seller_id || '').trim();
+  if (!connectedAccountId.startsWith('acct_')) {
+    throw new Error('Seller connected account is missing for this order.');
+  }
+
+  const stripe = getStripeClient();
+  if (order.stripe_payment_intent_id) {
+    const paymentIntent = await stripe.paymentIntents.retrieve(order.stripe_payment_intent_id);
+    if (paymentIntent.status !== 'succeeded') {
+      throw new Error(`PaymentIntent must be succeeded before funds can be released. Current status: ${paymentIntent.status}.`);
+    }
+  }
+
+  const transfer = await stripe.transfers.create({
+    amount: baseAmountCents,
+    currency: order.currency || DEFAULT_CURRENCY,
+    destination: connectedAccountId,
+    transfer_group: order.transfer_group,
+    metadata: {
+      orderId,
+      resolution: metadata.resolution || 'standard_release',
+      actor: metadata.actor || 'system'
+    }
+  });
+
+  const nextOrderState = {
+    seller_id: connectedAccountId,
+    stripe_transfer_id: transfer.id,
+    status: 'completed',
+    funds_released_at: serverTimestamp(),
+    updated_at: serverTimestamp()
+  };
+
+  await orderRef.set(nextOrderState, { merge: true });
+  await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+
+  return {
+    transferId: transfer.id,
+    status: transfer.status,
+    connectedAccountId
+  };
+}
+
+async function refundBuyerForOrder(orderId, metadata = {}) {
+  const { orderRef, order } = await getOrderOrThrow(orderId);
+  if (!order.stripe_payment_intent_id) {
+    throw new Error('Order is missing a Stripe PaymentIntent id.');
+  }
+
+  const stripe = getStripeClient();
+  const refund = await stripe.refunds.create({
+    payment_intent: order.stripe_payment_intent_id,
+    metadata: {
+      orderId,
+      resolution: metadata.resolution || 'admin_refund',
+      actor: metadata.actor || 'admin'
+    }
+  });
+
+  const nextOrderState = {
+    status: 'refunded',
+    refunded_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+    dispute_resolution: metadata.resolution || 'refund_buyer'
+  };
+
+  await orderRef.set(nextOrderState, { merge: true });
+  await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+
+  return refund;
+}
+
+function buildOrderRecord({
+  orderId,
+  buyerProfile,
+  buyerId,
+  buyerEmail,
+  buyerName,
+  sellerConnectedAccountId,
+  sellerUserId,
+  sellerName,
+  cardId,
+  cardTitle,
+  cardBrand,
+  baseAmountCents,
+  totalAmountCents,
+  currency,
+  paymentIntent,
+  transferGroup,
+  shippingAddress
+}) {
+  return {
+    order_id: orderId,
+    seller_id: String(sellerConnectedAccountId || '').trim() || null,
+    seller_user_id: sellerUserId || null,
+    seller_name: sellerName || 'Seller',
+    buyer_id: buyerId,
+    buyer_email: buyerEmail || '',
+    buyer_name: buyerName || 'Buyer',
+    amount_base: baseAmountCents,
+    amount_charged: totalAmountCents,
+    currency,
+    stripe_payment_intent_id: paymentIntent.id,
+    stripe_transfer_id: null,
+    transfer_group: transferGroup,
+    status: 'pending_payment',
+    tracking_number: null,
+    carrier: null,
+    tracking_url: null,
+    shipping_api_tracker_id: null,
+    dispute_reason: null,
+    dispute_timer_expires_at: null,
+    buyer_shipping_address: shippingAddress || null,
+    buyer_shipping_zip: shippingAddress?.postal_code || shippingAddress?.zip || buyerProfile?.shippingZip || buyerProfile?.postalCode || null,
+    card_id: cardId || null,
+    card_title: cardTitle || 'Escrow Order',
+    card_brand: cardBrand || '',
+    tos_accepted: Boolean(buyerProfile?.tos_accepted),
+    tos_accepted_at: buyerProfile?.tos_accepted_at || serverTimestamp(),
+    tos_version_accepted: buyerProfile?.tos_version_accepted || TOS_VERSION,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp()
+  };
+}
+
+exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
   setCorsHeaders(res);
 
-  if (assertPost(req) === 'options') {
+  if (assertMethod(req, ['POST']) === 'options') {
     return res.status(204).send('');
   }
 
   try {
-    const { itemPrice, currency, orderId: requestedOrderId } = req.body || {};
-    const baseItemPriceCents = toCents(itemPrice);
-    const totalChargeCents = Math.round(baseItemPriceCents * 1.02);
-    const platformFeeCents = totalChargeCents - baseItemPriceCents;
+    const decodedToken = await requireAuth(req);
+    const {
+      itemPrice,
+      currency,
+      orderId: requestedOrderId,
+      buyerId,
+      sellerConnectedAccountId,
+      sellerUserId,
+      sellerName,
+      cardId,
+      cardTitle,
+      cardBrand,
+      buyerShippingAddress
+    } = req.body || {};
+
+    if (buyerId && buyerId !== decodedToken.uid) {
+      return sendJson(res, 403, { error: 'buyerId must match the authenticated user.' });
+    }
+
+    const baseAmountCents = toCents(itemPrice, 'itemPrice');
+    const totalAmountCents = baseAmountCents + platformFeeCentsFromBase(baseAmountCents);
+    const normalizedCurrency = normalizeCurrency(currency);
     const orderId = buildOrderId(requestedOrderId);
     const transferGroup = buildTransferGroup(orderId);
-    const normalizedCurrency = normalizeCurrency(currency);
+    const buyerProfile = await getUserProfile(decodedToken.uid);
+    ensureTosAccepted(buyerProfile);
     const stripe = getStripeClient();
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: totalChargeCents,
+      amount: totalAmountCents,
       currency: normalizedCurrency,
-      automatic_payment_methods: {
-        enabled: true
-      },
+      automatic_payment_methods: { enabled: true },
       transfer_group: transferGroup,
       metadata: {
         orderId,
-        transferGroup,
-        baseItemPriceCents: String(baseItemPriceCents),
-        totalChargeCents: String(totalChargeCents),
-        platformFeeCents: String(platformFeeCents),
+        buyerId: decodedToken.uid,
+        sellerUserId: sellerUserId || '',
+        sellerConnectedAccountId: String(sellerConnectedAccountId || '').trim(),
+        baseAmountCents: String(baseAmountCents),
+        totalAmountCents: String(totalAmountCents),
         pricingModel: 'separate_charges_and_transfers'
       }
     });
 
-    await db.collection(ORDERS_COLLECTION).doc(orderId).set(
-      {
-        orderId,
-        transferGroup,
-        currency: normalizedCurrency,
-        baseItemPriceCents,
-        totalChargeCents,
-        platformFeeCents,
-        paymentIntentId: paymentIntent.id,
-        paymentIntentStatus: paymentIntent.status,
-        sellerConnectedAccountId: null,
-        sellerTransferId: null,
-        sellerTransferAmountCents: null,
-        status: 'payment_intent_created',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      },
-      { merge: true }
-    );
+    const orderRecord = buildOrderRecord({
+      orderId,
+      buyerProfile,
+      buyerId: decodedToken.uid,
+      buyerEmail: decodedToken.email || buyerProfile?.email || '',
+      buyerName: decodedToken.name || buyerProfile?.displayName || 'Buyer',
+      sellerConnectedAccountId,
+      sellerUserId,
+      sellerName,
+      cardId,
+      cardTitle,
+      cardBrand,
+      baseAmountCents,
+      totalAmountCents,
+      currency: normalizedCurrency,
+      paymentIntent,
+      transferGroup,
+      shippingAddress: buyerShippingAddress || null
+    });
+
+    await db.collection(ORDERS_COLLECTION).doc(orderId).set(orderRecord, { merge: true });
+    await syncPurchaseIntentMirror(orderId, orderRecord);
 
     return sendJson(res, 200, {
       orderId,
       transferGroup,
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.client_secret,
-      baseItemPrice: (baseItemPriceCents / 100).toFixed(2),
-      totalCharge: (totalChargeCents / 100).toFixed(2),
-      platformFee: (platformFeeCents / 100).toFixed(2),
-      currency: normalizedCurrency
+      amountBase: baseAmountCents,
+      amountCharged: totalAmountCents,
+      baseItemPrice: (baseAmountCents / 100).toFixed(2),
+      totalCharge: (totalAmountCents / 100).toFixed(2),
+      platformFee: ((totalAmountCents - baseAmountCents) / 100).toFixed(2),
+      currency: normalizedCurrency,
+      status: 'pending_payment'
     });
   } catch (error) {
-    console.error('createPaymentIntent failed:', error);
-    return sendJson(res, 400, {
-      error: error.message || 'Unable to create payment intent.'
-    });
+    console.error('createOrderPaymentIntent failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to create payment intent.' });
   }
 });
 
-exports.releaseSellerFunds = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+exports.submitTracking = onRequest({ secrets: [shippoApiKey] }, async (req, res) => {
   setCorsHeaders(res);
 
-  if (assertPost(req) === 'options') {
+  if (assertMethod(req, ['POST']) === 'options') {
     return res.status(204).send('');
   }
 
   try {
-    const { orderId: rawOrderId, connectedAccountId } = req.body || {};
+    const decodedToken = await requireAuth(req);
+    const { orderId: rawOrderId, trackingNumber, carrier, destinationZip } = req.body || {};
     const orderId = buildOrderId(rawOrderId);
+    const { orderRef, order } = await getOrderOrThrow(orderId);
 
-    if (!connectedAccountId || !String(connectedAccountId).trim().startsWith('acct_')) {
-      return sendJson(res, 400, {
-        error: 'connectedAccountId must be a valid Stripe connected account id.'
-      });
+    if (order.seller_user_id && order.seller_user_id !== decodedToken.uid) {
+      return sendJson(res, 403, { error: 'Only the seller can submit tracking for this order.' });
     }
 
-    const orderRef = db.collection(ORDERS_COLLECTION).doc(orderId);
-    const orderSnap = await orderRef.get();
-
-    if (!orderSnap.exists) {
-      return sendJson(res, 404, {
-        error: 'No payment order was found for that orderId.'
-      });
-    }
-
-    const order = orderSnap.data();
-    const baseItemPriceCents = Number(order.baseItemPriceCents || 0);
-    const transferGroup = order.transferGroup || buildTransferGroup(orderId);
-    const normalizedCurrency = normalizeCurrency(order.currency || DEFAULT_CURRENCY);
-
-    if (String(order.sellerTransferId || '').trim()) {
-      return sendJson(res, 200, {
-        orderId,
-        transferId: order.sellerTransferId,
-        transferGroup,
-        status: 'funds_already_released'
-      });
-    }
-
-    if (!baseItemPriceCents || baseItemPriceCents <= 0) {
-      return sendJson(res, 400, {
-        error: 'Stored base item price is missing or invalid for this order.'
-      });
-    }
-
-    if (order.paymentIntentId) {
-      const stripe = getStripeClient();
-      const paymentIntent = await stripe.paymentIntents.retrieve(order.paymentIntentId);
-
-      if (paymentIntent.status !== 'succeeded') {
-        return sendJson(res, 409, {
-          error: `PaymentIntent must be succeeded before releasing funds. Current status: ${paymentIntent.status}.`
-        });
-      }
-    }
-
-    const stripe = getStripeClient();
-    const transfer = await stripe.transfers.create({
-      amount: baseItemPriceCents,
-      currency: normalizedCurrency,
-      destination: String(connectedAccountId).trim(),
-      transfer_group: transferGroup,
-      metadata: {
-        orderId,
-        paymentIntentId: order.paymentIntentId || '',
-        pricingModel: 'separate_charges_and_transfers'
-      }
-    });
-
-    await orderRef.set(
-      {
-        sellerConnectedAccountId: String(connectedAccountId).trim(),
-        sellerTransferId: transfer.id,
-        sellerTransferAmountCents: baseItemPriceCents,
-        sellerTransferStatus: transfer.status,
-        status: 'funds_released',
-        fundsReleasedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      },
-      { merge: true }
-    );
-
-    return sendJson(res, 200, {
-      orderId,
-      transferId: transfer.id,
-      transferGroup,
-      sellerConnectedAccountId: connectedAccountId,
-      transferredAmount: (baseItemPriceCents / 100).toFixed(2),
-      currency: normalizedCurrency,
-      status: transfer.status
-    });
-  } catch (error) {
-    console.error('releaseSellerFunds failed:', error);
-    return sendJson(res, 400, {
-      error: error.message || 'Unable to release seller funds.'
-    });
-  }
-});
-
-exports.submitTracking = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
-  setCorsHeaders(res);
-
-  if (assertPost(req) === 'options') {
-    return res.status(204).send('');
-  }
-
-  try {
-    const { orderId: rawOrderId, carrier, trackingNumber, trackingUrl } = req.body || {};
-    const orderId = buildOrderId(rawOrderId);
-    const normalizedCarrier = String(carrier || '').trim();
-    const normalizedTrackingNumber = String(trackingNumber || '').trim();
-    const normalizedTrackingUrl = String(trackingUrl || '').trim();
-
-    if (!normalizedCarrier || !normalizedTrackingNumber) {
-      return sendJson(res, 400, {
-        error: 'carrier and trackingNumber are required.'
-      });
-    }
-
-    const orderRef = db.collection(ORDERS_COLLECTION).doc(orderId);
-    const orderSnap = await orderRef.get();
-
-    if (!orderSnap.exists) {
-      return sendJson(res, 404, {
-        error: 'No payment order was found for that orderId.'
-      });
-    }
-
-    const orderUpdate = {
-      shippingCarrier: normalizedCarrier,
-      trackingNumber: normalizedTrackingNumber,
-      trackingUrl: normalizedTrackingUrl || null,
-      shipmentStatus: 'tracking_submitted',
-      status: 'tracking_submitted',
-      shippedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    const trackingDetails = await validateTrackingAgainstOrder(order, carrier, trackingNumber, destinationZip);
+    const nextOrderState = {
+      tracking_number: trackingDetails.trackingNumber,
+      carrier: trackingDetails.carrier,
+      tracking_url: trackingDetails.trackingUrl,
+      shipping_api_tracker_id: trackingDetails.trackerId,
+      status: 'shipped',
+      shipped_at: serverTimestamp(),
+      updated_at: serverTimestamp()
     };
 
-    await orderRef.set(orderUpdate, { merge: true });
-
-    const purchaseIntentRef = db.collection(PURCHASE_INTENTS_COLLECTION).doc(orderId);
-    const purchaseIntentSnap = await purchaseIntentRef.get();
-    if (purchaseIntentSnap.exists) {
-      await purchaseIntentRef.set(
-        {
-          shippingCarrier: normalizedCarrier,
-          trackingNumber: normalizedTrackingNumber,
-          trackingUrl: normalizedTrackingUrl || null,
-          shipmentStatus: 'tracking_submitted',
-          escrowStatus: 'shipped',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        },
-        { merge: true }
-      );
-    }
+    await orderRef.set(nextOrderState, { merge: true });
+    await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
 
     return sendJson(res, 200, {
       orderId,
-      carrier: normalizedCarrier,
-      trackingNumber: normalizedTrackingNumber,
-      trackingUrl: normalizedTrackingUrl || null,
-      status: 'tracking_submitted'
+      carrier: trackingDetails.carrier,
+      trackingNumber: trackingDetails.trackingNumber,
+      shippingApiTrackerId: trackingDetails.trackerId,
+      trackingUrl: trackingDetails.trackingUrl,
+      status: 'shipped'
     });
   } catch (error) {
     console.error('submitTracking failed:', error);
-    return sendJson(res, 400, {
-      error: error.message || 'Unable to submit tracking details.'
-    });
+    return sendJson(res, 400, { error: error.message || 'Unable to submit tracking details.' });
   }
 });
+
+exports.acceptDelivery = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+
+  if (assertMethod(req, ['POST']) === 'options') {
+    return res.status(204).send('');
+  }
+
+  try {
+    const decodedToken = await requireAuth(req);
+    const orderId = buildOrderId(req.body?.orderId);
+    const { order } = await getOrderOrThrow(orderId);
+
+    if (order.buyer_id !== decodedToken.uid) {
+      return sendJson(res, 403, { error: 'Only the buyer can accept delivery for this order.' });
+    }
+
+    const result = await releaseFundsForOrder(orderId, order.seller_id, {
+      actor: decodedToken.uid,
+      resolution: 'buyer_accept_delivery'
+    });
+
+    return sendJson(res, 200, {
+      orderId,
+      transferId: result.transferId,
+      status: 'completed'
+    });
+  } catch (error) {
+    console.error('acceptDelivery failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to release seller funds.' });
+  }
+});
+
+exports.openDispute = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+
+  if (assertMethod(req, ['POST']) === 'options') {
+    return res.status(204).send('');
+  }
+
+  try {
+    const decodedToken = await requireAuth(req);
+    const orderId = buildOrderId(req.body?.orderId);
+    const disputeReason = String(req.body?.disputeReason || '').trim();
+    if (!disputeReason) {
+      return sendJson(res, 400, { error: 'disputeReason is required.' });
+    }
+
+    const { orderRef, order } = await getOrderOrThrow(orderId);
+    if (order.buyer_id !== decodedToken.uid) {
+      return sendJson(res, 403, { error: 'Only the buyer can dispute this order.' });
+    }
+
+    const nextOrderState = {
+      status: 'disputed',
+      dispute_reason: disputeReason,
+      disputed_at: serverTimestamp(),
+      dispute_timer_expires_at: null,
+      updated_at: serverTimestamp()
+    };
+
+    await orderRef.set(nextOrderState, { merge: true });
+    await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+
+    return sendJson(res, 200, {
+      orderId,
+      status: 'disputed'
+    });
+  } catch (error) {
+    console.error('openDispute failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to open dispute.' });
+  }
+});
+
+exports.shippingWebhook = onRequest({ secrets: [shippingWebhookSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+
+  if (assertMethod(req, ['POST']) === 'options') {
+    return res.status(204).send('');
+  }
+
+  try {
+    const expectedSecret = shippingWebhookSecret.value() || process.env.SHIPPING_WEBHOOK_SECRET;
+    const providedSecret = String(req.headers['x-webhook-secret'] || req.query.secret || '');
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      return sendJson(res, 401, { error: 'Invalid shipping webhook secret.' });
+    }
+
+    const trackerId = String(req.body?.data?.object_id || req.body?.object_id || req.body?.tracking?.id || '').trim();
+    const trackingNumber = String(req.body?.data?.tracking_number || req.body?.tracking_number || '').trim();
+    const carrier = String(req.body?.data?.carrier || req.body?.carrier || '').trim();
+    const rawStatus = String(req.body?.data?.tracking_status?.status || req.body?.tracking_status?.status || req.body?.status || '').trim().toLowerCase();
+    if (!trackerId && !trackingNumber) {
+      return sendJson(res, 400, { error: 'Missing tracker identifier.' });
+    }
+
+    let orderQuery = null;
+    if (trackerId) {
+      orderQuery = await db.collection(ORDERS_COLLECTION).where('shipping_api_tracker_id', '==', trackerId).limit(1).get();
+    }
+    if ((!orderQuery || orderQuery.empty) && trackingNumber) {
+      orderQuery = await db.collection(ORDERS_COLLECTION).where('tracking_number', '==', trackingNumber).limit(1).get();
+    }
+    if (!orderQuery || orderQuery.empty) {
+      return sendJson(res, 404, { error: 'Matching order not found for shipping webhook.' });
+    }
+
+    const orderDoc = orderQuery.docs[0];
+    const order = orderDoc.data();
+    const nextOrderState = {
+      tracking_number: trackingNumber || order.tracking_number || null,
+      carrier: carrier || order.carrier || null,
+      updated_at: serverTimestamp()
+    };
+
+    if (rawStatus === 'delivered') {
+      nextOrderState.status = 'delivered';
+      nextOrderState.delivered_at = serverTimestamp();
+      nextOrderState.dispute_timer_expires_at = addMilliseconds(nowTimestamp(), DISPUTE_WINDOW_MS);
+    }
+
+    await orderDoc.ref.set(nextOrderState, { merge: true });
+    await syncPurchaseIntentMirror(order.order_id || orderDoc.id, { ...order, ...nextOrderState });
+
+    return sendJson(res, 200, {
+      ok: true,
+      orderId: order.order_id || orderDoc.id,
+      status: nextOrderState.status || order.status
+    });
+  } catch (error) {
+    console.error('shippingWebhook failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to process shipping webhook.' });
+  }
+});
+
+exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+
+  if (assertMethod(req, ['POST']) === 'options') {
+    return res.status(204).send('');
+  }
+
+  try {
+    const secret = stripeWebhookSecret.value() || process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) {
+      return sendJson(res, 500, { error: 'Missing STRIPE_WEBHOOK_SECRET secret.' });
+    }
+
+    const stripe = getStripeClient();
+    const signature = req.headers['stripe-signature'];
+    const event = stripe.webhooks.constructEvent(req.rawBody, signature, secret);
+
+    if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object;
+      const orderId = buildOrderId(paymentIntent.metadata?.orderId || '');
+      const { orderRef, order } = await getOrderOrThrow(orderId);
+      const nextOrderState = {
+        status: 'payment_held',
+        stripe_payment_intent_id: paymentIntent.id,
+        updated_at: serverTimestamp()
+      };
+      await orderRef.set(nextOrderState, { merge: true });
+      await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+    }
+
+    if (event.type === 'payment_intent.payment_failed' || event.type === 'payment_intent.canceled') {
+      const paymentIntent = event.data.object;
+      const orderId = buildOrderId(paymentIntent.metadata?.orderId || '');
+      const { orderRef, order } = await getOrderOrThrow(orderId);
+      const nextOrderState = {
+        status: 'pending_payment',
+        updated_at: serverTimestamp(),
+        payment_error: paymentIntent.last_payment_error?.message || event.type
+      };
+      await orderRef.set(nextOrderState, { merge: true });
+      await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+    }
+
+    return res.status(200).send('ok');
+  } catch (error) {
+    console.error('stripeEscrowWebhook failed:', error);
+    return res.status(400).send(`Webhook Error: ${error.message}`);
+  }
+});
+
+exports.getAdminDisputes = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+
+  if (assertMethod(req, ['GET']) === 'options') {
+    return res.status(204).send('');
+  }
+
+  try {
+    await requireAdmin(req);
+    const snapshot = await db.collection(ORDERS_COLLECTION).where('status', '==', 'disputed').limit(200).get();
+    const disputes = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+    return sendJson(res, 200, { disputes });
+  } catch (error) {
+    console.error('getAdminDisputes failed:', error);
+    return sendJson(res, 403, { error: error.message || 'Unable to load disputes.' });
+  }
+});
+
+exports.resolveAdminDispute = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+
+  if (assertMethod(req, ['POST']) === 'options') {
+    return res.status(204).send('');
+  }
+
+  try {
+    const decodedToken = await requireAdmin(req);
+    const orderId = buildOrderId(req.body?.orderId);
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    if (action !== 'refund_buyer' && action !== 'release_to_seller') {
+      return sendJson(res, 400, { error: 'action must be refund_buyer or release_to_seller.' });
+    }
+
+    if (action === 'refund_buyer') {
+      await refundBuyerForOrder(orderId, { actor: decodedToken.uid, resolution: 'refund_buyer' });
+      return sendJson(res, 200, { orderId, status: 'refunded' });
+    }
+
+    const { order } = await getOrderOrThrow(orderId);
+    const result = await releaseFundsForOrder(orderId, order.seller_id, {
+      actor: decodedToken.uid,
+      resolution: 'release_to_seller'
+    });
+    return sendJson(res, 200, { orderId, status: 'completed', transferId: result.transferId });
+  } catch (error) {
+    console.error('resolveAdminDispute failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to resolve dispute.' });
+  }
+});
+
+exports.autoReleaseDeliveredOrders = onSchedule({ schedule: 'every 15 minutes', secrets: [stripeSecret] }, async () => {
+  const cutoff = nowTimestamp();
+  const snapshot = await db
+    .collection(ORDERS_COLLECTION)
+    .where('status', '==', 'delivered')
+    .where('dispute_timer_expires_at', '<=', cutoff)
+    .limit(100)
+    .get();
+
+  for (const docSnap of snapshot.docs) {
+    const order = docSnap.data();
+    try {
+      await releaseFundsForOrder(order.order_id || docSnap.id, order.seller_id, {
+        actor: 'system',
+        resolution: 'auto_release_after_48h'
+      });
+    } catch (error) {
+      console.error(`autoReleaseDeliveredOrders failed for ${docSnap.id}:`, error);
+    }
+  }
+});
+
+exports.createPaymentIntent = exports.createOrderPaymentIntent;
+exports.releaseSellerFunds = exports.acceptDelivery;
