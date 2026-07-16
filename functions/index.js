@@ -12,6 +12,7 @@ const stripeSecret = defineSecret('STRIPE_SECRET_KEY');
 const ORDERS_COLLECTION = 'paymentOrders';
 const DEFAULT_CURRENCY = 'usd';
 const PLATFORM_FEE_RATE = 0.02;
+const PURCHASE_INTENTS_COLLECTION = 'purchaseIntents';
 
 function setCorsHeaders(res) {
   res.set('Access-Control-Allow-Origin', '*');
@@ -246,6 +247,78 @@ exports.releaseSellerFunds = onRequest({ secrets: [stripeSecret] }, async (req, 
     console.error('releaseSellerFunds failed:', error);
     return sendJson(res, 400, {
       error: error.message || 'Unable to release seller funds.'
+    });
+  }
+});
+
+exports.submitTracking = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+
+  if (assertPost(req) === 'options') {
+    return res.status(204).send('');
+  }
+
+  try {
+    const { orderId: rawOrderId, carrier, trackingNumber, trackingUrl } = req.body || {};
+    const orderId = buildOrderId(rawOrderId);
+    const normalizedCarrier = String(carrier || '').trim();
+    const normalizedTrackingNumber = String(trackingNumber || '').trim();
+    const normalizedTrackingUrl = String(trackingUrl || '').trim();
+
+    if (!normalizedCarrier || !normalizedTrackingNumber) {
+      return sendJson(res, 400, {
+        error: 'carrier and trackingNumber are required.'
+      });
+    }
+
+    const orderRef = db.collection(ORDERS_COLLECTION).doc(orderId);
+    const orderSnap = await orderRef.get();
+
+    if (!orderSnap.exists) {
+      return sendJson(res, 404, {
+        error: 'No payment order was found for that orderId.'
+      });
+    }
+
+    const orderUpdate = {
+      shippingCarrier: normalizedCarrier,
+      trackingNumber: normalizedTrackingNumber,
+      trackingUrl: normalizedTrackingUrl || null,
+      shipmentStatus: 'tracking_submitted',
+      status: 'tracking_submitted',
+      shippedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await orderRef.set(orderUpdate, { merge: true });
+
+    const purchaseIntentRef = db.collection(PURCHASE_INTENTS_COLLECTION).doc(orderId);
+    const purchaseIntentSnap = await purchaseIntentRef.get();
+    if (purchaseIntentSnap.exists) {
+      await purchaseIntentRef.set(
+        {
+          shippingCarrier: normalizedCarrier,
+          trackingNumber: normalizedTrackingNumber,
+          trackingUrl: normalizedTrackingUrl || null,
+          shipmentStatus: 'tracking_submitted',
+          escrowStatus: 'shipped',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+
+    return sendJson(res, 200, {
+      orderId,
+      carrier: normalizedCarrier,
+      trackingNumber: normalizedTrackingNumber,
+      trackingUrl: normalizedTrackingUrl || null,
+      status: 'tracking_submitted'
+    });
+  } catch (error) {
+    console.error('submitTracking failed:', error);
+    return sendJson(res, 400, {
+      error: error.message || 'Unable to submit tracking details.'
     });
   }
 });

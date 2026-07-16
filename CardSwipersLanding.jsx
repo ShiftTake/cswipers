@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
@@ -46,6 +48,8 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
 const normalizeAuthEmail = (value) => value.trim().toLowerCase();
 const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
+const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const getSignInMethodMessage = (methods, flow) => {
   if (methods.includes('google.com')) {
@@ -196,6 +200,69 @@ function BellIcon() {
   );
 }
 
+function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!stripe || !elements || isSubmitting) return;
+
+    setIsSubmitting(true);
+    onError('');
+
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      redirect: 'if_required'
+    });
+
+    setIsSubmitting(false);
+
+    if (error) {
+      onError(error.message || 'Stripe payment confirmation failed.');
+      return;
+    }
+
+    onSuccess(paymentIntent);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <h3 className="text-lg font-bold text-[#111827]">Complete escrow payment</h3>
+        <p className="text-sm text-[#6B7280] mt-1">
+          {purchaseSummary.cardTitle} · You will be charged {formatMoney(purchaseSummary.totalCharge)}.
+        </p>
+        <p className="text-xs text-[#6B7280] mt-1">
+          Item price {formatMoney(purchaseSummary.baseItemPrice)} + buyer platform fee {formatMoney(purchaseSummary.platformFee)}.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
+        <PaymentElement />
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={!stripe || !elements || isSubmitting}
+          className="flex-1 h-11 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold disabled:opacity-60"
+        >
+          {isSubmitting ? 'Processing...' : `Pay ${formatMoney(purchaseSummary.totalCharge)}`}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-11 px-4 rounded-2xl border border-[#D4D8DE] text-[#111827] font-semibold"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 const INITIAL_DECK = [];
 
 const PUBLISHERS = [
@@ -287,6 +354,8 @@ const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
 const MARKETPLACE_FEE_RATE = 0.02;
 const VERIFIED_BUYER_SUBSCRIPTION_PRICE = 19.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
+const ESCROW_API_BASE = '/api';
+const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service, including the 48-hour inspection window and dispute policy for escrow purchases.';
 
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
 
@@ -319,6 +388,31 @@ const calculateMarketplaceSplit = (grossAmount) => {
   const sellerPayout = Number((gross - marketplaceFee).toFixed(2));
   return { gross, marketplaceFee, sellerPayout };
 };
+
+const calculateEscrowCharge = (baseItemPrice) => {
+  const baseAmount = Number(baseItemPrice || 0);
+  const platformFee = Number((baseAmount * MARKETPLACE_FEE_RATE).toFixed(2));
+  const totalCharge = Number((baseAmount + platformFee).toFixed(2));
+  return {
+    baseAmount,
+    platformFee,
+    totalCharge
+  };
+};
+
+const buildEscrowOrderId = () =>
+  `ORDER_ID_${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+const getConnectedAccountIdFromRecord = (record = {}, sellerProfile = {}, sellerVerificationRecord = {}) => (
+  record.sellerConnectedAccountId ||
+  record.connectedAccountId ||
+  record.sellerStripeConnectedAccountId ||
+  sellerProfile.stripeConnectedAccountId ||
+  sellerProfile.connectedAccountId ||
+  sellerVerificationRecord.stripeConnectedAccountId ||
+  sellerVerificationRecord.connectedAccountId ||
+  ''
+);
 
 const ISO_QUICK_OPTIONS = [
   'Baseball',
@@ -460,6 +554,8 @@ export default function CardSwipersLanding() {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
+  const [hasAcceptedEscrowTerms, setHasAcceptedEscrowTerms] = useState(false);
+  const [hasAcceptedVerificationTerms, setHasAcceptedVerificationTerms] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -518,6 +614,11 @@ export default function CardSwipersLanding() {
   const [interestBusy, setInterestBusy] = useState(false);
   const [interestError, setInterestError] = useState('');
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [activePaymentSheet, setActivePaymentSheet] = useState(null);
+  const [paymentSheetError, setPaymentSheetError] = useState('');
+  const [trackingDrafts, setTrackingDrafts] = useState({});
+  const [trackingBusyByPurchaseId, setTrackingBusyByPurchaseId] = useState({});
+  const [releaseBusyByPurchaseId, setReleaseBusyByPurchaseId] = useState({});
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingIntroVisible, setOnboardingIntroVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
@@ -623,6 +724,26 @@ export default function CardSwipersLanding() {
       };
     })
     .filter((record) => Boolean(record.counterpartyUid));
+  const escrowTransactions = userPurchaseIntents
+    .filter((record) => String(record.paymentProvider || '').toLowerCase() === 'stripe')
+    .map((record) => {
+      const isBuyer = record.buyerUid === firebaseUser?.uid;
+      const sellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === record.sellerUid || entry.uid === record.sellerUid) || {};
+      const connectedAccountId = getConnectedAccountIdFromRecord(record, {}, sellerVerificationRecord);
+      return {
+        ...record,
+        orderId: record.orderId || record.id,
+        isBuyer,
+        isSeller: record.sellerUid === firebaseUser?.uid,
+        connectedAccountId,
+        counterpartyName: isBuyer ? (record.sellerName || 'Seller') : (record.buyerName || 'Buyer')
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = toDateValue(left.updatedAt || left.createdAt)?.getTime?.() || 0;
+      const rightTime = toDateValue(right.updatedAt || right.createdAt)?.getTime?.() || 0;
+      return rightTime - leftTime;
+    });
   const postProgressChecks = [
     Boolean(postFrontImagePreview),
     Boolean(postBackImagePreview),
@@ -1648,28 +1769,37 @@ export default function CardSwipersLanding() {
       return;
     }
 
-    const grossAmount = parseDollarValue(card.buyNowPrice || card.tradeValue || card.value);
-    const { marketplaceFee, sellerPayout } = calculateMarketplaceSplit(grossAmount);
-    const taxState = normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || card.sellerState || '');
-    const escrowAmount = Number((grossAmount - marketplaceFee).toFixed(2));
+    if (!STRIPE_PUBLISHABLE_KEY || !stripePromise) {
+      setAuthError('Stripe publishable key is missing. Set VITE_STRIPE_PUBLISHABLE_KEY before using instant purchase.');
+      return;
+    }
 
-    await addDoc(collection(db, 'purchaseIntents'), {
+    const grossAmount = parseDollarValue(card.buyNowPrice || card.tradeValue || card.value);
+    const { baseAmount, platformFee, totalCharge } = calculateEscrowCharge(grossAmount);
+    const taxState = normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || card.sellerState || '');
+    const orderId = buildEscrowOrderId();
+    const purchaseRef = doc(db, 'purchaseIntents', orderId);
+
+    await setDoc(purchaseRef, {
+      orderId,
       buyerUid: firebaseUser.uid,
       buyerName: firebaseUser.displayName || firebaseUser.email || 'Buyer',
       sellerUid: card.ownerUid || null,
       sellerName: card.owner || 'Collector',
+      sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || null,
       cardId: card.id,
       cardTitle: card.title,
       cardBrand: card.brand || '',
-      listingPrice: grossAmount,
+      listingPrice: baseAmount,
       marketplaceFeeRate: MARKETPLACE_FEE_RATE,
-      marketplaceFeeAmount: marketplaceFee,
-      sellerPayoutAmount: sellerPayout,
+      marketplaceFeeAmount: platformFee,
+      chargedTotalAmount: totalCharge,
+      sellerPayoutAmount: baseAmount,
       taxState,
       taxStatus: 'needs-stripe-tax',
       taxAmount: 0,
-      escrowAmount,
-      escrowStatus: 'pending',
+      escrowAmount: baseAmount,
+      escrowStatus: 'payment_pending',
       status: 'requires_payment',
       paymentProvider: 'stripe',
       saleMode: 'instant_purchase',
@@ -1678,11 +1808,190 @@ export default function CardSwipersLanding() {
       updatedAt: serverTimestamp()
     });
 
-    if (shouldAdvanceDeck) {
-      const nextDeck = deck.filter((listing) => listing.id !== card.id);
-      setDeck(nextDeck);
-      setSwipeFeedback('like');
-      advanceDeck();
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/create-payment-intent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          itemPrice: baseAmount,
+          currency: 'usd',
+          orderId
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to initialize Stripe payment.');
+      }
+
+      await updateDoc(purchaseRef, {
+        paymentIntentId: payload.paymentIntentId,
+        paymentIntentClientSecret: payload.clientSecret,
+        transferGroup: payload.transferGroup,
+        chargedTotalAmount: Number(payload.totalCharge || totalCharge),
+        marketplaceFeeAmount: Number(payload.platformFee || platformFee),
+        sellerPayoutAmount: Number(payload.baseItemPrice || baseAmount),
+        escrowAmount: Number(payload.baseItemPrice || baseAmount),
+        status: 'payment_intent_created',
+        escrowStatus: 'payment_intent_created',
+        updatedAt: serverTimestamp()
+      });
+
+      setPaymentSheetError('');
+      setActivePaymentSheet({
+        orderId,
+        purchaseId: orderId,
+        clientSecret: payload.clientSecret,
+        cardId: card.id,
+        cardTitle: card.title,
+        baseItemPrice: Number(payload.baseItemPrice || baseAmount),
+        totalCharge: Number(payload.totalCharge || totalCharge),
+        platformFee: Number(payload.platformFee || platformFee),
+        advanceAfterPurchase: shouldAdvanceDeck
+      });
+    } catch (error) {
+      console.error('Failed to initialize escrow payment:', error);
+      await updateDoc(purchaseRef, {
+        status: 'payment_intent_failed',
+        escrowStatus: 'payment_intent_failed',
+        paymentError: error.message || 'Unable to initialize Stripe payment.',
+        updatedAt: serverTimestamp()
+      });
+      setAuthError(error.message || 'Unable to initialize Stripe payment.');
+    }
+  };
+
+  const handleEscrowPaymentSuccess = async (paymentIntent) => {
+    if (!activePaymentSheet?.purchaseId) return;
+
+    try {
+      await updateDoc(doc(db, 'purchaseIntents', activePaymentSheet.purchaseId), {
+        paymentIntentId: paymentIntent?.id || null,
+        paymentIntentStatus: paymentIntent?.status || 'succeeded',
+        status: 'paid',
+        escrowStatus: 'held',
+        tosAcceptedAt: serverTimestamp(),
+        paidAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      if (activePaymentSheet.advanceAfterPurchase) {
+        const nextDeck = deck.filter((listing) => listing.id !== activePaymentSheet.cardId);
+        setDeck(nextDeck);
+        setSwipeFeedback('like');
+        advanceDeck();
+      }
+
+      setAuthInfo(`Escrow payment captured for ${activePaymentSheet.cardTitle}. Funds will remain held until shipment and release.`);
+      setActivePaymentSheet(null);
+    } catch (error) {
+      console.error('Failed to finalize escrow payment:', error);
+      setPaymentSheetError('Payment succeeded, but we could not finish recording the order. Refresh your account history and verify the order status.');
+    }
+  };
+
+  const handleSubmitTrackingForOrder = async (transaction) => {
+    if (!transaction?.orderId || !transaction?.isSeller) return;
+
+    const draft = trackingDrafts[transaction.orderId] || {};
+    const carrier = String(draft.carrier || '').trim();
+    const trackingNumber = String(draft.trackingNumber || '').trim();
+    const trackingUrl = String(draft.trackingUrl || '').trim();
+
+    if (!carrier || !trackingNumber) {
+      setVerificationError('Carrier and tracking number are required before submitting tracking.');
+      return;
+    }
+
+    setTrackingBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
+    setVerificationError('');
+    setVerificationInfo('');
+
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/submit-tracking`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          orderId: transaction.orderId,
+          carrier,
+          trackingNumber,
+          trackingUrl
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to submit tracking details.');
+      }
+
+      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
+        shippingCarrier: carrier,
+        trackingNumber,
+        trackingUrl: trackingUrl || null,
+        shipmentStatus: 'tracking_submitted',
+        escrowStatus: 'shipped',
+        updatedAt: serverTimestamp()
+      });
+
+      setVerificationInfo(`Tracking submitted for ${transaction.cardTitle || 'this order'}. The buyer can now release the held funds.`);
+    } catch (error) {
+      console.error('Failed to submit tracking:', error);
+      setVerificationError(error.message || 'Unable to submit tracking details.');
+    } finally {
+      setTrackingBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
+    }
+  };
+
+  const handleReleaseSellerFundsEarly = async (transaction) => {
+    if (!transaction?.orderId || !transaction?.isBuyer) return;
+
+    const sellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === transaction.sellerUid || entry.uid === transaction.sellerUid) || {};
+    const connectedAccountId = getConnectedAccountIdFromRecord(transaction, {}, sellerVerificationRecord);
+
+    if (!connectedAccountId) {
+      setAuthError('Seller has not linked a Stripe connected account yet, so funds cannot be released.');
+      return;
+    }
+
+    setReleaseBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
+    setAuthError('');
+
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/release-seller-funds`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          orderId: transaction.orderId,
+          connectedAccountId
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to release seller funds.');
+      }
+
+      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
+        sellerConnectedAccountId: connectedAccountId,
+        sellerTransferId: payload.transferId || null,
+        status: 'released',
+        escrowStatus: 'released',
+        fundsReleasedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setAuthInfo(`Released ${formatMoney(transaction.escrowAmount || transaction.listingPrice || 0)} to ${transaction.sellerName || 'the seller'}.`);
+    } catch (error) {
+      console.error('Failed to release seller funds:', error);
+      setAuthError(error.message || 'Unable to release seller funds.');
+    } finally {
+      setReleaseBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
     }
   };
 
@@ -2111,6 +2420,10 @@ export default function CardSwipersLanding() {
       setVerificationError('Select buyer and/or seller verification.');
       return;
     }
+    if (!hasAcceptedVerificationTerms) {
+      setVerificationError('You must accept the 48-hour inspection and dispute policy before submitting verification or linking a Stripe wallet.');
+      return;
+    }
     if (!verificationDocFile) {
       setVerificationError('Upload a government-issued license/ID to continue.');
       return;
@@ -2492,6 +2805,11 @@ export default function CardSwipersLanding() {
 
     if (authMode === 'create' && !authDisplayName.trim()) {
       setAuthError('Please enter a display name.');
+      return;
+    }
+
+    if (authMode === 'create' && !hasAcceptedEscrowTerms) {
+      setAuthError('You must agree to the Terms of Service, including the 48-hour inspection and dispute policy, before creating an account.');
       return;
     }
 
@@ -3333,6 +3651,27 @@ export default function CardSwipersLanding() {
                     placeholder="Confirm password"
                     className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
                   />
+                )}
+
+                {authMode === 'create' && (
+                  <label className="flex items-start gap-3 rounded-2xl border border-[#E5E7EB] bg-[#FFF7F8] px-4 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={hasAcceptedEscrowTerms}
+                      onChange={(event) => setHasAcceptedEscrowTerms(event.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-[#D1D5DB] text-[#E60028]"
+                    />
+                    <span className="text-xs leading-5 text-[#374151]">
+                      {ESCROW_TERMS_LABEL}{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowTermsOfService(true)}
+                        className="text-[#E60028] underline underline-offset-2"
+                      >
+                        Review Terms
+                      </button>
+                    </span>
+                  </label>
                 )}
 
                 {authError && (
@@ -4325,6 +4664,24 @@ export default function CardSwipersLanding() {
                   placeholder="Optional notes for CS support"
                   className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
                 />
+                <label className="flex items-start gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={hasAcceptedVerificationTerms}
+                    onChange={(event) => setHasAcceptedVerificationTerms(event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-white/25 bg-transparent"
+                  />
+                  <span className="text-xs text-red-100 leading-5">
+                    {ESCROW_TERMS_LABEL}{' '}
+                    <button
+                      type="button"
+                      onClick={() => setShowTermsOfService(true)}
+                      className="underline underline-offset-2 text-white"
+                    >
+                      Review Terms
+                    </button>
+                  </span>
+                </label>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -4468,6 +4825,103 @@ export default function CardSwipersLanding() {
                           >
                             {isSubmitting ? 'Submitting...' : 'Submit Review'}
                           </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {escrowTransactions.length > 0 && (
+                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Escrow Orders</h3>
+                    {escrowTransactions.slice(0, 10).map((transaction) => {
+                      const trackingDraft = trackingDrafts[transaction.orderId] || { carrier: '', trackingNumber: '', trackingUrl: '' };
+                      const trackingBusy = Boolean(trackingBusyByPurchaseId[transaction.orderId]);
+                      const releaseBusy = Boolean(releaseBusyByPurchaseId[transaction.orderId]);
+                      return (
+                        <div key={transaction.orderId} className="rounded-xl border border-red-400/20 bg-black/20 p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div>
+                              <p className="text-sm font-semibold">{transaction.cardTitle || 'Escrow Order'}</p>
+                              <p className="text-xs text-red-100">
+                                Order {transaction.orderId} · Status {transaction.escrowStatus || transaction.status || 'pending'}
+                              </p>
+                              <p className="text-xs text-red-100">
+                                Charge {formatMoney(transaction.chargedTotalAmount || transaction.listingPrice || 0)} · Held for {formatMoney(transaction.escrowAmount || transaction.sellerPayoutAmount || transaction.listingPrice || 0)}
+                              </p>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                              {transaction.isBuyer ? `Buyer view · Seller ${transaction.counterpartyName}` : `Seller view · Buyer ${transaction.counterpartyName}`}
+                            </span>
+                          </div>
+
+                          {transaction.isSeller && (
+                            <div className="grid gap-2 md:grid-cols-3">
+                              <input
+                                type="text"
+                                value={trackingDraft.carrier}
+                                onChange={(event) => setTrackingDrafts((prev) => ({
+                                  ...prev,
+                                  [transaction.orderId]: {
+                                    ...trackingDraft,
+                                    carrier: event.target.value
+                                  }
+                                }))}
+                                placeholder="Carrier (UPS, USPS, FedEx)"
+                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
+                              />
+                              <input
+                                type="text"
+                                value={trackingDraft.trackingNumber}
+                                onChange={(event) => setTrackingDrafts((prev) => ({
+                                  ...prev,
+                                  [transaction.orderId]: {
+                                    ...trackingDraft,
+                                    trackingNumber: event.target.value
+                                  }
+                                }))}
+                                placeholder="Tracking number"
+                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
+                              />
+                              <input
+                                type="url"
+                                value={trackingDraft.trackingUrl}
+                                onChange={(event) => setTrackingDrafts((prev) => ({
+                                  ...prev,
+                                  [transaction.orderId]: {
+                                    ...trackingDraft,
+                                    trackingUrl: event.target.value
+                                  }
+                                }))}
+                                placeholder="Optional tracking URL"
+                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap gap-2">
+                            {transaction.isSeller && (
+                              <button
+                                type="button"
+                                disabled={trackingBusy}
+                                onClick={() => handleSubmitTrackingForOrder(transaction)}
+                                className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 disabled:opacity-60"
+                              >
+                                {trackingBusy ? 'Submitting tracking...' : 'Submit Tracking'}
+                              </button>
+                            )}
+
+                            {transaction.isBuyer && (
+                              <button
+                                type="button"
+                                disabled={releaseBusy}
+                                onClick={() => handleReleaseSellerFundsEarly(transaction)}
+                                className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
+                              >
+                                {releaseBusy ? 'Releasing...' : 'Release Seller Funds Early'}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -5299,17 +5753,66 @@ export default function CardSwipersLanding() {
               </button>
             </div>
             <p className="text-sm leading-relaxed">
-              CardSwipers and its affiliates are not responsible for losses, fraud, chargebacks, scams, or any damages
-              arising from user-to-user trades, arrangements, or communications made through the platform.
+              CardSwipers supports collector-to-collector escrow payments, but all users remain responsible for
+              accurately describing inventory, shipping on time, and responding in good faith during any dispute.
             </p>
             <p className="text-sm leading-relaxed">
-              By using CardSwipers, you acknowledge and accept all risks associated with every trade and interaction.
-              Users are solely responsible for conducting their own due diligence before completing any trade.
+              Escrow purchases include a 48-hour inspection window after confirmed delivery. Buyers must raise any
+              dispute within that window or the seller may be paid out.
             </p>
             <p className="text-sm leading-relaxed">
-              CardSwipers does not facilitate payments, escrow, shipping, or transaction settlement between users.
-              We strongly recommend caution and verification when engaging with other users from the platform.
+              By using CardSwipers, you agree to the inspection and dispute policy, and you acknowledge that abuse,
+              fraud, chargebacks, or materially inaccurate listings can result in account action.
             </p>
+          </div>
+        </div>
+      )}
+
+      {activePaymentSheet && stripePromise && (
+        <div className="fixed inset-0 bg-black/70 z-[68] flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white text-[#111827] rounded-[28px] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold">Secure escrow checkout</h2>
+                <p className="text-sm text-[#6B7280]">Payment is held until shipment and release.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActivePaymentSheet(null);
+                  setPaymentSheetError('');
+                }}
+                className="text-sm font-semibold text-[#6B7280] hover:text-[#111827]"
+              >
+                Close
+              </button>
+            </div>
+
+            {paymentSheetError && (
+              <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2 text-sm text-red-700">
+                {paymentSheetError}
+              </div>
+            )}
+
+            <Elements
+              stripe={stripePromise}
+              options={{
+                clientSecret: activePaymentSheet.clientSecret,
+                appearance: {
+                  theme: 'stripe'
+                }
+              }}
+            >
+              <EscrowPaymentForm
+                purchaseSummary={activePaymentSheet}
+                onCancel={() => {
+                  setActivePaymentSheet(null);
+                  setPaymentSheetError('');
+                }}
+                onError={setPaymentSheetError}
+                onSuccess={handleEscrowPaymentSuccess}
+              />
+            </Elements>
           </div>
         </div>
       )}
