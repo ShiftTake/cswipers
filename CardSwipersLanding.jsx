@@ -3199,14 +3199,14 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className={`min-h-[100dvh] w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0' : 'justify-center py-6 px-4'} items-center relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}>
+          <div className={`min-h-[100dvh] w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}>
             {isNativeApp && (
               <>
                 <img
                   src={authBackdropImage}
                   alt=""
                   aria-hidden="true"
-                  className="absolute left-1/2 top-1/2 h-[150%] w-[150%] -translate-x-1/2 -translate-y-1/2 object-cover"
+                  className="absolute inset-0 h-full w-full object-cover object-center"
                 />
                 <div
                   className="absolute inset-0"
