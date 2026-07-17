@@ -3263,7 +3263,7 @@ export default function CardSwipersLanding() {
   }, {});
 
   return (
-    <div className={`text-white font-sans flex flex-col relative h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+    <div className={`text-white font-sans flex flex-col relative h-screen h-[100dvh] max-h-screen overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
           <style>{`
@@ -3448,9 +3448,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain ${isAuthScreen ? 'px-0' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-36' : ''}`}
+        className={`flex-1 min-h-0 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-20 md:pb-24' : ''}`}
       >
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="max-w-6xl mx-auto w-full h-full max-h-screen flex flex-col min-h-0 overflow-hidden">
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -3602,7 +3602,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className={`min-h-[100dvh] w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}>
+          <div className={`h-full min-h-0 w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}>
             {isNativeApp && (
               <>
                 <img
@@ -4024,11 +4024,11 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'swipe' && (
-          <div className="h-full max-w-6xl mx-auto flex flex-col justify-between py-6">
+          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col justify-between py-3 md:py-6 overflow-hidden">
             {currentCard ? (
-              <div className="w-full grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-6 items-start">
+              <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-6 items-start">
                 <div className="space-y-5">
-                  <div className="w-full min-h-[620px] bg-[#171923] border border-white/10 rounded-[32px] p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+                  <div className="w-full h-full min-h-0 bg-[#171923] border border-white/10 rounded-[32px] p-4 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
                     <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-30 pointer-events-none`} />
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_35%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.25))] pointer-events-none" />
 
@@ -4072,8 +4072,8 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="relative z-10 flex-1 flex items-center justify-center py-8">
-                      <div className={`w-full max-w-[520px] min-h-[520px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`}>
+                    <div className="relative z-10 flex-1 flex items-center justify-center py-3 md:py-8">
+                      <div className={`w-full max-w-[520px] h-[40vh] min-h-[250px] max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`}>
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
                         <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
@@ -4099,7 +4099,7 @@ export default function CardSwipersLanding() {
                             <img
                               src={activeCardImageUrl}
                               alt={`${currentCard.title} ${activeCardImageSide}`}
-                              className="max-h-[340px] w-full max-w-[340px] object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]"
+                              className="max-h-[42vh] md:max-h-[340px] w-full max-w-[300px] md:max-w-[340px] object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]"
                             />
                           ) : (
                             <div className="text-[11rem] leading-none drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]">{currentCard.imageEmoji}</div>
@@ -4273,7 +4273,7 @@ export default function CardSwipersLanding() {
                 </aside>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center text-center py-20 space-y-4">
+              <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center py-8 space-y-4">
                 <span className="text-5xl text-white/60"><SwipeDeckIcon /></span>
                 <h3 className="text-xl font-bold">{personalizedDeck.length === 0 ? 'No Cards Available' : 'End of the Deck!'}</h3>
                 <p className="text-sm text-white/65 max-w-xs">
@@ -4287,7 +4287,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="py-2 max-w-6xl mx-auto space-y-6">
+          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-2 space-y-4 overflow-hidden">
             <div className="rounded-[24px] border border-white/10 bg-[#11161F] px-5 py-5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -4308,8 +4308,8 @@ export default function CardSwipersLanding() {
               </div>
             </div>
 
-            <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-6 items-start">
-              <form onSubmit={handlePostCard} className="space-y-5 rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)]">
+            <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-6 items-start flex-1 min-h-0">
+              <form onSubmit={handlePostCard} className="space-y-5 rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 overflow-y-auto">
                 <input
                   ref={postFrontImageInputRef}
                   type="file"
@@ -4334,15 +4334,15 @@ export default function CardSwipersLanding() {
                       onClick={() => postFrontImageInputRef.current?.click()}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[170px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[140px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postFrontImagePreview ? (
                           <img
                             src={postFrontImagePreview}
                             alt="Front card preview"
-                            className="w-full h-[190px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[150px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
-                          <div className="text-center px-4 py-8">
+                          <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Front Photo</p>
                             <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
@@ -4359,15 +4359,15 @@ export default function CardSwipersLanding() {
                       onClick={() => postBackImageInputRef.current?.click()}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[170px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[140px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postBackImagePreview ? (
                           <img
                             src={postBackImagePreview}
                             alt="Back card preview"
-                            className="w-full h-[190px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[150px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
-                          <div className="text-center px-4 py-8">
+                          <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Back Photo</p>
                             <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
@@ -4599,14 +4599,14 @@ export default function CardSwipersLanding() {
                 )}
               </form>
 
-              <aside className="rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-4">
+              <aside className="rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-4 min-h-0 overflow-y-auto">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Live Preview</p>
                   <h3 className="mt-2 text-xl font-black">Your Listing Card</h3>
                 </div>
 
                 <div className="rounded-[20px] bg-[#0D1117] border border-white/10 overflow-hidden">
-                  <div className="h-52 bg-black/40 flex items-center justify-center relative">
+                  <div className="h-40 sm:h-48 bg-black/40 flex items-center justify-center relative">
                     {postFrontImagePreview ? (
                       <img src={postFrontImagePreview} alt="Live card preview" className="w-full h-full object-cover" />
                     ) : (
@@ -4647,7 +4647,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'collection' && (
-          <div className="space-y-6 py-2 max-w-4xl mx-auto">
+          <div className="h-full min-h-0 max-h-full space-y-4 py-2 max-w-4xl mx-auto w-full flex flex-col overflow-hidden">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-2xl font-black">My Trading Binder</h2>
@@ -4784,7 +4784,7 @@ export default function CardSwipersLanding() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 min-h-0 overflow-y-auto pr-1">
               {myCollection.map((card) => (
                 <div
                   key={card.id}
@@ -4813,7 +4813,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'messages' && (
-          <div className="space-y-4 py-2 h-full flex flex-col max-w-3xl mx-auto">
+          <div className="space-y-4 py-2 h-full min-h-0 max-h-full flex flex-col max-w-3xl mx-auto w-full overflow-hidden">
             {!activeChat ? (
               <>
                 <div>
@@ -5066,7 +5066,7 @@ export default function CardSwipersLanding() {
                 </div>
               </>
             ) : (
-              <div className="flex flex-col h-full space-y-4">
+              <div className="flex flex-col h-full min-h-0 space-y-4">
                 <div className="flex items-center space-x-3 pb-3 border-b border-red-600/40">
                   <button onClick={() => setActiveChat(null)} className="text-red-200 text-sm hover:text-white" type="button">
                     ◀ Back
@@ -5699,7 +5699,7 @@ export default function CardSwipersLanding() {
 
       {showPersistentMobileDock && (
       <footer
-        className="bg-[#111827]/95 backdrop-blur-md border-t border-white/10 py-2 px-4 fixed bottom-0 left-0 right-0 z-50"
+        className="bg-[#111827]/95 backdrop-blur-md border-t border-white/10 py-2 px-4 fixed bottom-0 left-0 right-0 z-50 pb-[env(safe-area-inset-bottom)]"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
       >
         <div className="max-w-6xl mx-auto">
