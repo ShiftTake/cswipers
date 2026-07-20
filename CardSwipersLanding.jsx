@@ -116,8 +116,8 @@ const getAuthErrorMessage = (error, flow = 'login') => {
   return 'Could not log in. Please try again.';
 };
 
-function NavIcon({ children }) {
-  return <span className="w-5 h-5 inline-flex items-center justify-center">{children}</span>;
+function NavIcon({ children, className = '' }) {
+  return <span className={`inline-flex items-center justify-center ${className}`}>{children}</span>;
 }
 
 function SwipeDeckIcon() {
@@ -1370,6 +1370,17 @@ export default function CardSwipersLanding() {
       setCurrentTab('auth');
     }
   }, [authLoading, isAuthenticated, currentTab]);
+
+  useEffect(() => {
+    if (authLoading || !isAuthenticated) return;
+    if (currentTab === 'auth' || currentTab === 'landing') {
+      if (isAdminPath) {
+        setCurrentTab(hasAdminAccess ? 'admin' : 'swipe');
+        return;
+      }
+      setCurrentTab('swipe');
+    }
+  }, [authLoading, isAuthenticated, currentTab, isAdminPath, hasAdminAccess]);
 
   useEffect(() => {
     const loadPersistedData = async () => {
@@ -3189,6 +3200,7 @@ export default function CardSwipersLanding() {
   const isAuthScreen = currentTab === 'auth';
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
   const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen;
+  const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
   const canAccessAdmin = hasAdminAccess && !isNativeApp;
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
@@ -3261,9 +3273,8 @@ export default function CardSwipersLanding() {
     };
     return accumulator;
   }, {});
-
   return (
-    <div className={`text-white font-sans flex flex-col relative h-screen h-[100dvh] max-h-screen overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+    <div className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
           <style>{`
@@ -3314,8 +3325,11 @@ export default function CardSwipersLanding() {
       )}
 
       {(isAuthenticated || (isLandingScreen && !isNativeApp)) && (
-      <header className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-end">
+      <header
+        className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}
+        style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
+      >
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-end">
 
           <div className="flex items-center">
             {isLandingScreen && (
@@ -3377,7 +3391,7 @@ export default function CardSwipersLanding() {
                 <button
                   type="button"
                   onClick={handleOpenNotifications}
-                  className="relative w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white"
+                  className="relative w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white"
                 >
                   <BellIcon />
                   {unreadNotificationCount > 0 && (
@@ -3390,7 +3404,7 @@ export default function CardSwipersLanding() {
                   <button
                     type="button"
                     onClick={() => setAccountMenuOpen(!accountMenuOpen)}
-                    className="w-10 h-10 rounded-full bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 transition-all flex items-center justify-center text-white font-bold shadow-lg"
+                    className="w-11 h-11 rounded-full bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 transition-all flex items-center justify-center text-white font-bold shadow-lg"
                   >
                     {firebaseUser?.email?.[0].toUpperCase() || 'U'}
                   </button>
@@ -3448,9 +3462,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-20 md:pb-24' : ''}`}
+        className={`flex-1 min-h-0 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
       >
-        <div className="max-w-6xl mx-auto w-full h-full max-h-screen flex flex-col min-h-0 overflow-hidden">
+        <div className="max-w-6xl mx-auto w-full h-full max-h-[100dvh] flex flex-col min-h-0 overflow-hidden">
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -4024,21 +4038,21 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'swipe' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col justify-between py-3 md:py-6 overflow-hidden">
+          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-hidden">
             {currentCard ? (
-              <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-6 items-start">
-                <div className="space-y-5">
-                  <div className="w-full h-full min-h-0 bg-[#171923] border border-white/10 rounded-[32px] p-4 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+              <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
+                <div className="space-y-3 md:space-y-5">
+                  <div className="w-full h-full min-h-0 bg-[#171923] border border-white/10 rounded-[28px] md:rounded-[32px] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
                     <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-30 pointer-events-none`} />
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_35%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.25))] pointer-events-none" />
 
                     {swipeFeedback === 'like' && (
-                      <div className="absolute top-8 left-6 -rotate-12 border-4 border-emerald-400 text-emerald-400 font-black text-2xl px-3 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
+                      <div className="absolute top-6 left-4 -rotate-12 border-3 border-emerald-400 text-emerald-400 font-black text-lg sm:text-2xl px-2.5 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
                         Interested
                       </div>
                     )}
                     {swipeFeedback === 'pass' && (
-                      <div className="absolute top-8 right-6 rotate-12 border-4 border-[#E11D48] text-[#E11D48] font-black text-2xl px-3 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
+                      <div className="absolute top-6 right-4 rotate-12 border-3 border-[#E11D48] text-[#E11D48] font-black text-lg sm:text-2xl px-2.5 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
                         Pass
                       </div>
                     )}
@@ -4072,8 +4086,8 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="relative z-10 flex-1 flex items-center justify-center py-3 md:py-8">
-                      <div className={`w-full max-w-[520px] h-[40vh] min-h-[250px] max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`}>
+                    <div className="relative z-10 flex-1 flex items-center justify-center py-2 md:py-8">
+                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`}>
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
                         <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
@@ -4099,7 +4113,7 @@ export default function CardSwipersLanding() {
                             <img
                               src={activeCardImageUrl}
                               alt={`${currentCard.title} ${activeCardImageSide}`}
-                              className="max-h-[42vh] md:max-h-[340px] w-full max-w-[300px] md:max-w-[340px] object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]"
+                              className="max-h-[28vh] md:max-h-[340px] w-full max-w-[240px] md:max-w-[340px] object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]"
                             />
                           ) : (
                             <div className="text-[11rem] leading-none drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]">{currentCard.imageEmoji}</div>
@@ -4126,7 +4140,7 @@ export default function CardSwipersLanding() {
                               </button>
                             </div>
                           )}
-                          <div className="mt-8 space-y-2">
+                          <div className="mt-5 md:mt-8 space-y-1.5 md:space-y-2">
                             <p className="text-[11px] uppercase tracking-[0.28em] text-white/45 font-semibold">{currentCard.category}</p>
                             <h3 className="text-xl font-bold text-white leading-snug max-w-[16rem] mx-auto">{currentCard.title}</h3>
                           </div>
@@ -4134,21 +4148,21 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="z-10 space-y-4 bg-gradient-to-t from-[#171923] via-[#171923]/92 to-transparent pt-4 rounded-xl">
+                    <div className="z-10 space-y-3 md:space-y-4 bg-gradient-to-t from-[#171923] via-[#171923]/92 to-transparent pt-3 md:pt-4 rounded-xl">
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="space-y-2 min-w-0">
-                          <h2 className="text-[2rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
+                          <h2 className="text-[1.18rem] sm:text-[1.8rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
                           <p className="text-sm text-white/70 font-medium">{currentCard.detailLine}</p>
                           <p className="text-xs text-white/55">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Listed at</p>
-                          <p className="text-2xl font-bold text-white">{currentCard.tradeValue}</p>
+                          <p className="text-lg sm:text-2xl font-bold text-white">{currentCard.tradeValue}</p>
                           <p className="text-[11px] text-white/50 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-4 flex-wrap bg-[#0F131C] border border-white/10 rounded-2xl px-4 py-3">
+                      <div className="flex items-center justify-between gap-3 flex-wrap bg-[#0F131C] border border-white/10 rounded-2xl px-3 py-2.5 md:px-4 md:py-3">
                         <button
                           type="button"
                           onClick={() => setViewingCollection(currentCard)}
@@ -4161,14 +4175,14 @@ export default function CardSwipersLanding() {
                     </div>
                   </div>
 
-                  <div className="grid sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 md:gap-3">
                     <button
                       onClick={() => handleSwipe('pass')}
-                      className="min-h-[68px] rounded-2xl bg-white/[0.04] border border-white/10 text-white shadow-lg hover:border-white/20 hover:bg-white/[0.06] transition-all px-4 py-3 text-left"
+                      className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-white/[0.04] border border-white/10 text-white shadow-lg hover:border-white/20 hover:bg-white/[0.06] transition-all px-3 py-2.5 md:px-4 md:py-3 text-left"
                       type="button"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="w-10 h-10 rounded-full bg-white/[0.04] border border-white/10 inline-flex items-center justify-center text-white/70"><PassIcon /></span>
+                        <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/[0.04] border border-white/10 inline-flex items-center justify-center text-white/70"><PassIcon /></span>
                         <div>
                           <p className="font-semibold">Pass</p>
                           <p className="text-xs text-white/55">Skip this listing</p>
@@ -4177,24 +4191,24 @@ export default function CardSwipersLanding() {
                     </button>
                     <button
                       onClick={() => setViewingCollection(currentCard)}
-                      className="min-h-[68px] rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-400/40 text-white shadow-lg hover:border-amber-400/60 hover:from-amber-500/30 hover:to-amber-600/20 transition-all px-4 py-3 text-left"
+                      className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-400/40 text-white shadow-lg hover:border-amber-400/60 hover:from-amber-500/30 hover:to-amber-600/20 transition-all px-3 py-2.5 md:px-4 md:py-3 text-left"
                       type="button"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-400/30 inline-flex items-center justify-center text-amber-300 font-bold"><BinderIcon /></span>
+                        <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-amber-500/20 border border-amber-400/30 inline-flex items-center justify-center text-amber-300 font-bold"><BinderIcon /></span>
                         <div>
-                          <p className="font-bold text-base">View Binder</p>
+                          <p className="font-bold text-sm md:text-base">View Binder</p>
                           <p className="text-xs text-amber-200/70">{(currentCard.collection || []).length} items available</p>
                         </div>
                       </div>
                     </button>
                     <button
                       onClick={() => handleSwipe('like')}
-                      className="min-h-[68px] rounded-2xl bg-gradient-to-b from-[#E11D48] to-[#BE123C] text-white shadow-[0_12px_24px_rgba(225,29,72,0.28)] hover:brightness-110 transition-all px-4 py-3 text-left"
+                      className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-gradient-to-b from-[#E11D48] to-[#BE123C] text-white shadow-[0_12px_24px_rgba(225,29,72,0.28)] hover:brightness-110 transition-all px-3 py-2.5 md:px-4 md:py-3 text-left"
                       type="button"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="w-10 h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white"><InterestIcon /></span>
+                        <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white"><InterestIcon /></span>
                         <div>
                           <p className="font-semibold">Interested</p>
                           <p className="text-xs text-white/75">Send trade request</p>
@@ -4205,11 +4219,11 @@ export default function CardSwipersLanding() {
                       <button
                         onClick={() => handleInstantPurchase(currentCard, { advanceAfterPurchase: true })}
                         disabled={!hasBuyerPaymentAccess}
-                        className="min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-4 py-3 text-left disabled:opacity-55 disabled:cursor-not-allowed"
+                        className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-3 py-2.5 md:px-4 md:py-3 text-left disabled:opacity-55 disabled:cursor-not-allowed"
                         type="button"
                       >
                         <div className="flex items-center gap-3">
-                          <span className="w-10 h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white font-black">$</span>
+                          <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white font-black">$</span>
                           <div>
                             <p className="font-semibold">Buy Now</p>
                             <p className="text-xs text-white/75">
@@ -4223,16 +4237,16 @@ export default function CardSwipersLanding() {
                     )}
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/65">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 md:px-4 md:py-3 text-sm text-white/65">
                     Pass hides this listing for 30 days. Interested opens negotiation.
                   </div>
                 </div>
 
-                <aside className="space-y-4 xl:sticky xl:top-24">
-                  <div className="rounded-[28px] bg-[#111827] border border-white/10 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
+                <aside className="space-y-3 md:space-y-4 xl:sticky xl:top-24">
+                  <div className="rounded-[24px] md:rounded-[28px] bg-[#111827] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Collector Profile</p>
-                      <h3 className="mt-2 text-2xl font-bold">{currentCard.owner}</h3>
+                      <h3 className="mt-2 text-xl sm:text-2xl font-bold">{currentCard.owner}</h3>
                       <p className="text-sm text-white/55 mt-1">{currentCard.location}</p>
                     </div>
 
@@ -4248,7 +4262,7 @@ export default function CardSwipersLanding() {
                     </div>
                   </div>
 
-                  <div className="rounded-[28px] bg-[#111827] border border-white/10 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] space-y-4">
+                  <div className="rounded-[24px] md:rounded-[28px] bg-[#111827] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] space-y-4">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 mb-3">Seeking</p>
                       <div className="flex flex-wrap gap-2">
@@ -4287,12 +4301,12 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-2 space-y-4 overflow-hidden">
-            <div className="rounded-[24px] border border-white/10 bg-[#11161F] px-5 py-5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-hidden">
+            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">+ Card</p>
-                  <h2 className="mt-2 text-[2.05rem] leading-[1.04] font-black tracking-[-0.04em]">Post Your Collectible</h2>
+                  <h2 className="mt-2 text-[1.32rem] sm:text-[2rem] leading-[1.06] font-black tracking-[-0.04em]">Post Your Collectible</h2>
                   <p className="mt-2 text-sm text-white/65">Show off your best card and get matched with active traders fast.</p>
                 </div>
                 <div className="min-w-[220px] grow sm:grow-0">
@@ -4308,8 +4322,8 @@ export default function CardSwipersLanding() {
               </div>
             </div>
 
-            <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-6 items-start flex-1 min-h-0">
-              <form onSubmit={handlePostCard} className="space-y-5 rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 overflow-y-auto">
+            <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-4 md:gap-6 items-start flex-1 min-h-0">
+              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 overflow-y-auto">
                 <input
                   ref={postFrontImageInputRef}
                   type="file"
@@ -4334,12 +4348,12 @@ export default function CardSwipersLanding() {
                       onClick={() => postFrontImageInputRef.current?.click()}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[140px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postFrontImagePreview ? (
                           <img
                             src={postFrontImagePreview}
                             alt="Front card preview"
-                            className="w-full h-[150px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[132px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
@@ -4359,12 +4373,12 @@ export default function CardSwipersLanding() {
                       onClick={() => postBackImageInputRef.current?.click()}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[140px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postBackImagePreview ? (
                           <img
                             src={postBackImagePreview}
                             alt="Back card preview"
-                            className="w-full h-[150px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[132px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
@@ -4415,7 +4429,7 @@ export default function CardSwipersLanding() {
                     placeholder="e.g., 2018 Shohei Ohtani Rookie Card"
                     value={newCard.title}
                     onChange={(e) => setNewCard({ ...newCard, title: e.target.value })}
-                    className="w-full px-5 py-4 text-base font-semibold bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    className="w-full px-4 py-3 text-base font-semibold bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                   />
                 </div>
 
@@ -4425,7 +4439,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.brand}
                       onChange={(e) => setNewCard({ ...newCard, brand: e.target.value })}
-                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {PUBLISHERS.map((group) => (
                         <optgroup key={group.label} label={group.label}>
@@ -4444,7 +4458,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.gradingCompany}
                       onChange={(e) => setNewCard({ ...newCard, gradingCompany: e.target.value })}
-                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {GRADING_COMPANIES.map((company) => (
                         <option key={company} value={company}>
@@ -4461,7 +4475,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.rawCondition}
                       onChange={(e) => setNewCard({ ...newCard, rawCondition: e.target.value })}
-                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {RAW_CONDITIONS.map((condition) => (
                         <option key={condition} value={condition}>
@@ -4523,7 +4537,7 @@ export default function CardSwipersLanding() {
                       placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
                       value={newCard.sellerState}
                       onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
-                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
                     />
                   </div>
                 </div>
@@ -4591,7 +4605,7 @@ export default function CardSwipersLanding() {
                 <button
                   type="submit"
                   disabled={isPostingCard}
-                  className="w-full h-[60px] bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-70 font-bold rounded-[20px] shadow-[0_16px_30px_rgba(225,29,72,0.26)] transition-all text-sm"
+                  className="w-full h-[54px] md:h-[60px] bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-70 font-bold rounded-[20px] shadow-[0_16px_30px_rgba(225,29,72,0.26)] transition-all text-sm"
                 >
                   {isPostingCard ? 'Publishing...' : 'Publish Asset to Feed'}
                 </button>
@@ -4599,7 +4613,7 @@ export default function CardSwipersLanding() {
                 )}
               </form>
 
-              <aside className="rounded-[24px] border border-white/10 bg-[#11161F] p-5 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-4 min-h-0 overflow-y-auto">
+              <aside className="hidden xl:block rounded-[24px] border border-white/10 bg-[#11161F] p-4 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-3 min-h-0 overflow-y-auto">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Live Preview</p>
                   <h3 className="mt-2 text-xl font-black">Your Listing Card</h3>
@@ -4647,10 +4661,10 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'collection' && (
-          <div className="h-full min-h-0 max-h-full space-y-4 py-2 max-w-4xl mx-auto w-full flex flex-col overflow-hidden">
+          <div className="h-full min-h-0 max-h-full space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pr-1">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-black">My Trading Binder</h2>
+                <h2 className="text-lg sm:text-2xl font-black">My Trading Binder</h2>
                 <p className="text-xs text-red-100">Your public inventory up for trade.</p>
               </div>
               <button onClick={() => setCurrentTab('post')} className="bg-[#E50914] text-white text-xs font-bold px-3 py-2 rounded-xl" type="button">
@@ -4658,11 +4672,17 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
-            <div className="rounded-2xl border border-red-400/30 bg-red-950/40 p-4 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <details className="rounded-2xl border border-red-400/30 bg-red-950/40 p-4 space-y-4" open={!isNativeCoreApp}>
+              <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-red-200">Verification Center</p>
-                  <h3 className="text-lg font-bold">Buyer & Seller Verification</h3>
+                  <h3 className="text-base font-bold">Buyer & Seller Verification</h3>
+                </div>
+                <span className="text-xs text-red-100">Manage</span>
+              </summary>
+              <div className="mt-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
                   <p className="text-xs text-red-100 mt-1">Upload your license/ID once. CS support reviews in 1-2 days. You can keep trading while pending.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -4782,13 +4802,14 @@ export default function CardSwipersLanding() {
                 {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
                 {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
               </div>
-            </div>
+              </div>
+            </details>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 min-h-0 overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {myCollection.map((card) => (
                 <div
                   key={card.id}
-                  className="bg-red-950/70 border border-red-400/30 rounded-2xl p-4 flex flex-col justify-between h-40 relative group"
+                  className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group"
                 >
                   <div className="absolute top-2 right-2 text-xs bg-white/20 px-2 py-0.5 rounded-md text-red-100 font-mono scale-90">
                     {card.condition}
@@ -4813,11 +4834,11 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'messages' && (
-          <div className="space-y-4 py-2 h-full min-h-0 max-h-full flex flex-col max-w-3xl mx-auto w-full overflow-hidden">
+          <div className="space-y-3 py-1.5 h-full min-h-0 max-h-full flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pr-1">
             {!activeChat ? (
-              <>
+              <div className="space-y-3">
                 <div>
-                  <h2 className="text-2xl font-black">Marketplace Inbox</h2>
+                  <h2 className="text-lg sm:text-2xl font-black">Marketplace Inbox</h2>
                   <p className="text-xs text-red-100">Review interest requests, accept or decline, then negotiate in match chat.</p>
                 </div>
 
@@ -4870,8 +4891,12 @@ export default function CardSwipersLanding() {
                 )}
 
                 {reviewableTransactions.length > 0 && (
-                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Completed Deals Awaiting Your Review</h3>
+                  <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
+                    <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Completed Deals Awaiting Your Review</h3>
+                      <span className="text-xs text-red-200">{reviewableTransactions.length}</span>
+                    </summary>
+                    <div className="mt-3 space-y-3">
                     {reviewableTransactions.slice(0, 8).map((transaction) => {
                       const draft = reviewDrafts[transaction.id] || { rating: 5, comment: '' };
                       const isSubmitting = Boolean(reviewBusyByPurchaseId[transaction.id]);
@@ -4913,12 +4938,17 @@ export default function CardSwipersLanding() {
                         </div>
                       );
                     })}
-                  </div>
+                    </div>
+                  </details>
                 )}
 
                 {escrowTransactions.length > 0 && (
-                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Escrow Orders</h3>
+                  <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
+                    <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Escrow Orders</h3>
+                      <span className="text-xs text-red-200">{escrowTransactions.length}</span>
+                    </summary>
+                    <div className="mt-3 space-y-3">
                     {escrowTransactions.slice(0, 10).map((transaction) => {
                       const trackingDraft = trackingDrafts[transaction.orderId] || { carrier: '', trackingNumber: '', trackingUrl: '' };
                       const trackingBusy = Boolean(trackingBusyByPurchaseId[transaction.orderId]);
@@ -5034,7 +5064,8 @@ export default function CardSwipersLanding() {
                         </div>
                       );
                     })}
-                  </div>
+                    </div>
+                  </details>
                 )}
 
                 <div className="divide-y divide-red-700/40 rounded-2xl border border-red-400/30 bg-red-950/50">
@@ -5064,7 +5095,7 @@ export default function CardSwipersLanding() {
                     ))
                   )}
                 </div>
-              </>
+              </div>
             ) : (
               <div className="flex flex-col h-full min-h-0 space-y-4">
                 <div className="flex items-center space-x-3 pb-3 border-b border-red-600/40">
@@ -5143,7 +5174,7 @@ export default function CardSwipersLanding() {
                   )}
                 </div>
 
-                <div data-chat-messages className="flex-grow bg-red-900/20 rounded-2xl p-4 flex flex-col justify-end space-y-3 min-h-[300px] overflow-y-auto">
+                <div data-chat-messages className="flex-1 min-h-0 bg-red-900/20 rounded-2xl p-4 flex flex-col justify-end space-y-3 overflow-y-auto">
                   {chatMessages.length === 0 ? (
                     <div className="text-xs text-red-100">No messages yet. Send your opening proposal.</div>
                   ) : (
@@ -5699,21 +5730,25 @@ export default function CardSwipersLanding() {
 
       {showPersistentMobileDock && (
       <footer
-        className="bg-[#111827]/95 backdrop-blur-md border-t border-white/10 py-2 px-4 fixed bottom-0 left-0 right-0 z-50 pb-[env(safe-area-inset-bottom)]"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}
+        className="fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
       >
-        <div className="max-w-6xl mx-auto">
-        <nav className="flex justify-around items-center">
+        <div className="max-w-lg mx-auto pointer-events-auto">
+        <nav className={`grid ${canAccessAdmin ? 'grid-cols-5' : 'grid-cols-4'} items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(20,25,37,0.94),rgba(10,14,24,0.96))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl ring-1 ring-white/8`}>
           <button
             onClick={() => {
               navigateToTab('swipe');
               setActiveChat(null);
             }}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'swipe' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
+            className="group relative flex items-center justify-center"
             type="button"
           >
-            <NavIcon><SwipeDeckIcon /></NavIcon>
-            <span>Discover</span>
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'swipe' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
+            <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'swipe' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><SwipeDeckIcon /></NavIcon>
+              <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'swipe' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Discover</span>
+              <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'swipe' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
+            </span>
           </button>
 
           <button
@@ -5721,11 +5756,16 @@ export default function CardSwipersLanding() {
               navigateToTab('post');
               setActiveChat(null);
             }}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'post' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
+            className="group relative flex items-center justify-center -mt-4"
             type="button"
           >
-            <NavIcon><PostIcon /></NavIcon>
-            <span>Post Card</span>
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[26px] border transition-all duration-300 ${currentTab === 'post' ? 'border-[#F5C542]/25 bg-[radial-gradient(circle_at_top,rgba(245,197,66,0.3),rgba(225,29,72,0.24)_62%,rgba(255,255,255,0.08))] shadow-[0_16px_30px_rgba(225,29,72,0.24)]' : 'border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] group-hover:bg-white/[0.08]'}`} />
+            <span className="relative flex min-h-[72px] flex-col items-center justify-center gap-1 px-3 py-2.5">
+              <span className={`absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent transition-opacity duration-300 ${currentTab === 'post' ? 'opacity-100' : 'opacity-0'}`} />
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'post' ? 'w-[1.45rem] h-[1.45rem] text-white' : 'w-[1.3rem] h-[1.3rem] text-white/78 group-hover:text-white'}`}><PostIcon /></NavIcon>
+              <span className={`text-[11px] font-bold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'post' ? 'text-white' : 'text-white/72 group-hover:text-white'}`}>Post Card</span>
+              <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'post' ? 'w-9 opacity-100' : 'w-3 opacity-40'}`} />
+            </span>
           </button>
 
           <button
@@ -5733,27 +5773,35 @@ export default function CardSwipersLanding() {
               navigateToTab('collection');
               setActiveChat(null);
             }}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'collection' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
+            className="group relative flex items-center justify-center"
             type="button"
           >
-            <NavIcon><BinderIcon /></NavIcon>
-            <span>Binder</span>
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'collection' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
+            <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'collection' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><BinderIcon /></NavIcon>
+              <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'collection' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Binder</span>
+              <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'collection' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
+            </span>
           </button>
 
           <button
             onClick={() => navigateToTab('messages')}
-            className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'messages' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
+            className="group relative flex items-center justify-center"
             type="button"
           >
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'messages' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
+            <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
             <div className="relative">
-              <NavIcon><InboxIcon /></NavIcon>
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'messages' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><InboxIcon /></NavIcon>
               {inboxBadgeCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] text-[10px] leading-4 text-white font-bold text-center">
+                <span className="absolute -top-2 -right-2 min-w-[1.3rem] h-[1.3rem] px-1.5 rounded-full border border-white/18 bg-[linear-gradient(180deg,#FF4D5E,#C9143E)] text-[10px] leading-[1.1rem] text-white font-extrabold text-center shadow-[0_8px_16px_rgba(201,20,62,0.35)] ring-2 ring-[#121826]">
                   {inboxBadgeCount > 99 ? '99+' : inboxBadgeCount}
                 </span>
               )}
             </div>
-            <span>Inbox</span>
+            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Inbox</span>
+            <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'messages' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
+            </span>
           </button>
 
           {canAccessAdmin && (
@@ -5762,38 +5810,18 @@ export default function CardSwipersLanding() {
                 navigateToTab('admin');
                 setActiveChat(null);
               }}
-              className={`flex flex-col items-center p-2 text-xs font-medium transition-colors ${currentTab === 'admin' ? 'text-white' : 'text-white/55 hover:text-white/80'}`}
+              className="group relative flex items-center justify-center"
               type="button"
             >
-              <NavIcon><ShieldIcon /></NavIcon>
-              <span>Admin</span>
+              <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'admin' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
+              <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
+                <NavIcon className={`transition-all duration-300 ${currentTab === 'admin' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><ShieldIcon /></NavIcon>
+                <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'admin' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Admin</span>
+                <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'admin' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
+              </span>
             </button>
           )}
         </nav>
-        <div className="text-center pt-2">
-          <button
-            type="button"
-            onClick={() => setShowHelp(true)}
-            className="text-[11px] text-white/55 hover:text-white underline underline-offset-2 mr-3"
-          >
-            Help
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowTermsOfService(true)}
-            className="text-[11px] text-white/55 hover:text-white underline underline-offset-2 mr-3"
-          >
-            Terms of Service
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowPrivacyPolicy(true)}
-            className="text-[11px] text-white/55 hover:text-white underline underline-offset-2"
-          >
-            Privacy Policy
-          </button>
-          <p className="text-[10px] text-white/40 mt-2">© 2026 CardSwipers. All rights reserved.</p>
-        </div>
         </div>
       </footer>
       )}
@@ -5886,8 +5914,8 @@ export default function CardSwipersLanding() {
       )}
 
       {activePaymentSheet && stripePromise && (
-        <div className="fixed inset-0 bg-black/70 z-[68] flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white text-[#111827] rounded-[28px] p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 bg-black/70 z-[68] flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto bg-white text-[#111827] rounded-[28px] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-bold">Secure escrow checkout</h2>

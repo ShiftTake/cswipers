@@ -48,7 +48,8 @@ try {
 }
 
 if (typeof window !== 'undefined') {
-  setPersistence(auth, browserLocalPersistence).catch(() => {
+  const authPersistence = isNativeApp ? indexedDBLocalPersistence : browserLocalPersistence;
+  setPersistence(auth, authPersistence).catch(() => {
     // Keep the current auth instance if persistence fallback cannot be applied.
   });
 }
