@@ -34,8 +34,8 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
-import authHeroImage from './image (3).png';
-import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
+import authHeroImage from './CSWIPERSAPPLOGO.jpg';
+import authBackdropImage from './ChatGPT Image Jun 26, 2026 at 02_28_26 PM (1).png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 
@@ -3201,6 +3201,22 @@ export default function CardSwipersLanding() {
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
   const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
+  console.log('[RuntimeState]', {
+    currentTab,
+    isAuthenticated,
+    isCoreAppScreen,
+    showPersistentMobileDock,
+    accountMenuOpen
+  });
+  const coreScreenTitles = {
+    swipe: 'Discover',
+    post: 'Post Card',
+    collection: 'Binder',
+    messages: 'Inbox',
+    onboarding: 'My Interests',
+    admin: 'Admin'
+  };
+  const coreScreenTitle = coreScreenTitles[currentTab] || 'CardSwipers';
   const canAccessAdmin = hasAdminAccess && !isNativeApp;
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
@@ -3274,7 +3290,7 @@ export default function CardSwipersLanding() {
     return accumulator;
   }, {});
   return (
-    <div className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+    <div className={`text-white font-sans flex flex-col relative flex-1 overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
           <style>{`
@@ -3329,7 +3345,16 @@ export default function CardSwipersLanding() {
         className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}
         style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-end">
+        <div className={`max-w-6xl mx-auto w-full ${isCoreAppScreen && isAuthenticated ? 'px-5 py-3 flex items-center justify-between' : 'px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-end'}`}>
+
+          {isCoreAppScreen && isAuthenticated && (
+            <h1
+              className="text-[22px] leading-tight font-semibold text-white tracking-[-0.02em]"
+              style={{ fontFamily: "'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
+            >
+              {coreScreenTitle}
+            </h1>
+          )}
 
           <div className="flex items-center">
             {isLandingScreen && (
@@ -3439,6 +3464,39 @@ export default function CardSwipersLanding() {
                       >
                         Notifications{unreadNotificationCount > 0 ? ` (${unreadNotificationCount})` : ''}
                       </button>
+                      <div className="border-t border-white/10" />
+                      <div className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">Settings</div>
+                      <div className="px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">Legal</div>
+                      <button
+                        onClick={() => {
+                          setShowPrivacyPolicy(true);
+                          setAccountMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
+                        type="button"
+                      >
+                        Privacy Policy
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowTermsOfService(true);
+                          setAccountMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
+                        type="button"
+                      >
+                        Terms of Service
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowHelpModal(true);
+                          setAccountMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
+                        type="button"
+                      >
+                        Help
+                      </button>
                       <div className="border-t border-white/10"></div>
                       <button
                         onClick={async () => {
@@ -3462,9 +3520,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        className={`flex-1 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-5' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
       >
-        <div className="max-w-6xl mx-auto w-full h-full max-h-[100dvh] flex flex-col min-h-0 overflow-hidden">
+        <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col overflow-hidden">
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -4038,9 +4096,9 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'swipe' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-hidden">
+          <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-4 overflow-hidden">
             {currentCard ? (
-              <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
+              <div className="w-full flex-1 overflow-y-auto overscroll-y-contain pr-1 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
                   <div className="w-full h-full min-h-0 bg-[#171923] border border-white/10 rounded-[28px] md:rounded-[32px] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
                     <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-30 pointer-events-none`} />
@@ -4287,14 +4345,46 @@ export default function CardSwipersLanding() {
                 </aside>
               </div>
             ) : (
-              <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center py-8 space-y-4">
-                <span className="text-5xl text-white/60"><SwipeDeckIcon /></span>
-                <h3 className="text-xl font-bold">{personalizedDeck.length === 0 ? 'No Cards Available' : 'End of the Deck!'}</h3>
-                <p className="text-sm text-white/65 max-w-xs">
-                  {personalizedDeck.length === 0 
-                    ? 'No cards are available yet. Check back later or adjust your onboarding preferences.' 
-                    : 'No more collectors matching your filters in your radius. Try expanding your search options.'}
-                </p>
+              <div className="flex-1 flex flex-col px-5">
+                <div className="flex-1" />
+                <div className="w-full max-w-md mx-auto flex flex-col items-center text-center">
+                  <span className="text-5xl text-white/60"><SwipeDeckIcon /></span>
+                  <h3
+                    className="mt-4 text-[28px] leading-[1.12] font-semibold text-white"
+                    style={{ fontFamily: "'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
+                  >
+                    {personalizedDeck.length === 0 ? 'No Cards Available' : 'End of the Deck'}
+                  </h3>
+                  <p
+                    className="mt-2 text-[17px] leading-[1.35] text-[#8E8E93]"
+                    style={{ fontFamily: "'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
+                  >
+                    {personalizedDeck.length === 0
+                      ? 'No listings match your current setup yet.'
+                      : 'You reached the end of listings that match your current filters.'}
+                  </p>
+                  <div className="w-full mt-6 space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentTab('onboarding')}
+                      className="w-full min-h-[44px] rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] transition-colors text-white text-[16px] font-semibold px-4"
+                    >
+                      Update Preferences
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== 'undefined') {
+                          window.location.reload();
+                        }
+                      }}
+                      className="w-full min-h-[44px] rounded-2xl border border-white/20 bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-white text-[16px] font-medium px-4"
+                    >
+                      Refresh Feed
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1" />
               </div>
             )}
           </div>
@@ -4777,14 +4867,7 @@ export default function CardSwipersLanding() {
                     className="mt-1 h-4 w-4 rounded border-white/25 bg-transparent"
                   />
                   <span className="text-xs text-red-100 leading-5">
-                    {ESCROW_TERMS_LABEL}{' '}
-                    <button
-                      type="button"
-                      onClick={() => setShowTermsOfService(true)}
-                      className="underline underline-offset-2 text-white"
-                    >
-                      Review Terms
-                    </button>
+                    I agree to the marketplace policy. You can review policy documents in Profile {'>'} Settings {'>'} Legal.
                   </span>
                 </label>
               </div>
