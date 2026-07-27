@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   fetchSignInMethodsForEmail,
   GoogleAuthProvider,
   getRedirectResult,
@@ -46,6 +47,16 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
 const normalizeAuthEmail = (value) => value.trim().toLowerCase();
 const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
+const FREE_SWIPES_PER_WEEK = 30;
+
+const getIsoWeekKey = (value = new Date()) => {
+  const utcDate = new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+  const day = utcDate.getUTCDay() || 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((utcDate - yearStart) / 86400000) + 1) / 7);
+  return `${utcDate.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+};
 
 const getSignInMethodMessage = (methods, flow) => {
   if (methods.includes('google.com')) {
@@ -490,6 +501,14 @@ export default function CardSwipersLanding() {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
+  const [profileLocationDraft, setProfileLocationDraft] = useState('');
+  const [profileBioDraft, setProfileBioDraft] = useState('');
+  const [profileSettingsBusy, setProfileSettingsBusy] = useState(false);
+  const [profileSettingsError, setProfileSettingsError] = useState('');
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [swipeLimitNotice, setSwipeLimitNotice] = useState('');
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
@@ -973,6 +992,12 @@ export default function CardSwipersLanding() {
           tos_accepted_at: null,
           tos_version_accepted: null,
           settings: {},
+          location: '',
+          bio: '',
+          swipeQuota: {
+            weekKey: getIsoWeekKey(),
+            used: 0
+          },
           binderId: firebaseUser.uid,
           createdAt: serverTimestamp(),
           lastLoginAt: serverTimestamp(),
@@ -989,7 +1014,13 @@ export default function CardSwipersLanding() {
               interests: [],
               intent: 'trading',
               priceRange: [250, 1000],
-              priorities: []
+              priorities: [],
+              location: '',
+              bio: '',
+              swipeQuota: {
+                weekKey: getIsoWeekKey(),
+                used: 0
+              }
             });
           } else {
             throw error;
@@ -1013,6 +1044,9 @@ export default function CardSwipersLanding() {
           tos_accepted_at: profile.tos_accepted_at || null,
           tos_version_accepted: profile.tos_version_accepted || null,
           settings: profile.settings || {},
+          location: profile.location || '',
+          bio: profile.bio || '',
+          swipeQuota: profile.swipeQuota || { weekKey: getIsoWeekKey(), used: 0 },
           binderId: profile.binderId || firebaseUser.uid,
           createdAt: profile.createdAt,
           lastLoginAt: profile.lastLoginAt,
@@ -1683,6 +1717,39 @@ export default function CardSwipersLanding() {
   const handleSwipe = async (direction) => {
     if (!currentCard || !firebaseUser) return;
 
+    if (!hasActiveSubscription && freeSwipesRemaining <= 0) {
+      setSwipeLimitNotice('You reached your 30 free swipes this week. Upgrade to keep swiping now.');
+      setShowUpgradeModal(true);
+      return;
+    }
+
+    if (!hasActiveSubscription) {
+      const weekKey = getIsoWeekKey();
+      const currentQuota = currentUserProfile?.swipeQuota || {};
+      const usedThisWeek = currentQuota.weekKey === weekKey ? Number(currentQuota.used || 0) : 0;
+      const nextUsed = usedThisWeek + 1;
+
+      setCurrentUserProfile((prev) => ({
+        ...(prev || {}),
+        swipeQuota: {
+          weekKey,
+          used: nextUsed
+        }
+      }));
+
+      try {
+        await updateDoc(doc(db, 'users', firebaseUser.uid), {
+          swipeQuota: {
+            weekKey,
+            used: nextUsed
+          },
+          updatedAt: serverTimestamp()
+        });
+      } catch (error) {
+        console.error('Failed to persist swipe quota usage:', error);
+      }
+    }
+
     setSwipeFeedback(direction);
 
     if (direction === 'pass') {
@@ -2143,7 +2210,7 @@ export default function CardSwipersLanding() {
       return;
     }
     if (!hasAcceptedVerificationTerms) {
-      setVerificationError('You must accept the 48-hour inspection and dispute policy before submitting verification or linking a Stripe wallet.');
+      setVerificationError('You must accept the marketplace policy before submitting verification.');
       return;
     }
     if (!verificationDocFile) {
@@ -2200,39 +2267,9 @@ export default function CardSwipersLanding() {
       };
       if (verificationTypes.includes('buyer')) {
         nextUserPayload.buyerVerificationStatus = 'pending';
-        await setDoc(
-          doc(db, 'subscriptions', `verified_buyer_${firebaseUser.uid}`),
-          {
-            userId: firebaseUser.uid,
-            email,
-            planType: 'verified_buyer',
-            planName: 'Verified Buyer',
-            amount: VERIFIED_BUYER_SUBSCRIPTION_PRICE,
-            billingInterval: 'monthly',
-            status: 'pending_verification',
-            updatedAt: serverTimestamp(),
-            createdAt: serverTimestamp()
-          },
-          { merge: true }
-        );
       }
       if (verificationTypes.includes('seller')) {
         nextUserPayload.sellerVerificationStatus = 'pending';
-        await setDoc(
-          doc(db, 'subscriptions', `verified_seller_${firebaseUser.uid}`),
-          {
-            userId: firebaseUser.uid,
-            email,
-            planType: 'verified_seller',
-            planName: 'Verified Seller',
-            amount: VERIFIED_SELLER_SUBSCRIPTION_PRICE,
-            billingInterval: 'monthly',
-            status: 'pending_verification',
-            updatedAt: serverTimestamp(),
-            createdAt: serverTimestamp()
-          },
-          { merge: true }
-        );
       }
 
       await withTimeout(updateDoc(doc(db, 'users', firebaseUser.uid), nextUserPayload), 10000, 'Profile update timed out');
@@ -2738,6 +2775,106 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const openProfileSettings = () => {
+    setProfileLocationDraft(String(currentUserProfile?.location || currentUserProfile?.state || currentUserProfile?.shippingState || ''));
+    setProfileBioDraft(String(currentUserProfile?.bio || ''));
+    setProfileSettingsError('');
+    setShowProfileSettings(true);
+    setAccountMenuOpen(false);
+  };
+
+  const handleSaveProfileSettings = async () => {
+    if (!firebaseUser || profileSettingsBusy) return;
+
+    setProfileSettingsBusy(true);
+    setProfileSettingsError('');
+
+    const nextLocation = String(profileLocationDraft || '').trim();
+    const nextBio = String(profileBioDraft || '').trim();
+
+    try {
+      await updateDoc(doc(db, 'users', firebaseUser.uid), {
+        location: nextLocation,
+        bio: nextBio,
+        updatedAt: serverTimestamp()
+      });
+      setCurrentUserProfile((prev) => ({
+        ...(prev || {}),
+        location: nextLocation,
+        bio: nextBio
+      }));
+      setShowProfileSettings(false);
+    } catch (error) {
+      console.error('Failed to save profile settings:', error);
+      setProfileSettingsError('Unable to save profile settings right now. Please try again.');
+    } finally {
+      setProfileSettingsBusy(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!firebaseUser || profileSettingsBusy) return;
+    const confirmed = window.confirm('Delete account? This will sign you out and deactivate your profile.');
+    if (!confirmed) return;
+
+    setProfileSettingsBusy(true);
+    setProfileSettingsError('');
+
+    try {
+      await updateDoc(doc(db, 'users', firebaseUser.uid), {
+        status: 'deactivated',
+        deactivatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      try {
+        await deleteUser(firebaseUser);
+      } catch (deleteError) {
+        console.warn('Auth account deletion skipped:', deleteError);
+      }
+
+      await signOut(auth);
+      setShowProfileSettings(false);
+      setCurrentTab(isNativeApp ? 'auth' : 'landing');
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+      setProfileSettingsError('Unable to delete account right now. Please try again.');
+    } finally {
+      setProfileSettingsBusy(false);
+    }
+  };
+
+  const handleRequestUpgrade = async () => {
+    if (!firebaseUser || upgradeBusy) return;
+    setUpgradeBusy(true);
+    setSwipeLimitNotice('');
+
+    try {
+      await setDoc(
+        doc(db, 'subscriptions', `upgrade_request_${firebaseUser.uid}`),
+        {
+          userId: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          planType: 'swipe_unlimited',
+          planName: 'Unlimited Swipes Monthly',
+          amount: VERIFIED_BUYER_SUBSCRIPTION_PRICE,
+          billingInterval: 'monthly',
+          status: 'upgrade_requested',
+          source: 'non_payment_pipeline',
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+      setSwipeLimitNotice('Upgrade request saved. A purchase flow can be completed from your account setup.');
+    } catch (error) {
+      console.error('Failed to create upgrade request:', error);
+      setSwipeLimitNotice('Unable to start upgrade right now. Please try again.');
+    } finally {
+      setUpgradeBusy(false);
+    }
+  };
+
   const handleToggleUserStatus = async (userRecord) => {
     if (!firebaseUser || userRecord.uid === firebaseUser.uid) return;
 
@@ -2868,6 +3005,18 @@ export default function CardSwipersLanding() {
   };
   const coreScreenTitle = coreScreenTitles[currentTab] || 'CardSwipers';
   const canAccessAdmin = hasAdminAccess && !isNativeApp;
+  const currentWeekKey = getIsoWeekKey();
+  const weeklySwipeUsage =
+    currentUserProfile?.swipeQuota?.weekKey === currentWeekKey
+      ? Number(currentUserProfile?.swipeQuota?.used || 0)
+      : 0;
+  const activeSubscription = premiumSubscriptions.find(
+    (subscription) =>
+      subscription.userId === firebaseUser?.uid &&
+      ['active', 'trialing'].includes(String(subscription.status || '').toLowerCase())
+  );
+  const hasActiveSubscription = Boolean(activeSubscription);
+  const freeSwipesRemaining = Math.max(0, FREE_SWIPES_PER_WEEK - weeklySwipeUsage);
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
   const deactivatedUsers = adminUsers.filter((user) => user.status === 'deactivated').length;
@@ -3129,6 +3278,23 @@ export default function CardSwipersLanding() {
                       </button>
                       <div className="border-t border-white/10" />
                       <div className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">Settings</div>
+                      <button
+                        onClick={openProfileSettings}
+                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
+                        type="button"
+                      >
+                        Profile Settings
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowUpgradeModal(true);
+                          setAccountMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
+                        type="button"
+                      >
+                        Upgrade Plan
+                      </button>
                       <div className="px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">Legal</div>
                       <button
                         onClick={() => {
@@ -3183,10 +3349,10 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-5' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        className={`flex-1 w-full ${isCoreAppScreen ? (currentTab === 'post' ? 'overflow-y-auto overscroll-y-contain' : 'overflow-hidden') : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-5' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
         style={showPersistentMobileDock ? { paddingBottom: coreScreenBottomInset } : undefined}
       >
-        <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col overflow-hidden">
+        <div className={`max-w-6xl mx-auto w-full flex-1 flex flex-col ${currentTab === 'post' ? 'overflow-visible' : 'overflow-hidden'}`}>
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -3923,6 +4089,19 @@ export default function CardSwipersLanding() {
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 md:px-4 md:py-3 text-sm text-white/65">
                     Pass hides this listing for 30 days. Interested opens negotiation.
                   </div>
+
+                  {!hasActiveSubscription && (
+                    <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-3 py-2.5 md:px-4 md:py-3 text-sm text-amber-100 flex items-center justify-between gap-3">
+                      <span>{freeSwipesRemaining} free swipe{freeSwipesRemaining === 1 ? '' : 's'} left this week.</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowUpgradeModal(true)}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500/25 border border-amber-300/35 text-xs font-semibold hover:bg-amber-500/35"
+                      >
+                        Upgrade
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <aside className="space-y-3 md:space-y-4 xl:sticky xl:top-24">
@@ -4016,7 +4195,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-hidden">
+          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-y-auto overscroll-y-contain">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -4467,7 +4646,13 @@ export default function CardSwipersLanding() {
                 >
                   {verificationBusy ? 'Submitting...' : 'Submit Verification'}
                 </button>
-                <p className="text-xs text-red-100">Verified Buyer plan: ${VERIFIED_BUYER_SUBSCRIPTION_PRICE.toFixed(2)}/month</p>
+                <button
+                  type="button"
+                  onClick={() => setShowUpgradeModal(true)}
+                  className="text-xs font-semibold text-amber-200 underline underline-offset-2"
+                >
+                  Upgrade to unlimited swipes (${VERIFIED_BUYER_SUBSCRIPTION_PRICE.toFixed(2)}/month)
+                </button>
                 {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
                 {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
               </div>
@@ -5450,6 +5635,109 @@ export default function CardSwipersLanding() {
               CardSwipers administrators may review transaction history and message evidence to resolve disputes, and
               those outcomes are binding for platform activity.
             </p>
+          </div>
+        </div>
+      )}
+
+      {showProfileSettings && (
+        <div className="fixed inset-0 bg-black/70 z-[62] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Profile Settings</h2>
+              <button
+                type="button"
+                onClick={() => setShowProfileSettings(false)}
+                className="text-sm font-semibold text-white/70 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-white/70">Location</label>
+                <input
+                  type="text"
+                  value={profileLocationDraft}
+                  onChange={(event) => setProfileLocationDraft(event.target.value)}
+                  placeholder="City, State"
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-white/70">Bio</label>
+                <textarea
+                  rows={3}
+                  value={profileBioDraft}
+                  onChange={(event) => setProfileBioDraft(event.target.value)}
+                  placeholder="Tell collectors what you collect and trade"
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
+                />
+              </div>
+              {profileSettingsError && <p className="text-xs text-red-300">{profileSettingsError}</p>}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={profileSettingsBusy}
+                onClick={handleSaveProfileSettings}
+                className="px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#E11D48] text-sm font-semibold disabled:opacity-60"
+              >
+                Save Settings
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await signOut(auth);
+                  setCurrentTab(isNativeApp ? 'auth' : 'landing');
+                  setShowProfileSettings(false);
+                }}
+                className="px-4 py-2.5 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 text-sm font-semibold"
+              >
+                Log Out
+              </button>
+              <button
+                type="button"
+                disabled={profileSettingsBusy}
+                onClick={handleDeleteAccount}
+                className="px-4 py-2.5 rounded-xl border border-red-400/35 bg-red-500/10 hover:bg-red-500/20 text-sm font-semibold text-red-200 disabled:opacity-60"
+              >
+                Delete Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpgradeModal && (
+        <div className="fixed inset-0 bg-black/70 z-[63] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#111827] border border-amber-400/25 rounded-2xl p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Upgrade Plan</h2>
+              <button
+                type="button"
+                onClick={() => setShowUpgradeModal(false)}
+                className="text-sm font-semibold text-white/70 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-sm text-white/80">
+              You get {FREE_SWIPES_PER_WEEK} free swipes each week. Upgrade anytime for unlimited swipes and priority support.
+            </p>
+            {!hasActiveSubscription && (
+              <p className="text-xs text-amber-200">Remaining free swipes this week: {freeSwipesRemaining}</p>
+            )}
+            {swipeLimitNotice && <p className="text-xs text-amber-200">{swipeLimitNotice}</p>}
+            <button
+              type="button"
+              disabled={upgradeBusy}
+              onClick={handleRequestUpgrade}
+              className="w-full h-11 rounded-xl bg-amber-500/25 border border-amber-300/40 text-white font-semibold hover:bg-amber-500/35 disabled:opacity-60"
+            >
+              {upgradeBusy ? 'Submitting...' : `Upgrade for $${VERIFIED_BUYER_SUBSCRIPTION_PRICE.toFixed(2)}/month`}
+            </button>
           </div>
         </div>
       )}
