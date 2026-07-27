@@ -2849,24 +2849,24 @@ export default function CardSwipersLanding() {
     setProfileSettingsError('');
 
     try {
+      await deleteUser(firebaseUser);
+
       await updateDoc(doc(db, 'users', firebaseUser.uid), {
         status: 'deactivated',
         deactivatedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
-      try {
-        await deleteUser(firebaseUser);
-      } catch (deleteError) {
-        console.warn('Auth account deletion skipped:', deleteError);
-      }
-
       await signOut(auth);
       setShowProfileSettings(false);
+      setAccountMenuOpen(false);
       setCurrentTab(isNativeApp ? 'auth' : 'landing');
     } catch (error) {
       console.error('Failed to delete account:', error);
-      setProfileSettingsError('Unable to delete account right now. Please try again.');
+      const authMessage = String(error?.code || '').includes('requires-recent-login')
+        ? 'Please reauthenticate before deleting your account.'
+        : 'Unable to delete account right now. Please try again.';
+      setProfileSettingsError(authMessage);
     } finally {
       setProfileSettingsBusy(false);
     }
@@ -4977,8 +4977,8 @@ export default function CardSwipersLanding() {
       </main>
 
       {showNotificationsPanel && (
-        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4">
-          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4" onClick={() => setShowNotificationsPanel(false)}>
+          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-bold">Notifications</h3>
@@ -5668,8 +5668,8 @@ export default function CardSwipersLanding() {
       )}
 
       {showProfileSettings && (
-        <div className="fixed inset-0 bg-black/70 z-[62] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 z-[62] flex items-center justify-center p-4" onClick={() => setShowProfileSettings(false)}>
+          <div className="w-full max-w-md bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">Profile Settings</h2>
               <button
