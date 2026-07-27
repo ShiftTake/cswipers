@@ -544,6 +544,7 @@ export default function CardSwipersLanding() {
   const [postBackImagePreview, setPostBackImagePreview] = useState('');
   const postFrontImageInputRef = useRef(null);
   const postBackImageInputRef = useRef(null);
+  const hasAutoPromptedPostCaptureRef = useRef(false);
   const [activeCardImageSide, setActiveCardImageSide] = useState('front');
   const cardImageTouchStartXRef = useRef(0);
   const [chatDraft, setChatDraft] = useState('');
@@ -2038,6 +2039,24 @@ export default function CardSwipersLanding() {
     setCurrentTab('swipe');
   };
 
+  useEffect(() => {
+    if (currentTab !== 'post') {
+      hasAutoPromptedPostCaptureRef.current = false;
+      return;
+    }
+    if (hasAutoPromptedPostCaptureRef.current) return;
+    if (postFrontImagePreview || postBackImagePreview) return;
+
+    hasAutoPromptedPostCaptureRef.current = true;
+    const timeoutId = window.setTimeout(() => {
+      postFrontImageInputRef.current?.click();
+    }, 80);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentTab, postFrontImagePreview, postBackImagePreview]);
+
   const handlePostImageChange = (side, e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2058,9 +2077,21 @@ export default function CardSwipersLanding() {
       if (side === 'front') {
         setPostFrontImagePreview(preview);
         setPostFrontImageFile(file);
+
+        if (!postBackImagePreview) {
+          window.requestAnimationFrame(() => {
+            postBackImageInputRef.current?.click();
+          });
+        } else {
+          setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
+        }
       } else {
         setPostBackImagePreview(preview);
         setPostBackImageFile(file);
+
+        if (postFrontImagePreview || postFrontImageFile) {
+          setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
+        }
       }
       setPostImageError('');
     };
@@ -2074,9 +2105,6 @@ export default function CardSwipersLanding() {
       });
     }
 
-    if (side === 'front') {
-      setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
-    }
   };
 
   const toggleLookingForOption = (option) => {
@@ -5491,7 +5519,7 @@ export default function CardSwipersLanding() {
             className="group relative flex items-center justify-center -mt-4"
             type="button"
           >
-            <span className={`absolute inset-x-1 inset-y-0 rounded-[26px] border transition-all duration-300 ${currentTab === 'post' ? 'border-[#F5C542]/25 bg-[radial-gradient(circle_at_top,rgba(245,197,66,0.3),rgba(225,29,72,0.24)_62%,rgba(255,255,255,0.08))] shadow-[0_16px_30px_rgba(225,29,72,0.24)]' : 'border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] group-hover:bg-white/[0.08]'}`} />
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[26px] border transition-all duration-300 ${currentTab === 'post' ? 'border-[#F5C542]/25 bg-[radial-gradient(circle_at_top,rgba(245,197,66,0.3),rgba(225,29,72,0.24)_62%,rgba(255,255,255,0.08))] shadow-[0_16px_30px_rgba(225,29,72,0.24)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.08]'}`} />
             <span className="relative flex min-h-[72px] flex-col items-center justify-center gap-1 px-3 py-2.5">
               <span className={`absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent transition-opacity duration-300 ${currentTab === 'post' ? 'opacity-100' : 'opacity-0'}`} />
               <NavIcon className={`transition-all duration-300 ${currentTab === 'post' ? 'w-[1.45rem] h-[1.45rem] text-white' : 'w-[1.3rem] h-[1.3rem] text-white/78 group-hover:text-white'}`}><PostIcon /></NavIcon>
