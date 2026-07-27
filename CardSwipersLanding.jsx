@@ -3016,13 +3016,6 @@ export default function CardSwipersLanding() {
     : undefined;
   const currentSellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === firebaseUser?.uid || entry.uid === firebaseUser?.uid) || {};
   const currentSellerConnectedAccountId = getConnectedAccountIdFromRecord({}, currentUserProfile || {}, currentSellerVerificationRecord);
-  console.log('[RuntimeState]', {
-    currentTab,
-    isAuthenticated,
-    isCoreAppScreen,
-    showPersistentMobileDock,
-    accountMenuOpen
-  });
   const coreScreenTitles = {
     swipe: 'Discover',
     post: 'Post Card',
@@ -3118,7 +3111,7 @@ export default function CardSwipersLanding() {
   }, {});
   return (
     <div
-      className={`text-white font-sans flex flex-col relative min-h-screen overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
+      className={`text-white font-sans flex flex-col relative min-h-screen overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#080B14]'}`}
       style={
         isNativeApp
           ? {
@@ -3177,9 +3170,16 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
+      {isCoreAppScreen && isAuthenticated && (
+        <>
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_12%_10%,rgba(245,197,66,0.08),transparent_24%),radial-gradient(circle_at_88%_14%,rgba(225,29,72,0.12),transparent_28%),radial-gradient(circle_at_50%_100%,rgba(59,130,246,0.08),transparent_30%)]" />
+          <div className="absolute inset-0 pointer-events-none opacity-[0.18] bg-[linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.045)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(circle_at_center,black,transparent_82%)]" />
+        </>
+      )}
+
       {(isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header
-        className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}
+        className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#0D1320]/88 border-white/10'} backdrop-blur-2xl border-b sticky top-0 z-50 shadow-[0_12px_40px_rgba(0,0,0,0.18)]`}
         style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
       >
         <div className={`max-w-6xl mx-auto w-full ${isCoreAppScreen && isAuthenticated ? 'px-5 py-3 flex items-center justify-between' : 'px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-end'}`}>
@@ -3377,7 +3377,7 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 w-full ${isCoreAppScreen ? (currentTab === 'post' ? 'overflow-y-auto overscroll-y-contain' : 'overflow-hidden') : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-5' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        className={`relative z-10 flex-1 w-full ${isCoreAppScreen ? (currentTab === 'post' ? 'overflow-y-auto overscroll-y-contain' : 'overflow-hidden') : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-5' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
         style={showPersistentMobileDock ? { paddingBottom: coreScreenBottomInset } : undefined}
       >
         <div className={`max-w-6xl mx-auto w-full flex-1 flex flex-col ${currentTab === 'post' ? 'overflow-visible' : 'overflow-hidden'}`}>
@@ -3940,9 +3940,9 @@ export default function CardSwipersLanding() {
             {currentCard ? (
               <div className="w-full flex-1 overflow-y-auto overscroll-y-contain pr-1 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
-                  <div className="w-full h-full min-h-0 bg-[#171923] border border-white/10 rounded-[28px] md:rounded-[32px] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
-                    <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-30 pointer-events-none`} />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_35%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.25))] pointer-events-none" />
+                  <div className="w-full h-full min-h-0 rounded-[28px] md:rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(17,22,35,0.94),rgba(10,14,24,0.96))] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+                    <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-18 pointer-events-none`} />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.10),transparent_34%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.28))] pointer-events-none" />
 
                     {swipeFeedback === 'like' && (
                       <div className="absolute top-6 left-4 -rotate-12 border-3 border-emerald-400 text-emerald-400 font-black text-lg sm:text-2xl px-2.5 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
@@ -3985,7 +3985,7 @@ export default function CardSwipersLanding() {
                     </div>
 
                     <div className="relative z-10 flex-1 flex items-center justify-center py-2 md:py-8">
-                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`}>
+                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[linear-gradient(180deg,rgba(13,18,28,0.98),rgba(8,11,18,0.98))] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.62)] relative overflow-hidden`}>
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
                         <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
@@ -4046,7 +4046,7 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="z-10 space-y-3 md:space-y-4 bg-gradient-to-t from-[#171923] via-[#171923]/92 to-transparent pt-3 md:pt-4 rounded-xl">
+                    <div className="z-10 space-y-3 md:space-y-4 bg-gradient-to-t from-[#101521] via-[#101521]/96 to-transparent pt-3 md:pt-4 rounded-xl">
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="space-y-2 min-w-0">
                           <h2 className="text-[1.18rem] sm:text-[1.8rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
@@ -4059,7 +4059,7 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 flex-wrap bg-[#0F131C] border border-white/10 rounded-2xl px-3 py-2.5 md:px-4 md:py-3">
+                      <div className="flex items-center justify-between gap-3 flex-wrap bg-white/[0.04] border border-white/10 rounded-2xl px-3 py-2.5 md:px-4 md:py-3 backdrop-blur-xl">
                         <button
                           type="button"
                           onClick={() => setViewingCollection(currentCard)}
@@ -4224,7 +4224,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'post' && (
           <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-y-auto overscroll-y-contain">
-            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">+ Card</p>
@@ -4245,7 +4245,7 @@ export default function CardSwipersLanding() {
             </div>
 
             <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-4 md:gap-6 items-start flex-1 min-h-0">
-              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 overflow-y-auto">
+              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.38)] min-h-0 overflow-y-auto backdrop-blur-xl">
                 <input
                   ref={postFrontImageInputRef}
                   type="file"
@@ -4555,7 +4555,7 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
-            <details className="rounded-2xl border border-red-400/30 bg-red-950/40 p-4 space-y-4" open={!isNativeCoreApp}>
+            <details className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-4 space-y-4 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl" open={!isNativeCoreApp}>
               <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-red-200">Verification Center</p>
@@ -4569,16 +4569,16 @@ export default function CardSwipersLanding() {
                   <p className="text-xs text-red-100 mt-1">Upload your license/ID once. CS support reviews in 1-2 days. You can keep trading while pending.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
                     Buyer: {buyerVerificationStatus}
                   </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
                     Seller: {sellerVerificationStatus}
                   </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
                     Buyer Rating: {currentUserBuyerRating?.count ? `${currentUserBuyerRating.average.toFixed(1)} ★ (${currentUserBuyerRating.count})` : 'No reviews yet'}
                   </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
                     Seller Rating: {currentUserSellerRating?.count ? `${currentUserSellerRating.average.toFixed(1)} ★ (${currentUserSellerRating.count})` : 'No reviews yet'}
                   </span>
                 </div>
@@ -4590,27 +4590,27 @@ export default function CardSwipersLanding() {
                   value={verificationForm.legalName}
                   onChange={(event) => setVerificationForm((prev) => ({ ...prev, legalName: event.target.value }))}
                   placeholder="Legal full name"
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
                 />
                 <input
                   type="date"
                   value={verificationForm.birthDate}
                   onChange={(event) => setVerificationForm((prev) => ({ ...prev, birthDate: event.target.value }))}
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
                 />
                 <input
                   type="tel"
                   value={verificationForm.phone}
                   onChange={(event) => setVerificationForm((prev) => ({ ...prev, phone: event.target.value }))}
                   placeholder="Phone number"
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
                 />
                 <input
                   type="email"
                   value={verificationForm.email}
                   onChange={(event) => setVerificationForm((prev) => ({ ...prev, email: event.target.value }))}
                   placeholder="Email"
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
                 />
               </div>
 
@@ -4650,9 +4650,9 @@ export default function CardSwipersLanding() {
                   value={verificationForm.notes}
                   onChange={(event) => setVerificationForm((prev) => ({ ...prev, notes: event.target.value }))}
                   placeholder="Optional notes for CS support"
-                  className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35 resize-none"
                 />
-                <label className="flex items-start gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-3 text-left">
+                <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left">
                   <input
                     type="checkbox"
                     checked={hasAcceptedVerificationTerms}
@@ -4691,7 +4691,7 @@ export default function CardSwipersLanding() {
               {myCollection.map((card) => (
                 <div
                   key={card.id}
-                  className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group"
+                  className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.98))] border border-white/10 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group shadow-[0_14px_36px_rgba(0,0,0,0.22)]"
                 >
                   <div className="absolute top-2 right-2 text-xs bg-white/20 px-2 py-0.5 rounded-md text-red-100 font-mono scale-90">
                     {card.condition}
@@ -4731,7 +4731,7 @@ export default function CardSwipersLanding() {
                 )}
 
                 {incomingInterests.length > 0 && (
-                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
+                  <div className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] border border-white/10 rounded-2xl p-4 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl">
                     <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Incoming Interests</h3>
                     {incomingInterests
                       .filter((interest) => interest.status === 'pending')
@@ -4761,7 +4761,7 @@ export default function CardSwipersLanding() {
                 )}
 
                 {outgoingInterests.length > 0 && (
-                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
+                  <div className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] border border-white/10 rounded-2xl p-4 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl">
                     <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Interests You Sent</h3>
                     {outgoingInterests.slice(0, 6).map((interest) => (
                       <div key={interest.id} className="rounded-xl border border-red-400/20 bg-black/20 p-3">
@@ -4773,7 +4773,7 @@ export default function CardSwipersLanding() {
                 )}
 
                 {reviewableTransactions.length > 0 && (
-                  <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
+                  <details className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] border border-white/10 rounded-2xl p-4 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl" open={!isNativeCoreApp}>
                     <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
                       <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Completed Deals Awaiting Your Review</h3>
                       <span className="text-xs text-red-200">{reviewableTransactions.length}</span>
@@ -4824,7 +4824,7 @@ export default function CardSwipersLanding() {
                   </details>
                 )}
 
-                <div className="divide-y divide-red-700/40 rounded-2xl border border-red-400/30 bg-red-950/50">
+                <div className="divide-y divide-white/8 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl">
                   {matches.length === 0 ? (
                     <div className="p-4 text-sm text-red-100">No active matches yet. Send interests from the swipe feed to start deals.</div>
                   ) : (
@@ -4854,14 +4854,14 @@ export default function CardSwipersLanding() {
               </div>
             ) : (
               <div className="flex flex-col h-full min-h-0 space-y-4">
-                <div className="flex items-center space-x-3 pb-3 border-b border-red-600/40">
+                <div className="flex items-center space-x-3 pb-3 border-b border-white/10">
                   <button onClick={() => setActiveChat(null)} className="text-red-200 text-sm hover:text-white" type="button">
                     ◀ Back
                   </button>
                   <h3 className="font-bold text-base">Chatting with @{activeChat.counterpartyName || activeChat.user}</h3>
                 </div>
 
-                <div className="rounded-2xl border border-red-400/30 bg-red-950/35 p-3 space-y-3">
+                <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-3 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-xl">
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <p className="text-xs uppercase tracking-wider text-red-100 font-bold">Offer Negotiation</p>
                     <p className="text-xs text-red-200">You can send offers above or below the listing price.</p>
@@ -4930,7 +4930,7 @@ export default function CardSwipersLanding() {
                   )}
                 </div>
 
-                <div data-chat-messages className="flex-1 min-h-0 bg-red-900/20 rounded-2xl p-4 flex flex-col justify-end space-y-3 overflow-y-auto">
+                <div data-chat-messages className="flex-1 min-h-0 bg-white/[0.03] rounded-2xl p-4 flex flex-col justify-end space-y-3 overflow-y-auto border border-white/8">
                   {chatMessages.length === 0 ? (
                     <div className="text-xs text-red-100">No messages yet. Send your opening proposal.</div>
                   ) : (
