@@ -4,6 +4,7 @@ import {
   deleteUser,
   fetchSignInMethodsForEmail,
   GoogleAuthProvider,
+  OAuthProvider,
   getRedirectResult,
   onAuthStateChanged,
   sendPasswordResetEmail,
@@ -48,6 +49,8 @@ const normalizeAuthEmail = (value) => value.trim().toLowerCase();
 const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
 const FREE_SWIPES_PER_WEEK = 30;
+const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
+const APPLE_REDIRECT_PENDING_KEY = 'cardswipers_apple_redirect_pending';
 
 const getIsoWeekKey = (value = new Date()) => {
   const utcDate = new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
@@ -63,6 +66,12 @@ const getSignInMethodMessage = (methods, flow) => {
     return flow === 'create'
       ? 'That email is already connected to Google sign-in. Log in with Google instead.'
       : 'That account uses Google sign-in. Tap Continue with Google instead of using a password.';
+  }
+
+  if (methods.includes('apple.com')) {
+    return flow === 'create'
+      ? 'That email is already connected to Apple sign-in. Log in with Apple instead.'
+      : 'That account uses Apple sign-in. Tap Continue with Apple instead of using a password.';
   }
 
   if (methods.includes('password')) {
@@ -83,7 +92,7 @@ const getAuthErrorMessage = (error, flow = 'login') => {
     return 'That email is already registered. Try Log In, or use Forgot Password to reset access.';
   }
   if (code.includes('account-exists-with-different-credential')) {
-    return 'An account already exists with a different sign-in method. Try Continue with Google.';
+    return 'An account already exists with a different sign-in method. Try the matching Google or Apple sign-in option.';
   }
   if (code.includes('invalid-email') || code.includes('missing-email')) {
     return 'Enter a valid email address.';
@@ -118,6 +127,7 @@ const getAuthErrorMessage = (error, flow = 'login') => {
   }
 
   if (flow === 'google') return 'Google sign-in failed. Please try again.';
+  if (flow === 'apple') return 'Apple sign-in failed. Please try again.';
   if (flow === 'reset') return 'Could not send reset link. Please try again.';
   if (flow === 'create') return 'Could not create account. Please check your details and try again.';
   return 'Could not log in. Please try again.';
@@ -294,7 +304,6 @@ const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More 
 const ENABLE_PAYMENT_PIPELINE = false;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
-const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
 const MARKETPLACE_FEE_RATE = 0.02;
 const VERIFIED_BUYER_SUBSCRIPTION_PRICE = 19.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
@@ -497,6 +506,7 @@ export default function CardSwipersLanding() {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
+  const [isAppleRedirecting, setIsAppleRedirecting] = useState(false);
   const [hasAcceptedVerificationTerms, setHasAcceptedVerificationTerms] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
@@ -885,21 +895,26 @@ export default function CardSwipersLanding() {
 
       const hasPendingGoogleRedirect =
         typeof window !== 'undefined' && window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === '1';
+      const hasPendingAppleRedirect =
+        typeof window !== 'undefined' && window.sessionStorage.getItem(APPLE_REDIRECT_PENDING_KEY) === '1';
+      const pendingProvider = hasPendingAppleRedirect ? 'apple' : hasPendingGoogleRedirect ? 'google' : null;
 
-      if (!hasPendingGoogleRedirect) return;
+      if (!pendingProvider) return;
 
       try {
         const result = await getRedirectResult(auth);
         if (!isMounted || !result?.user) return;
-        setAuthInfo('Google sign-in completed.');
+        setAuthInfo(`${pendingProvider === 'apple' ? 'Apple' : 'Google'} sign-in completed.`);
       } catch (error) {
         if (!isMounted) return;
-        setAuthError(getAuthErrorMessage(error, 'google'));
+        setAuthError(getAuthErrorMessage(error, pendingProvider));
       } finally {
         if (typeof window !== 'undefined') {
           window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+          window.sessionStorage.removeItem(APPLE_REDIRECT_PENDING_KEY);
         }
         setIsGoogleRedirecting(false);
+        setIsAppleRedirecting(false);
       }
     };
 
@@ -2688,6 +2703,32 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const handleAppleAuth = async () => {
+    setAuthError('');
+    setAuthInfo('');
+    try {
+      const provider = new OAuthProvider('apple.com');
+      provider.addScope('email');
+      provider.addScope('name');
+
+      if (isNativeApp) {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem(APPLE_REDIRECT_PENDING_KEY, '1');
+        }
+        setIsAppleRedirecting(true);
+        setAuthInfo('Opening Apple sign-in in your browser...');
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
+      await signInWithPopup(auth, provider);
+      setCurrentTab('swipe');
+    } catch (error) {
+      setIsAppleRedirecting(false);
+      setAuthError(getAuthErrorMessage(error, 'apple'));
+    }
+  };
+
   const navigateToTab = (nextTab) => {
     if (!isAuthenticated) {
       setCurrentTab(isNativeApp ? 'auth' : 'landing');
@@ -3702,7 +3743,7 @@ export default function CardSwipersLanding() {
                 <button
                   type="button"
                   onClick={handleGoogleAuth}
-                  disabled={isAuthSubmitting || isGoogleRedirecting}
+                  disabled={isAuthSubmitting || isGoogleRedirecting || isAppleRedirecting}
                   className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-base'} px-6 rounded-2xl bg-white border border-[#D4D8DE] hover:border-[#BAC0C8] text-[#111827] font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5`}
                 >
                   <span
@@ -3719,9 +3760,21 @@ export default function CardSwipersLanding() {
                   {isGoogleRedirecting ? 'Opening Google...' : 'Continue with Google'}
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleAppleAuth}
+                  disabled={isAuthSubmitting || isGoogleRedirecting || isAppleRedirecting}
+                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-base'} px-6 rounded-2xl bg-[#111111] border border-white/10 hover:border-white/20 text-white font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.2)]`}
+                >
+                  <span className={`${isNativeApp ? 'text-sm' : 'text-base'} font-black leading-none`} aria-hidden="true">
+                    Apple
+                  </span>
+                  {isAppleRedirecting ? 'Opening Apple...' : 'Continue with Apple'}
+                </button>
+
                 {isNativeApp && (
                   <p className={`${isNativeApp ? 'text-[9px] leading-4' : 'text-[11px] leading-5'} text-[#6B7280]`}>
-                    On iPhone, Google sign-in may open Safari to finish authentication and return to the app.
+                    On iPhone, Google or Apple sign-in may open Safari to finish authentication and return to the app.
                   </p>
                 )}
               </form>
@@ -5588,7 +5641,7 @@ export default function CardSwipersLanding() {
 
       {showPrivacyPolicy && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl">
+          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-red-700">Privacy Policy</h2>
               <button
@@ -5600,12 +5653,16 @@ export default function CardSwipersLanding() {
               </button>
             </div>
             <p className="text-sm leading-relaxed">
-              CardSwipers collects account details, trade listings, and in-app messages to operate the platform.
-              We do not sell your personal information. Data is used only for authentication, matching, and product
-              improvement.
+              CardSwipers collects the information needed to operate the marketplace: email address, display name, password or third-party sign-in identity, profile location, bio, card photos, card listings, messages, offers, interests, match history, verification status, and support or dispute records.
             </p>
             <p className="text-sm leading-relaxed">
-              By continuing, you agree to data processing required for account security and trade functionality.
+              If you choose to verify your account, we may also request legal name, date of birth, phone number, government ID images, and other information reasonably needed for identity, fraud, or age checks. We may also collect device, browser, log, and analytics data to secure the service and improve reliability.
+            </p>
+            <p className="text-sm leading-relaxed">
+              We use this data to create and secure accounts, verify users, match collectors, process listings and messages, prevent fraud, provide support, enforce policies, and meet legal obligations. We do not sell your personal information.
+            </p>
+            <p className="text-sm leading-relaxed">
+              Your data may be processed by service providers that help us run CardSwipers, including authentication, cloud hosting, storage, analytics, and messaging providers. You can request account deletion through Profile Settings, and we will delete or deactivate data as required by law and our retention practices.
             </p>
           </div>
         </div>
@@ -5638,7 +5695,7 @@ export default function CardSwipersLanding() {
 
       {showTermsOfService && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl">
+          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-red-700">Terms of Service</h2>
               <button
@@ -5650,18 +5707,16 @@ export default function CardSwipersLanding() {
               </button>
             </div>
             <p className="text-sm leading-relaxed">
-              CardSwipers is a collector marketplace. Users are responsible for accurately describing inventory,
-              shipping on time, and responding in good faith during any dispute.
+              CardSwipers is a collector marketplace. You must provide accurate profile information, truthful card descriptions, and clear photos. You are responsible for the content you upload, the accuracy of any card listing, and the way you interact with other users.
             </p>
             <p className="text-sm leading-relaxed">
-              By using CardSwipers, you agree to the marketplace dispute and account conduct policy.
+              To use the service, you must be old enough to form a binding contract in your jurisdiction and must comply with all applicable laws. You agree not to submit false identity information, fraudulent listings, offensive or illegal content, or messages intended to harass, scam, or manipulate other users.
             </p>
             <p className="text-sm leading-relaxed">
-              Abuse, fraud, chargebacks, or materially inaccurate listings can result in account action.
+              We may review listings, messages, interests, offers, transaction history, and verification records to operate the marketplace, resolve disputes, enforce policies, investigate fraud, and protect users. Account restrictions, deactivation, or removal may occur if you violate these terms or the marketplace rules.
             </p>
             <p className="text-sm leading-relaxed">
-              CardSwipers administrators may review transaction history and message evidence to resolve disputes, and
-              those outcomes are binding for platform activity.
+              If you request account deletion, we will follow our deletion and retention process, but certain records may be kept when required for legal, fraud-prevention, tax, security, or dispute-resolution purposes.
             </p>
           </div>
         </div>
