@@ -549,6 +549,7 @@ export default function CardSwipersLanding() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [showStartupSplash, setShowStartupSplash] = useState(isNativeApp);
+  const [nativeViewportHeight, setNativeViewportHeight] = useState(null);
   const [authError, setAuthError] = useState('');
   const [authInfo, setAuthInfo] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
@@ -773,6 +774,14 @@ export default function CardSwipersLanding() {
       ? currentCard?.imageBackUrl || currentCard?.imageUrl || ''
       : currentCard?.imageFrontUrl || currentCard?.imageUrl || '';
 
+  const stabilizeNativeViewport = useCallback(() => {
+    if (!isNativeApp || typeof window === 'undefined') return;
+    const height = Math.round(window.visualViewport?.height || window.innerHeight || 0);
+    if (height > 0) {
+      setNativeViewportHeight(height);
+    }
+  }, [isNativeApp]);
+
   const addNotification = useCallback((payload) => {
     const notification = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -791,6 +800,39 @@ export default function CardSwipersLanding() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!isNativeApp || typeof window === 'undefined') return;
+
+    const refreshViewport = () => {
+      window.requestAnimationFrame(() => {
+        stabilizeNativeViewport();
+      });
+    };
+
+    refreshViewport();
+
+    const visualViewport = window.visualViewport;
+    window.addEventListener('resize', refreshViewport);
+    window.addEventListener('orientationchange', refreshViewport);
+    window.addEventListener('focusin', refreshViewport);
+    window.addEventListener('focusout', refreshViewport);
+    if (visualViewport) {
+      visualViewport.addEventListener('resize', refreshViewport);
+      visualViewport.addEventListener('scroll', refreshViewport);
+    }
+
+    return () => {
+      window.removeEventListener('resize', refreshViewport);
+      window.removeEventListener('orientationchange', refreshViewport);
+      window.removeEventListener('focusin', refreshViewport);
+      window.removeEventListener('focusout', refreshViewport);
+      if (visualViewport) {
+        visualViewport.removeEventListener('resize', refreshViewport);
+        visualViewport.removeEventListener('scroll', refreshViewport);
+      }
+    };
+  }, [isNativeApp, stabilizeNativeViewport]);
 
   useEffect(() => {
     if (firebaseUser) return;
@@ -2176,8 +2218,8 @@ export default function CardSwipersLanding() {
   const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.title || isPostingCard) return;
-    if (newCard.saleMode !== 'trade_only' && !hasSellerPaymentAccess) {
-      setPostImageError('Seller verification is required before posting Buy Now listings. Submit verification below and continue trading while pending.');
+    if (newCard.saleMode !== 'trade_only' && !hasSellerWalletConnected) {
+      setPostImageError('Connect your bank wallet before posting Buy Now listings so payouts can be routed after delivery confirmation.');
       return;
     }
     if (!postFrontImageFile || !postBackImageFile) {
@@ -2232,6 +2274,8 @@ export default function CardSwipersLanding() {
           .filter(Boolean),
         buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
         saleMode: newCard.saleMode || 'trade_and_sale',
+        sellerConnectedAccountId: currentSellerConnectedAccountId || null,
+        connectedAccountId: currentSellerConnectedAccountId || null,
         sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
         sellerVerified: sellerVerificationProfileStatus === 'verified',
         sellerVerificationStatus: sellerVerificationProfileStatus,
@@ -2279,6 +2323,8 @@ export default function CardSwipersLanding() {
       recentComps: newCard.estimatedValue || '$0',
       buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
       saleMode: newCard.saleMode || 'trade_and_sale',
+      sellerConnectedAccountId: currentSellerConnectedAccountId || null,
+      connectedAccountId: currentSellerConnectedAccountId || null,
       sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
       sellerVerified: sellerVerificationProfileStatus === 'verified',
       sellerVerificationStatus: sellerVerificationProfileStatus,
@@ -2362,6 +2408,14 @@ export default function CardSwipersLanding() {
       setPostImageError('');
     };
     reader.readAsDataURL(file);
+
+    if (isNativeApp && typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          stabilizeNativeViewport();
+        });
+      });
+    }
 
     if (side === 'front') {
       setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
@@ -3201,6 +3255,34 @@ export default function CardSwipersLanding() {
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
   const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
+  const nativeAuthScreenStyle = isNativeApp
+    ? {
+        paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)'
+      }
+    : undefined;
+  const currentSellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === firebaseUser?.uid || entry.uid === firebaseUser?.uid) || {};
+  const currentSellerConnectedAccountId = getConnectedAccountIdFromRecord({}, currentUserProfile || {}, currentSellerVerificationRecord);
+  const hasSellerWalletConnected = Boolean(currentSellerConnectedAccountId);
+  const sellerEscrowTransactions = escrowTransactions.filter((transaction) => transaction.isSeller);
+  const walletAvailableBalance = sellerEscrowTransactions.reduce((total, transaction) => {
+    const status = String(transaction.escrowStatus || transaction.status || '').toLowerCase();
+    if (!['released', 'completed', 'fulfilled'].includes(status)) return total;
+    return total + parseDollarValue(transaction.sellerPayoutAmount || transaction.escrowAmount || transaction.listingPrice || 0);
+  }, 0);
+  const walletPendingBalance = sellerEscrowTransactions.reduce((total, transaction) => {
+    const status = String(transaction.escrowStatus || transaction.status || '').toLowerCase();
+    if (['released', 'completed', 'fulfilled', 'cancelled', 'canceled', 'disputed'].includes(status)) return total;
+    return total + parseDollarValue(transaction.sellerPayoutAmount || transaction.escrowAmount || transaction.listingPrice || 0);
+  }, 0);
+  const sellerWalletHistory = sellerEscrowTransactions
+    .slice()
+    .sort((left, right) => {
+      const leftTime = toDateValue(left.updatedAt || left.createdAt)?.getTime?.() || 0;
+      const rightTime = toDateValue(right.updatedAt || right.createdAt)?.getTime?.() || 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, 6);
   console.log('[RuntimeState]', {
     currentTab,
     isAuthenticated,
@@ -3290,7 +3372,17 @@ export default function CardSwipersLanding() {
     return accumulator;
   }, {});
   return (
-    <div className={`text-white font-sans flex flex-col relative flex-1 overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+    <div
+      className={`text-white font-sans flex flex-col relative min-h-screen overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
+      style={
+        isNativeApp
+          ? {
+              minHeight: nativeViewportHeight ? `${nativeViewportHeight}px` : '100svh',
+              height: nativeViewportHeight ? `${nativeViewportHeight}px` : '100svh'
+            }
+          : undefined
+      }
+    >
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
           <style>{`
@@ -3674,7 +3766,10 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className={`h-full min-h-0 w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}>
+          <div
+            className={`h-full min-h-0 w-full flex flex-col ${isNativeApp ? 'justify-start px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
+            style={nativeAuthScreenStyle}
+          >
             {isNativeApp && (
               <>
                 <img
@@ -3746,7 +3841,7 @@ export default function CardSwipersLanding() {
                     value={authDisplayName}
                     onChange={(e) => setAuthDisplayName(e.target.value)}
                     placeholder="Display name"
-                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
                   />
                 )}
 
@@ -3760,7 +3855,7 @@ export default function CardSwipersLanding() {
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                     placeholder="Email"
-                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
+                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
                   />
                 </label>
 
@@ -3774,7 +3869,7 @@ export default function CardSwipersLanding() {
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="Password"
-                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
+                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
                   />
                   <button
                     type="button"
@@ -3806,7 +3901,7 @@ export default function CardSwipersLanding() {
                     value={authConfirmPassword}
                     onChange={(e) => setAuthConfirmPassword(e.target.value)}
                     placeholder="Confirm password"
-                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
                   />
                 )}
 
@@ -4529,7 +4624,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.brand}
                       onChange={(e) => setNewCard({ ...newCard, brand: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {PUBLISHERS.map((group) => (
                         <optgroup key={group.label} label={group.label}>
@@ -4548,7 +4643,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.gradingCompany}
                       onChange={(e) => setNewCard({ ...newCard, gradingCompany: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {GRADING_COMPANIES.map((company) => (
                         <option key={company} value={company}>
@@ -4565,7 +4660,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.rawCondition}
                       onChange={(e) => setNewCard({ ...newCard, rawCondition: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {RAW_CONDITIONS.map((condition) => (
                         <option key={condition} value={condition}>
@@ -4580,7 +4675,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.grade}
                       onChange={(e) => setNewCard({ ...newCard, grade: e.target.value })}
-                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-4 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {NUMERIC_GRADES.map((grade) => (
                         <option key={grade} value={grade}>
@@ -4627,7 +4722,7 @@ export default function CardSwipersLanding() {
                       placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
                       value={newCard.sellerState}
                       onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
+                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
                     />
                   </div>
                 </div>
@@ -4687,7 +4782,7 @@ export default function CardSwipersLanding() {
                     placeholder="Add more details or specific trade targets"
                     value={newCard.lookingFor}
                     onChange={(e) => setNewCard({ ...newCard, lookingFor: e.target.value })}
-                    className="w-full px-4 py-3.5 bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 text-sm resize-none transition-all"
+                    className="w-full px-4 py-3.5 bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 text-base resize-none transition-all"
                     rows={3}
                   />
                 </div>
@@ -4885,6 +4980,55 @@ export default function CardSwipersLanding() {
                 {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
                 {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
               </div>
+              </div>
+            </details>
+
+            <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
+              <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Wallet & Payouts</h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${hasSellerWalletConnected ? 'text-emerald-200 border-emerald-300/35 bg-emerald-500/12' : 'text-amber-200 border-amber-300/35 bg-amber-500/12'}`}>
+                  {hasSellerWalletConnected ? 'Bank Connected' : 'Bank Not Connected'}
+                </span>
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-red-400/20 bg-black/20 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-red-100/70">Available Balance</p>
+                    <p className="mt-1 text-xl font-bold text-emerald-200">{formatMoney(walletAvailableBalance)}</p>
+                  </div>
+                  <div className="rounded-xl border border-red-400/20 bg-black/20 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-red-100/70">Pending Escrow</p>
+                    <p className="mt-1 text-xl font-bold text-amber-200">{formatMoney(walletPendingBalance)}</p>
+                  </div>
+                </div>
+                {!hasSellerWalletConnected && (
+                  <p className="text-xs text-red-100">
+                    Connect your bank wallet in seller verification to enable Buy Now listings and automatic payouts after delivery is confirmed.
+                  </p>
+                )}
+                {sellerWalletHistory.length > 0 ? (
+                  <div className="space-y-2">
+                    {sellerWalletHistory.map((transaction) => {
+                      const settledAt = toDateValue(transaction.fundsReleasedAt || transaction.updatedAt || transaction.createdAt);
+                      return (
+                        <div key={transaction.orderId} className="rounded-xl border border-red-400/20 bg-black/20 p-3">
+                          <p className="text-sm font-semibold text-red-50">{transaction.cardTitle || 'Card Sale'}</p>
+                          <p className="text-xs text-red-100/80">
+                            Sold to {transaction.counterpartyName || 'Buyer'} · {settledAt ? settledAt.toLocaleDateString() : 'Date pending'}
+                          </p>
+                          <p className="text-xs text-red-100/80">
+                            Order {transaction.orderId} · Status {transaction.escrowStatus || transaction.status || 'pending'}
+                          </p>
+                          <p className="text-sm font-semibold text-emerald-200 mt-1">
+                            {formatMoney(transaction.sellerPayoutAmount || transaction.escrowAmount || transaction.listingPrice || 0)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-red-100/80">No wallet transactions yet. Your completed sales will appear here with payout amounts and settlement dates.</p>
+                )}
               </div>
             </details>
 
