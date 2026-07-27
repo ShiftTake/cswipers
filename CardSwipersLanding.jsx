@@ -34,7 +34,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
-import authHeroImage from './CSWIPERSAPPLOGO.jpg';
+import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jun 26, 2026 at 02_28_26 PM (1).png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
