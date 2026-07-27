@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
@@ -48,8 +46,6 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
 const normalizeAuthEmail = (value) => value.trim().toLowerCase();
 const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
-const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
-const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const getSignInMethodMessage = (methods, flow) => {
   if (methods.includes('google.com')) {
@@ -200,69 +196,6 @@ function BellIcon() {
   );
 }
 
-function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    if (!stripe || !elements || isSubmitting) return;
-
-    setIsSubmitting(true);
-    onError('');
-
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      redirect: 'if_required'
-    });
-
-    setIsSubmitting(false);
-
-    if (error) {
-      onError(error.message || 'Stripe payment confirmation failed.');
-      return;
-    }
-
-    onSuccess(paymentIntent);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <h3 className="text-lg font-bold text-[#111827]">Complete escrow payment</h3>
-        <p className="text-sm text-[#6B7280] mt-1">
-          {purchaseSummary.cardTitle} · You will be charged {formatMoney(purchaseSummary.totalCharge)}.
-        </p>
-        <p className="text-xs text-[#6B7280] mt-1">
-          Item price {formatMoney(purchaseSummary.baseItemPrice)} + buyer platform fee {formatMoney(purchaseSummary.platformFee)}.
-        </p>
-      </div>
-
-      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
-        <PaymentElement />
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={!stripe || !elements || isSubmitting}
-          className="flex-1 h-11 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold disabled:opacity-60"
-        >
-          {isSubmitting ? 'Processing...' : `Pay ${formatMoney(purchaseSummary.totalCharge)}`}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="h-11 px-4 rounded-2xl border border-[#D4D8DE] text-[#111827] font-semibold"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
 const INITIAL_DECK = [];
 
 const PUBLISHERS = [
@@ -347,15 +280,13 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
-const ENABLE_PAYMENT_PIPELINE = true;
+const ENABLE_PAYMENT_PIPELINE = false;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
 const MARKETPLACE_FEE_RATE = 0.02;
 const VERIFIED_BUYER_SUBSCRIPTION_PRICE = 19.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
-const ESCROW_API_BASE = '/api';
-const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service, including the 48-hour inspection window and dispute policy for escrow purchases.';
 
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
 
@@ -555,7 +486,6 @@ export default function CardSwipersLanding() {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
-  const [hasAcceptedEscrowTerms, setHasAcceptedEscrowTerms] = useState(false);
   const [hasAcceptedVerificationTerms, setHasAcceptedVerificationTerms] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
@@ -583,7 +513,7 @@ export default function CardSwipersLanding() {
     estimatedValue: '',
     buyNowPrice: '',
     sellerState: '',
-    saleMode: 'trade_and_sale',
+    saleMode: 'trade_only',
     lookingFor: ''
   });
   const [postImageError, setPostImageError] = useState('');
@@ -615,13 +545,6 @@ export default function CardSwipersLanding() {
   const [interestBusy, setInterestBusy] = useState(false);
   const [interestError, setInterestError] = useState('');
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [activePaymentSheet, setActivePaymentSheet] = useState(null);
-  const [paymentSheetError, setPaymentSheetError] = useState('');
-  const [trackingDrafts, setTrackingDrafts] = useState({});
-  const [trackingBusyByPurchaseId, setTrackingBusyByPurchaseId] = useState({});
-  const [releaseBusyByPurchaseId, setReleaseBusyByPurchaseId] = useState({});
-  const [disputeDrafts, setDisputeDrafts] = useState({});
-  const [disputeBusyByPurchaseId, setDisputeBusyByPurchaseId] = useState({});
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingIntroVisible, setOnboardingIntroVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
@@ -702,8 +625,6 @@ export default function CardSwipersLanding() {
   const sellerVerificationStatus = String(
     currentUserProfile?.sellerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
   ).toLowerCase();
-  const hasBuyerPaymentAccess = buyerVerificationStatus === 'verified' || buyerVerificationStatus === 'pending';
-  const hasSellerPaymentAccess = sellerVerificationStatus === 'verified' || sellerVerificationStatus === 'pending';
   const existingReviewKeys = new Set(
     reviews.map((review) => `${review.purchaseId || ''}:${review.reviewerUid || ''}`)
   );
@@ -727,26 +648,6 @@ export default function CardSwipersLanding() {
       };
     })
     .filter((record) => Boolean(record.counterpartyUid));
-  const escrowTransactions = userPurchaseIntents
-    .filter((record) => String(record.paymentProvider || '').toLowerCase() === 'stripe')
-    .map((record) => {
-      const isBuyer = record.buyerUid === firebaseUser?.uid;
-      const sellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === record.sellerUid || entry.uid === record.sellerUid) || {};
-      const connectedAccountId = getConnectedAccountIdFromRecord(record, {}, sellerVerificationRecord);
-      return {
-        ...record,
-        orderId: record.orderId || record.id,
-        isBuyer,
-        isSeller: record.sellerUid === firebaseUser?.uid,
-        connectedAccountId,
-        counterpartyName: isBuyer ? (record.sellerName || 'Seller') : (record.buyerName || 'Buyer')
-      };
-    })
-    .sort((left, right) => {
-      const leftTime = toDateValue(left.updatedAt || left.createdAt)?.getTime?.() || 0;
-      const rightTime = toDateValue(right.updatedAt || right.createdAt)?.getTime?.() || 0;
-      return rightTime - leftTime;
-    });
   const postProgressChecks = [
     Boolean(postFrontImagePreview),
     Boolean(postBackImagePreview),
@@ -1484,7 +1385,7 @@ export default function CardSwipersLanding() {
                   listedAt: data.listedAt || data.createdAt || null,
                   listedAtLabel: formatListingDate(data.listedAt || data.createdAt || null),
                   buyNowPrice: data.buyNowPrice || data.tradeValue || data.value || '$0',
-                  saleMode: data.saleMode || 'trade_and_sale',
+                  saleMode: data.saleMode || 'trade_only',
                   sellerState: normalizeStateCode(data.sellerState || ''),
                   sellerVerificationStatus: data.sellerVerificationStatus || 'unverified',
                   sellerVerified: Boolean(data.sellerVerified || data.sellerVerificationStatus === 'verified'),
@@ -1814,307 +1715,6 @@ export default function CardSwipersLanding() {
     setSwipeFeedback(null);
   };
 
-  const handleInstantPurchase = async (card = currentCard, options = {}) => {
-    if (!card || !firebaseUser) return;
-    const shouldAdvanceDeck = Boolean(options?.advanceAfterPurchase);
-    const listingSellerStatus = String(card.sellerVerificationStatus || 'unverified').toLowerCase();
-
-    if (!hasBuyerPaymentAccess) {
-      setAuthError('Buyer verification is required before instant purchase. Submit verification in My Trading Binder.');
-      setCurrentTab('collection');
-      return;
-    }
-
-    if (!(listingSellerStatus === 'verified' || listingSellerStatus === 'pending')) {
-      setAuthError('This seller is not pending/verified yet for payment purchases. Use trade request for now.');
-      return;
-    }
-
-    if (!STRIPE_PUBLISHABLE_KEY || !stripePromise) {
-      setAuthError('Stripe publishable key is missing. Set VITE_STRIPE_PUBLISHABLE_KEY before using instant purchase.');
-      return;
-    }
-
-    const grossAmount = parseDollarValue(card.buyNowPrice || card.tradeValue || card.value);
-    const { baseAmount, platformFee, totalCharge } = calculateEscrowCharge(grossAmount);
-    const taxState = normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || card.sellerState || '');
-    const orderId = buildEscrowOrderId();
-    const purchaseRef = doc(db, 'purchaseIntents', orderId);
-
-    await setDoc(purchaseRef, {
-      orderId,
-      buyerUid: firebaseUser.uid,
-      buyerName: firebaseUser.displayName || firebaseUser.email || 'Buyer',
-      sellerUid: card.ownerUid || null,
-      sellerName: card.owner || 'Collector',
-      sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || null,
-      cardId: card.id,
-      cardTitle: card.title,
-      cardBrand: card.brand || '',
-      listingPrice: baseAmount,
-      marketplaceFeeRate: MARKETPLACE_FEE_RATE,
-      marketplaceFeeAmount: platformFee,
-      chargedTotalAmount: totalCharge,
-      sellerPayoutAmount: baseAmount,
-      taxState,
-      taxStatus: 'needs-stripe-tax',
-      taxAmount: 0,
-      escrowAmount: baseAmount,
-      escrowStatus: 'payment_pending',
-      status: 'requires_payment',
-      paymentProvider: 'stripe',
-      saleMode: 'instant_purchase',
-      listedAt: card.listedAt || null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-
-    try {
-      const response = await fetch(`${ESCROW_API_BASE}/orders/create-payment-intent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
-        },
-        body: JSON.stringify({
-          itemPrice: baseAmount,
-          currency: 'usd',
-          orderId,
-          buyerId: firebaseUser.uid,
-          sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || '',
-          sellerUserId: card.ownerUid || null,
-          sellerName: card.owner || 'Collector',
-          cardId: card.id,
-          cardTitle: card.title,
-          cardBrand: card.brand || '',
-          buyerShippingAddress: {
-            postal_code: currentUserProfile?.shippingZip || currentUserProfile?.postalCode || '',
-            state: currentUserProfile?.state || currentUserProfile?.shippingState || ''
-          }
-        })
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to initialize Stripe payment.');
-      }
-
-      await updateDoc(purchaseRef, {
-        paymentIntentId: payload.paymentIntentId,
-        paymentIntentClientSecret: payload.clientSecret,
-        transferGroup: payload.transferGroup,
-        chargedTotalAmount: Number(payload.totalCharge || totalCharge),
-        marketplaceFeeAmount: Number(payload.platformFee || platformFee),
-        sellerPayoutAmount: Number(payload.baseItemPrice || baseAmount),
-        escrowAmount: Number(payload.baseItemPrice || baseAmount),
-        status: 'payment_intent_created',
-        escrowStatus: 'payment_intent_created',
-        updatedAt: serverTimestamp()
-      });
-
-      setPaymentSheetError('');
-      setActivePaymentSheet({
-        orderId,
-        purchaseId: orderId,
-        clientSecret: payload.clientSecret,
-        cardId: card.id,
-        cardTitle: card.title,
-        baseItemPrice: Number(payload.baseItemPrice || baseAmount),
-        totalCharge: Number(payload.totalCharge || totalCharge),
-        platformFee: Number(payload.platformFee || platformFee),
-        advanceAfterPurchase: shouldAdvanceDeck
-      });
-    } catch (error) {
-      console.error('Failed to initialize escrow payment:', error);
-      await updateDoc(purchaseRef, {
-        status: 'payment_intent_failed',
-        escrowStatus: 'payment_intent_failed',
-        paymentError: error.message || 'Unable to initialize Stripe payment.',
-        updatedAt: serverTimestamp()
-      });
-      setAuthError(error.message || 'Unable to initialize Stripe payment.');
-    }
-  };
-
-  const handleEscrowPaymentSuccess = async (paymentIntent) => {
-    if (!activePaymentSheet?.purchaseId) return;
-
-    try {
-      await updateDoc(doc(db, 'purchaseIntents', activePaymentSheet.purchaseId), {
-        paymentIntentId: paymentIntent?.id || null,
-        paymentIntentStatus: paymentIntent?.status || 'succeeded',
-        status: 'paid',
-        escrowStatus: 'held',
-        tosAcceptedAt: serverTimestamp(),
-        paidAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      if (activePaymentSheet.advanceAfterPurchase) {
-        const nextDeck = deck.filter((listing) => listing.id !== activePaymentSheet.cardId);
-        setDeck(nextDeck);
-        setSwipeFeedback('like');
-        advanceDeck();
-      }
-
-      setAuthInfo(`Escrow payment captured for ${activePaymentSheet.cardTitle}. Funds will remain held until shipment and release.`);
-      setActivePaymentSheet(null);
-    } catch (error) {
-      console.error('Failed to finalize escrow payment:', error);
-      setPaymentSheetError('Payment succeeded, but we could not finish recording the order. Refresh your account history and verify the order status.');
-    }
-  };
-
-  const handleSubmitTrackingForOrder = async (transaction) => {
-    if (!transaction?.orderId || !transaction?.isSeller) return;
-
-    const draft = trackingDrafts[transaction.orderId] || {};
-    const carrier = String(draft.carrier || '').trim();
-    const trackingNumber = String(draft.trackingNumber || '').trim();
-    const trackingUrl = String(draft.trackingUrl || '').trim();
-
-    if (!carrier || !trackingNumber) {
-      setVerificationError('Carrier and tracking number are required before submitting tracking.');
-      return;
-    }
-
-    setTrackingBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
-    setVerificationError('');
-    setVerificationInfo('');
-
-    try {
-      const response = await fetch(`${ESCROW_API_BASE}/orders/submit-tracking`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
-        },
-        body: JSON.stringify({
-          orderId: transaction.orderId,
-          carrier,
-          trackingNumber,
-          trackingUrl
-        })
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to submit tracking details.');
-      }
-
-      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
-        shippingCarrier: carrier,
-        trackingNumber,
-        trackingUrl: trackingUrl || null,
-        shipmentStatus: 'tracking_submitted',
-        escrowStatus: 'shipped',
-        updatedAt: serverTimestamp()
-      });
-
-      setVerificationInfo(`Tracking submitted for ${transaction.cardTitle || 'this order'}. The buyer can now release the held funds.`);
-    } catch (error) {
-      console.error('Failed to submit tracking:', error);
-      setVerificationError(error.message || 'Unable to submit tracking details.');
-    } finally {
-      setTrackingBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
-    }
-  };
-
-  const handleReleaseSellerFundsEarly = async (transaction) => {
-    if (!transaction?.orderId || !transaction?.isBuyer) return;
-
-    const sellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === transaction.sellerUid || entry.uid === transaction.sellerUid) || {};
-    const connectedAccountId = getConnectedAccountIdFromRecord(transaction, {}, sellerVerificationRecord);
-
-    if (!connectedAccountId) {
-      setAuthError('Seller has not linked a Stripe connected account yet, so funds cannot be released.');
-      return;
-    }
-
-    setReleaseBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
-    setAuthError('');
-
-    try {
-      const response = await fetch(`${ESCROW_API_BASE}/orders/accept-delivery`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
-        },
-        body: JSON.stringify({
-          orderId: transaction.orderId
-        })
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to release seller funds.');
-      }
-
-      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
-        sellerConnectedAccountId: connectedAccountId,
-        sellerTransferId: payload.transferId || null,
-        status: 'released',
-        escrowStatus: 'released',
-        fundsReleasedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      setAuthInfo(`Released ${formatMoney(transaction.escrowAmount || transaction.listingPrice || 0)} to ${transaction.sellerName || 'the seller'}.`);
-    } catch (error) {
-      console.error('Failed to release seller funds:', error);
-      setAuthError(error.message || 'Unable to release seller funds.');
-    } finally {
-      setReleaseBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
-    }
-  };
-
-  const handleOpenOrderDispute = async (transaction) => {
-    if (!transaction?.orderId || !transaction?.isBuyer) return;
-
-    const disputeReason = String(disputeDrafts[transaction.orderId] || '').trim();
-    if (!disputeReason) {
-      setAuthError('Enter a dispute reason before opening a dispute.');
-      return;
-    }
-
-    setDisputeBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
-    setAuthError('');
-
-    try {
-      const response = await fetch(`${ESCROW_API_BASE}/orders/open-dispute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
-        },
-        body: JSON.stringify({
-          orderId: transaction.orderId,
-          disputeReason
-        })
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to open dispute.');
-      }
-
-      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
-        status: 'disputed',
-        escrowStatus: 'disputed',
-        disputeReason,
-        updatedAt: serverTimestamp()
-      });
-
-      setAuthInfo(`Dispute opened for ${transaction.cardTitle || 'this order'}. CardSwipers admin will review the shipment and transaction history.`);
-    } catch (error) {
-      console.error('Failed to open dispute:', error);
-      setAuthError(error.message || 'Unable to open dispute.');
-    } finally {
-      setDisputeBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
-    }
-  };
-
   const handleSendInterest = async () => {
     if (!currentCard || !firebaseUser || interestBusy) return;
     setInterestError('');
@@ -2127,12 +1727,6 @@ export default function CardSwipersLanding() {
     setSwipeFeedback('like');
 
     try {
-      if (pendingInterestType === INSTANT_PURCHASE_ACTION) {
-        await withTimeout(handleInstantPurchase(currentCard), 12000, 'Instant purchase timed out');
-        advanceDeck();
-        return;
-      }
-
       await withTimeout(
         addDoc(collection(db, 'interests'), {
         fromUserId: firebaseUser.uid,
@@ -2218,10 +1812,6 @@ export default function CardSwipersLanding() {
   const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.title || isPostingCard) return;
-    if (newCard.saleMode !== 'trade_only' && !hasSellerWalletConnected) {
-      setPostImageError('Connect your bank wallet before posting Buy Now listings so payouts can be routed after delivery confirmation.');
-      return;
-    }
     if (!postFrontImageFile || !postBackImageFile) {
       setPostImageError('Please add both front and back photos before publishing.');
       return;
@@ -2272,8 +1862,8 @@ export default function CardSwipersLanding() {
           .split(',')
           .map((value) => value.trim())
           .filter(Boolean),
-        buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
-        saleMode: newCard.saleMode || 'trade_and_sale',
+        buyNowPrice: newCard.estimatedValue || '$0',
+        saleMode: 'trade_only',
         sellerConnectedAccountId: currentSellerConnectedAccountId || null,
         connectedAccountId: currentSellerConnectedAccountId || null,
         sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
@@ -2321,8 +1911,8 @@ export default function CardSwipersLanding() {
       tradeValue: newCard.estimatedValue || '$0',
       avgMarketValue: newCard.estimatedValue || '$0',
       recentComps: newCard.estimatedValue || '$0',
-      buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
-      saleMode: newCard.saleMode || 'trade_and_sale',
+      buyNowPrice: newCard.estimatedValue || '$0',
+      saleMode: 'trade_only',
       sellerConnectedAccountId: currentSellerConnectedAccountId || null,
       connectedAccountId: currentSellerConnectedAccountId || null,
       sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
@@ -2370,7 +1960,7 @@ export default function CardSwipersLanding() {
       estimatedValue: '',
       buyNowPrice: '',
       sellerState: '',
-      saleMode: 'trade_and_sale',
+      saleMode: 'trade_only',
       lookingFor: ''
     });
     setPostComposerStep(1);
@@ -2940,11 +2530,6 @@ export default function CardSwipersLanding() {
       return;
     }
 
-    if (authMode === 'create' && !hasAcceptedEscrowTerms) {
-      setAuthError('You must agree to the Terms of Service, including the 48-hour inspection and dispute policy, before creating an account.');
-      return;
-    }
-
     setAuthEmail(normalizedEmail);
     setIsAuthSubmitting(true);
 
@@ -3266,26 +2851,6 @@ export default function CardSwipersLanding() {
     : undefined;
   const currentSellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === firebaseUser?.uid || entry.uid === firebaseUser?.uid) || {};
   const currentSellerConnectedAccountId = getConnectedAccountIdFromRecord({}, currentUserProfile || {}, currentSellerVerificationRecord);
-  const hasSellerWalletConnected = Boolean(currentSellerConnectedAccountId);
-  const sellerEscrowTransactions = escrowTransactions.filter((transaction) => transaction.isSeller);
-  const walletAvailableBalance = sellerEscrowTransactions.reduce((total, transaction) => {
-    const status = String(transaction.escrowStatus || transaction.status || '').toLowerCase();
-    if (!['released', 'completed', 'fulfilled'].includes(status)) return total;
-    return total + parseDollarValue(transaction.sellerPayoutAmount || transaction.escrowAmount || transaction.listingPrice || 0);
-  }, 0);
-  const walletPendingBalance = sellerEscrowTransactions.reduce((total, transaction) => {
-    const status = String(transaction.escrowStatus || transaction.status || '').toLowerCase();
-    if (['released', 'completed', 'fulfilled', 'cancelled', 'canceled', 'disputed'].includes(status)) return total;
-    return total + parseDollarValue(transaction.sellerPayoutAmount || transaction.escrowAmount || transaction.listingPrice || 0);
-  }, 0);
-  const sellerWalletHistory = sellerEscrowTransactions
-    .slice()
-    .sort((left, right) => {
-      const leftTime = toDateValue(left.updatedAt || left.createdAt)?.getTime?.() || 0;
-      const rightTime = toDateValue(right.updatedAt || right.createdAt)?.getTime?.() || 0;
-      return rightTime - leftTime;
-    })
-    .slice(0, 6);
   console.log('[RuntimeState]', {
     currentTab,
     isAuthenticated,
@@ -3912,27 +3477,6 @@ export default function CardSwipersLanding() {
                   />
                 )}
 
-                {authMode === 'create' && (
-                  <label className="flex items-start gap-3 rounded-2xl border border-[#E5E7EB] bg-[#FFF7F8] px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={hasAcceptedEscrowTerms}
-                      onChange={(event) => setHasAcceptedEscrowTerms(event.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-[#D1D5DB] text-[#E60028]"
-                    />
-                    <span className="text-xs leading-5 text-[#374151]">
-                      {ESCROW_TERMS_LABEL}{' '}
-                      <button
-                        type="button"
-                        onClick={() => setShowTermsOfService(true)}
-                        className="text-[#E60028] underline underline-offset-2"
-                      >
-                        Review Terms
-                      </button>
-                    </span>
-                  </label>
-                )}
-
                 {authError && (
                   <div className="flex items-start gap-2 rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2.5">
                     <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4 mt-0.5 text-red-500 shrink-0" aria-hidden="true">
@@ -4318,7 +3862,6 @@ export default function CardSwipersLanding() {
                         <div className="text-right shrink-0">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Listed at</p>
                           <p className="text-lg sm:text-2xl font-bold text-white">{currentCard.tradeValue}</p>
-                          <p className="text-[11px] text-white/50 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>
                         </div>
                       </div>
 
@@ -4375,26 +3918,6 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
                     </button>
-                    {ENABLE_PAYMENT_PIPELINE && (
-                      <button
-                        onClick={() => handleInstantPurchase(currentCard, { advanceAfterPurchase: true })}
-                        disabled={!hasBuyerPaymentAccess}
-                        className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-3 py-2.5 md:px-4 md:py-3 text-left disabled:opacity-55 disabled:cursor-not-allowed"
-                        type="button"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white font-black">$</span>
-                          <div>
-                            <p className="font-semibold">Buy Now</p>
-                            <p className="text-xs text-white/75">
-                              {hasBuyerPaymentAccess
-                                ? (currentCard.buyNowPrice || currentCard.tradeValue)
-                                : 'Buyer verification required'}
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    )}
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 md:px-4 md:py-3 text-sm text-white/65">
@@ -4708,54 +4231,15 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
 
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">💸 Buy Now Price</label>
-                    <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
-                      <span className="text-white/65 font-semibold">$</span>
-                      <input
-                        type="text"
-                        placeholder={newCard.estimatedValue || '250'}
-                        value={newCard.buyNowPrice}
-                        onChange={(e) => setNewCard({ ...newCard, buyNowPrice: e.target.value })}
-                        className="w-full bg-transparent text-base font-semibold focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">📍 Seller State</label>
-                    <input
-                      type="text"
-                      placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
-                      value={newCard.sellerState}
-                      onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
-                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
-                    />
-                  </div>
-                </div>
-
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🧭 Sale Mode</label>
-                  <div className="grid sm:grid-cols-3 gap-2">
-                    {[
-                      { value: 'trade_only', label: 'Trade Only' },
-                      { value: 'sale_only', label: 'Buy Now Only' },
-                      { value: 'trade_and_sale', label: 'Trade + Sale' }
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setNewCard({ ...newCard, saleMode: option.value })}
-                        className={`px-3 py-3 rounded-[18px] text-xs font-semibold border transition-all ${
-                          newCard.saleMode === option.value
-                            ? 'bg-[#E11D48] border-[#E11D48] text-white shadow-[0_6px_16px_rgba(225,29,72,0.32)]'
-                            : 'bg-[#161C27] border-white/10 text-white/80 hover:border-white/25'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">📍 Seller State</label>
+                  <input
+                    type="text"
+                    placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
+                    value={newCard.sellerState}
+                    onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
+                    className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
+                  />
                 </div>
 
                 <div className="space-y-3">
@@ -4990,55 +4474,6 @@ export default function CardSwipersLanding() {
               </div>
             </details>
 
-            <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
-              <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Wallet & Payouts</h3>
-                <span className={`text-xs px-2 py-0.5 rounded-full border ${hasSellerWalletConnected ? 'text-emerald-200 border-emerald-300/35 bg-emerald-500/12' : 'text-amber-200 border-amber-300/35 bg-amber-500/12'}`}>
-                  {hasSellerWalletConnected ? 'Bank Connected' : 'Bank Not Connected'}
-                </span>
-              </summary>
-              <div className="mt-3 space-y-3">
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-red-400/20 bg-black/20 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-red-100/70">Available Balance</p>
-                    <p className="mt-1 text-xl font-bold text-emerald-200">{formatMoney(walletAvailableBalance)}</p>
-                  </div>
-                  <div className="rounded-xl border border-red-400/20 bg-black/20 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-red-100/70">Pending Escrow</p>
-                    <p className="mt-1 text-xl font-bold text-amber-200">{formatMoney(walletPendingBalance)}</p>
-                  </div>
-                </div>
-                {!hasSellerWalletConnected && (
-                  <p className="text-xs text-red-100">
-                    Connect your bank wallet in seller verification to enable Buy Now listings and automatic payouts after delivery is confirmed.
-                  </p>
-                )}
-                {sellerWalletHistory.length > 0 ? (
-                  <div className="space-y-2">
-                    {sellerWalletHistory.map((transaction) => {
-                      const settledAt = toDateValue(transaction.fundsReleasedAt || transaction.updatedAt || transaction.createdAt);
-                      return (
-                        <div key={transaction.orderId} className="rounded-xl border border-red-400/20 bg-black/20 p-3">
-                          <p className="text-sm font-semibold text-red-50">{transaction.cardTitle || 'Card Sale'}</p>
-                          <p className="text-xs text-red-100/80">
-                            Sold to {transaction.counterpartyName || 'Buyer'} · {settledAt ? settledAt.toLocaleDateString() : 'Date pending'}
-                          </p>
-                          <p className="text-xs text-red-100/80">
-                            Order {transaction.orderId} · Status {transaction.escrowStatus || transaction.status || 'pending'}
-                          </p>
-                          <p className="text-sm font-semibold text-emerald-200 mt-1">
-                            {formatMoney(transaction.sellerPayoutAmount || transaction.escrowAmount || transaction.listingPrice || 0)}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-red-100/80">No wallet transactions yet. Your completed sales will appear here with payout amounts and settlement dates.</p>
-                )}
-              </div>
-            </details>
-
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {myCollection.map((card) => (
                 <div
@@ -5169,132 +4604,6 @@ export default function CardSwipersLanding() {
                           >
                             {isSubmitting ? 'Submitting...' : 'Submit Review'}
                           </button>
-                        </div>
-                      );
-                    })}
-                    </div>
-                  </details>
-                )}
-
-                {escrowTransactions.length > 0 && (
-                  <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
-                    <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Escrow Orders</h3>
-                      <span className="text-xs text-red-200">{escrowTransactions.length}</span>
-                    </summary>
-                    <div className="mt-3 space-y-3">
-                    {escrowTransactions.slice(0, 10).map((transaction) => {
-                      const trackingDraft = trackingDrafts[transaction.orderId] || { carrier: '', trackingNumber: '', trackingUrl: '' };
-                      const trackingBusy = Boolean(trackingBusyByPurchaseId[transaction.orderId]);
-                      const releaseBusy = Boolean(releaseBusyByPurchaseId[transaction.orderId]);
-                      const disputeBusy = Boolean(disputeBusyByPurchaseId[transaction.orderId]);
-                      return (
-                        <div key={transaction.orderId} className="rounded-xl border border-red-400/20 bg-black/20 p-3 space-y-3">
-                          <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <div>
-                              <p className="text-sm font-semibold">{transaction.cardTitle || 'Escrow Order'}</p>
-                              <p className="text-xs text-red-100">
-                                Order {transaction.orderId} · Status {transaction.escrowStatus || transaction.status || 'pending'}
-                              </p>
-                              <p className="text-xs text-red-100">
-                                Charge {formatMoney(transaction.chargedTotalAmount || transaction.listingPrice || 0)} · Held for {formatMoney(transaction.escrowAmount || transaction.sellerPayoutAmount || transaction.listingPrice || 0)}
-                              </p>
-                            </div>
-                            <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
-                              {transaction.isBuyer ? `Buyer view · Seller ${transaction.counterpartyName}` : `Seller view · Buyer ${transaction.counterpartyName}`}
-                            </span>
-                          </div>
-
-                          {transaction.isSeller && (
-                            <div className="grid gap-2 md:grid-cols-3">
-                              <input
-                                type="text"
-                                value={trackingDraft.carrier}
-                                onChange={(event) => setTrackingDrafts((prev) => ({
-                                  ...prev,
-                                  [transaction.orderId]: {
-                                    ...trackingDraft,
-                                    carrier: event.target.value
-                                  }
-                                }))}
-                                placeholder="Carrier (UPS, USPS, FedEx)"
-                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
-                              />
-                              <input
-                                type="text"
-                                value={trackingDraft.trackingNumber}
-                                onChange={(event) => setTrackingDrafts((prev) => ({
-                                  ...prev,
-                                  [transaction.orderId]: {
-                                    ...trackingDraft,
-                                    trackingNumber: event.target.value
-                                  }
-                                }))}
-                                placeholder="Tracking number"
-                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
-                              />
-                              <input
-                                type="url"
-                                value={trackingDraft.trackingUrl}
-                                onChange={(event) => setTrackingDrafts((prev) => ({
-                                  ...prev,
-                                  [transaction.orderId]: {
-                                    ...trackingDraft,
-                                    trackingUrl: event.target.value
-                                  }
-                                }))}
-                                placeholder="Optional tracking URL"
-                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
-                              />
-                            </div>
-                          )}
-
-                          {transaction.isBuyer && (
-                            <textarea
-                              rows={2}
-                              value={disputeDrafts[transaction.orderId] || ''}
-                              onChange={(event) => setDisputeDrafts((prev) => ({
-                                ...prev,
-                                [transaction.orderId]: event.target.value
-                              }))}
-                              placeholder="If needed, explain the dispute reason before the 48-hour timer expires"
-                              className="w-full px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none resize-none"
-                            />
-                          )}
-
-                          <div className="flex flex-wrap gap-2">
-                            {transaction.isSeller && (
-                              <button
-                                type="button"
-                                disabled={trackingBusy}
-                                onClick={() => handleSubmitTrackingForOrder(transaction)}
-                                className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 disabled:opacity-60"
-                              >
-                                {trackingBusy ? 'Submitting tracking...' : 'Submit Tracking'}
-                              </button>
-                            )}
-
-                            {transaction.isBuyer && (
-                              <>
-                                <button
-                                  type="button"
-                                  disabled={releaseBusy}
-                                  onClick={() => handleReleaseSellerFundsEarly(transaction)}
-                                  className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
-                                >
-                                  {releaseBusy ? 'Releasing...' : 'Accept Delivery & Release Funds'}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={disputeBusy}
-                                  onClick={() => handleOpenOrderDispute(transaction)}
-                                  className="px-3 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 disabled:opacity-60"
-                                >
-                                  {disputeBusy ? 'Opening dispute...' : 'Open Dispute'}
-                                </button>
-                              </>
-                            )}
-                          </div>
                         </div>
                       );
                     })}
@@ -6128,77 +5437,23 @@ export default function CardSwipersLanding() {
               </button>
             </div>
             <p className="text-sm leading-relaxed">
-              CardSwipers supports collector-to-collector escrow payments, but all users remain responsible for
-              accurately describing inventory, shipping on time, and responding in good faith during any dispute.
+              CardSwipers is a collector marketplace. Users are responsible for accurately describing inventory,
+              shipping on time, and responding in good faith during any dispute.
             </p>
             <p className="text-sm leading-relaxed">
-              Escrow purchases include a 48-hour inspection window after confirmed delivery. Buyers must raise any
-              dispute within that window or the seller may be paid out.
+              By using CardSwipers, you agree to the marketplace dispute and account conduct policy.
             </p>
             <p className="text-sm leading-relaxed">
-              By using CardSwipers, you agree to the inspection and dispute policy, and you acknowledge that abuse,
-              fraud, chargebacks, or materially inaccurate listings can result in account action.
+              Abuse, fraud, chargebacks, or materially inaccurate listings can result in account action.
             </p>
             <p className="text-sm leading-relaxed">
-              CardSwipers is not a bank or licensed escrow agent. Our maximum liability for any escrow transaction is
-              capped at the 2% platform fee collected from the buyer for that transaction.
-            </p>
-            <p className="text-sm leading-relaxed">
-              Both parties agree that CardSwipers administrators may review shipment history and transaction evidence to
-              resolve disputes, and that those platform dispute outcomes are binding for the escrow workflow.
+              CardSwipers administrators may review transaction history and message evidence to resolve disputes, and
+              those outcomes are binding for platform activity.
             </p>
           </div>
         </div>
       )}
 
-      {activePaymentSheet && stripePromise && (
-        <div className="fixed inset-0 bg-black/70 z-[68] flex items-end sm:items-center justify-center p-4">
-          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto bg-white text-[#111827] rounded-[28px] p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold">Secure escrow checkout</h2>
-                <p className="text-sm text-[#6B7280]">Payment is held until shipment and release.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setActivePaymentSheet(null);
-                  setPaymentSheetError('');
-                }}
-                className="text-sm font-semibold text-[#6B7280] hover:text-[#111827]"
-              >
-                Close
-              </button>
-            </div>
-
-            {paymentSheetError && (
-              <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2 text-sm text-red-700">
-                {paymentSheetError}
-              </div>
-            )}
-
-            <Elements
-              stripe={stripePromise}
-              options={{
-                clientSecret: activePaymentSheet.clientSecret,
-                appearance: {
-                  theme: 'stripe'
-                }
-              }}
-            >
-              <EscrowPaymentForm
-                purchaseSummary={activePaymentSheet}
-                onCancel={() => {
-                  setActivePaymentSheet(null);
-                  setPaymentSheetError('');
-                }}
-                onError={setPaymentSheetError}
-                onSuccess={handleEscrowPaymentSuccess}
-              />
-            </Elements>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
