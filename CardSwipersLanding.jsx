@@ -3255,6 +3255,9 @@ export default function CardSwipersLanding() {
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
   const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
+  const coreScreenBottomInset = isNativeApp
+    ? 'calc(env(safe-area-inset-bottom) + 6.75rem)'
+    : '6.25rem';
   const nativeAuthScreenStyle = isNativeApp
     ? {
         paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)',
@@ -3520,7 +3523,10 @@ export default function CardSwipersLanding() {
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setAccountMenuOpen(!accountMenuOpen)}
+                    onClick={() => {
+                      setShowNotificationsPanel(false);
+                      setAccountMenuOpen((prev) => !prev);
+                    }}
                     className="w-11 h-11 rounded-full bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 transition-all flex items-center justify-center text-white font-bold shadow-lg"
                   >
                     {firebaseUser?.email?.[0].toUpperCase() || 'U'}
@@ -3581,7 +3587,7 @@ export default function CardSwipersLanding() {
                       </button>
                       <button
                         onClick={() => {
-                          setShowHelpModal(true);
+                          setShowHelp(true);
                           setAccountMenuOpen(false);
                         }}
                         className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
@@ -3613,6 +3619,7 @@ export default function CardSwipersLanding() {
 
       <main
         className={`flex-1 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-5' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        style={showPersistentMobileDock ? { paddingBottom: coreScreenBottomInset } : undefined}
       >
         <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col overflow-hidden">
         {currentTab === 'landing' && (
@@ -5957,8 +5964,12 @@ export default function CardSwipersLanding() {
 
       {showPersistentMobileDock && (
       <footer
-        className="fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+        className="fixed bottom-0 left-0 right-0 z-[70] px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none"
+        style={{
+          bottom: 0,
+          paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)',
+          transform: 'translateZ(0)'
+        }}
       >
         <div className="max-w-lg mx-auto pointer-events-auto">
         <nav className={`grid ${canAccessAdmin ? 'grid-cols-5' : 'grid-cols-4'} items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(20,25,37,0.94),rgba(10,14,24,0.96))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl ring-1 ring-white/8`}>
