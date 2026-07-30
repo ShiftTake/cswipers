@@ -3152,7 +3152,7 @@ export default function CardSwipersLanding() {
   }, {});
   return (
     <div
-      className={`text-white font-sans flex flex-col relative min-h-screen overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#080B14]'}`}
+      className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
       style={
         isNativeApp
           ? {
@@ -3354,16 +3354,7 @@ export default function CardSwipersLanding() {
                       >
                         Profile Settings
                       </button>
-                      <button
-                        onClick={() => {
-                          setShowUpgradeModal(true);
-                          setAccountMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
-                        type="button"
-                      >
-                        Upgrade Plan
-                      </button>
+
                       <div className="px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">Legal</div>
                       <button
                         onClick={() => {
@@ -3418,10 +3409,10 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`relative z-10 flex-1 w-full ${isCoreAppScreen ? (currentTab === 'post' ? 'overflow-y-auto overscroll-y-contain' : 'overflow-hidden') : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-5' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        className={`flex-1 min-h-0 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
         style={showPersistentMobileDock ? { paddingBottom: coreScreenBottomInset } : undefined}
       >
-        <div className={`max-w-6xl mx-auto w-full flex-1 flex flex-col ${currentTab === 'post' ? 'overflow-visible' : 'overflow-hidden'}`}>
+        <div className="max-w-6xl mx-auto w-full h-full max-h-[100dvh] flex flex-col min-h-0 overflow-hidden">
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -3574,7 +3565,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'auth' && (
           <div
-            className={`h-full min-h-0 w-full flex flex-col ${isNativeApp ? 'justify-start px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
+            className={`h-full min-h-0 w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
             style={nativeAuthScreenStyle}
           >
             {isNativeApp && (
@@ -5789,38 +5780,6 @@ export default function CardSwipersLanding() {
                 Delete Account
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showUpgradeModal && (
-        <div className="fixed inset-0 bg-black/70 z-[63] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#111827] border border-amber-400/25 rounded-2xl p-5 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">Upgrade Plan</h2>
-              <button
-                type="button"
-                onClick={() => setShowUpgradeModal(false)}
-                className="text-sm font-semibold text-white/70 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-            <p className="text-sm text-white/80">
-              You get {FREE_SWIPES_PER_WEEK} free swipes each week. Upgrade anytime for unlimited swipes and priority support.
-            </p>
-            {!hasActiveSubscription && (
-              <p className="text-xs text-amber-200">Remaining free swipes this week: {freeSwipesRemaining}</p>
-            )}
-            {swipeLimitNotice && <p className="text-xs text-amber-200">{swipeLimitNotice}</p>}
-            <button
-              type="button"
-              disabled={upgradeBusy}
-              onClick={handleRequestUpgrade}
-              className="w-full h-11 rounded-xl bg-amber-500/25 border border-amber-300/40 text-white font-semibold hover:bg-amber-500/35 disabled:opacity-60"
-            >
-              {upgradeBusy ? 'Submitting...' : `Upgrade for $${VERIFIED_BUYER_SUBSCRIPTION_PRICE.toFixed(2)}/month`}
-            </button>
           </div>
         </div>
       )}
