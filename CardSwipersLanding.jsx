@@ -347,7 +347,7 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
-const ENABLE_PAYMENT_PIPELINE = true;
+const ENABLE_PAYMENT_PIPELINE = false;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
@@ -355,7 +355,7 @@ const MARKETPLACE_FEE_RATE = 0.02;
 const VERIFIED_BUYER_SUBSCRIPTION_PRICE = 19.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
 const ESCROW_API_BASE = '/api';
-const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service, including the 48-hour inspection window and dispute policy for escrow purchases.';
+const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community marketplace rules.';
 
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
 
@@ -2887,7 +2887,7 @@ export default function CardSwipersLanding() {
     }
 
     if (authMode === 'create' && !hasAcceptedEscrowTerms) {
-      setAuthError('You must agree to the Terms of Service, including the 48-hour inspection and dispute policy, before creating an account.');
+      setAuthError('You must agree to the Terms of Service before creating an account.');
       return;
     }
 
@@ -4798,7 +4798,7 @@ export default function CardSwipersLanding() {
                 >
                   {verificationBusy ? 'Submitting...' : 'Submit Verification'}
                 </button>
-                <p className="text-xs text-red-100">Verified Buyer plan: ${VERIFIED_BUYER_SUBSCRIPTION_PRICE.toFixed(2)}/month</p>
+                <p className="text-xs text-red-100">Verification reviews are typically completed in 1-2 business days.</p>
                 {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
                 {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
               </div>
@@ -5890,30 +5890,22 @@ export default function CardSwipersLanding() {
               </button>
             </div>
             <p className="text-sm leading-relaxed">
-              CardSwipers supports collector-to-collector escrow payments, but all users remain responsible for
-              accurately describing inventory, shipping on time, and responding in good faith during any dispute.
+              CardSwipers is a collector marketplace. You must provide accurate profile information, truthful card descriptions, and clear photos. You are responsible for the content you upload, the accuracy of any card listing, and the way you interact with other users.
             </p>
             <p className="text-sm leading-relaxed">
-              Escrow purchases include a 48-hour inspection window after confirmed delivery. Buyers must raise any
-              dispute within that window or the seller may be paid out.
+              To use the service, you must be old enough to form a binding contract in your jurisdiction and must comply with all applicable laws. You agree not to submit false identity information, fraudulent listings, offensive or illegal content, or messages intended to harass, scam, or manipulate other users.
             </p>
             <p className="text-sm leading-relaxed">
-              By using CardSwipers, you agree to the inspection and dispute policy, and you acknowledge that abuse,
-              fraud, chargebacks, or materially inaccurate listings can result in account action.
+              We may review listings, messages, interests, offers, transaction history, and verification records to operate the marketplace, resolve disputes, enforce policies, investigate fraud, and protect users. Account restrictions, deactivation, or removal may occur if you violate these terms or the marketplace rules.
             </p>
             <p className="text-sm leading-relaxed">
-              CardSwipers is not a bank or licensed escrow agent. Our maximum liability for any escrow transaction is
-              capped at the 2% platform fee collected from the buyer for that transaction.
-            </p>
-            <p className="text-sm leading-relaxed">
-              Both parties agree that CardSwipers administrators may review shipment history and transaction evidence to
-              resolve disputes, and that those platform dispute outcomes are binding for the escrow workflow.
+              If you request account deletion, we will follow our deletion and retention process, but certain records may be kept when required for legal, fraud-prevention, tax, security, or dispute-resolution purposes.
             </p>
           </div>
         </div>
       )}
 
-      {activePaymentSheet && stripePromise && (
+      {ENABLE_PAYMENT_PIPELINE && activePaymentSheet && stripePromise && (
         <div className="fixed inset-0 bg-black/70 z-[68] flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto bg-white text-[#111827] rounded-[28px] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between gap-3">
