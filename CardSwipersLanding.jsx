@@ -548,6 +548,7 @@ export default function CardSwipersLanding() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [nativeViewportHeight, setNativeViewportHeight] = useState(null);
   const [showStartupSplash, setShowStartupSplash] = useState(isNativeApp);
   const [authError, setAuthError] = useState('');
   const [authInfo, setAuthInfo] = useState('');
@@ -979,6 +980,47 @@ export default function CardSwipersLanding() {
 
     return () => clearTimeout(hideId);
   }, [authLoading, isNativeApp]);
+
+  useEffect(() => {
+    if (!isNativeApp || typeof window === 'undefined') return;
+
+    let rafId = 0;
+    let timeoutId = 0;
+
+    const applyViewportHeight = () => {
+      const visualViewportHeight = Number(window.visualViewport?.height || 0);
+      const innerHeight = Number(window.innerHeight || 0);
+      const measuredHeight = Math.round(Math.max(visualViewportHeight, innerHeight));
+      if (measuredHeight > 0) {
+        setNativeViewportHeight(measuredHeight);
+      }
+    };
+
+    const scheduleViewportSync = (delay = 0) => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        rafId = window.requestAnimationFrame(applyViewportHeight);
+      }, delay);
+    };
+
+    applyViewportHeight();
+    scheduleViewportSync(80);
+    scheduleViewportSync(260);
+
+    const resizeHandler = () => scheduleViewportSync(0);
+    window.addEventListener('resize', resizeHandler);
+    window.addEventListener('orientationchange', resizeHandler);
+    window.visualViewport?.addEventListener('resize', resizeHandler);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (timeoutId) clearTimeout(timeoutId);
+      window.removeEventListener('resize', resizeHandler);
+      window.removeEventListener('orientationchange', resizeHandler);
+      window.visualViewport?.removeEventListener('resize', resizeHandler);
+    };
+  }, [isNativeApp, currentTab, isAuthenticated]);
 
   useEffect(() => {
     let isMounted = true;
@@ -3274,7 +3316,17 @@ export default function CardSwipersLanding() {
     return accumulator;
   }, {});
   return (
-    <div className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}>
+    <div
+      className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
+      style={
+        isNativeApp && nativeViewportHeight
+          ? {
+              height: `${nativeViewportHeight}px`,
+              minHeight: `${nativeViewportHeight}px`
+            }
+          : undefined
+      }
+    >
       {showStartupSplash && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
           <style>{`
