@@ -370,7 +370,6 @@ const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
 const MARKETPLACE_FEE_RATE = 0.02;
-const VERIFIED_BUYER_SUBSCRIPTION_PRICE = 19.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
 const ESCROW_API_BASE = '/api';
 const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community marketplace rules.';
@@ -717,7 +716,6 @@ export default function CardSwipersLanding() {
   const sellerVerificationStatus = String(
     currentUserProfile?.sellerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
   ).toLowerCase();
-  const hasBuyerPaymentAccess = false;
   const hasSellerPaymentAccess = sellerVerificationStatus === 'verified' || sellerVerificationStatus === 'pending';
   const existingReviewKeys = new Set(
     reviews.map((review) => `${review.purchaseId || ''}:${review.reviewerUid || ''}`)
@@ -1079,7 +1077,6 @@ export default function CardSwipersLanding() {
           birthDate: '',
           phone: '',
           verificationStatus: 'unverified',
-          buyerVerificationStatus: 'unverified',
           sellerVerificationStatus: 'unverified',
           status: 'active',
           role: declaredAdmin ? 'admin' : 'user',
@@ -1119,7 +1116,6 @@ export default function CardSwipersLanding() {
           birthDate: profile.birthDate || '',
           phone: profile.phone || '',
           verificationStatus: profile.verificationStatus || 'unverified',
-          buyerVerificationStatus: profile.buyerVerificationStatus || profile.verificationStatus || 'unverified',
           sellerVerificationStatus: profile.sellerVerificationStatus || profile.verificationStatus || 'unverified',
           status: profile.status || 'active',
           role: profile.role || 'user',
@@ -1832,17 +1828,8 @@ export default function CardSwipersLanding() {
   const handleInstantPurchase = async (card = currentCard, options = {}) => {
     if (!card || !firebaseUser) return;
     const shouldAdvanceDeck = Boolean(options?.advanceAfterPurchase);
-    const listingSellerStatus = String(card.sellerVerificationStatus || 'unverified').toLowerCase();
-
-    if (!hasBuyerPaymentAccess) {
-      setAuthError('Instant purchase is not available in this non-payment release. Use trade request.');
-      return;
-    }
-
-    if (!(listingSellerStatus === 'verified' || listingSellerStatus === 'pending')) {
-      setAuthError('This seller is not pending/verified yet for payment purchases. Use trade request for now.');
-      return;
-    }
+    setAuthError('Instant purchase is not available in this non-payment release. Use trade request.');
+    return;
 
     if (!STRIPE_PUBLISHABLE_KEY || !stripePromise) {
       setAuthError('Stripe publishable key is missing. Set VITE_STRIPE_PUBLISHABLE_KEY before using instant purchase.');
@@ -2441,19 +2428,6 @@ export default function CardSwipersLanding() {
     });
   };
 
-  const toggleVerificationType = (type) => {
-    setVerificationForm((prev) => {
-      const currentTypes = Array.isArray(prev.verificationTypes) ? prev.verificationTypes : [];
-      const nextTypes = currentTypes.includes(type)
-        ? currentTypes.filter((entry) => entry !== type)
-        : [...currentTypes, type];
-      return {
-        ...prev,
-        verificationTypes: nextTypes
-      };
-    });
-  };
-
   const handleQuickCaptureFromDock = () => {
     setActiveChat(null);
     setPostComposerStep(1);
@@ -2660,23 +2634,16 @@ export default function CardSwipersLanding() {
     if (normalizedDecision !== 'verified' && normalizedDecision !== 'rejected') return;
 
     const requestedTypes = Array.isArray(record.verificationTypes) ? record.verificationTypes : [];
-    const nextBuyerStatus =
-      requestedTypes.includes('buyer')
-        ? normalizedDecision
-        : (record.buyerStatus || 'not_requested');
     const nextSellerStatus =
       requestedTypes.includes('seller')
         ? normalizedDecision
         : (record.sellerStatus || 'not_requested');
-    const overallStatus =
-      nextBuyerStatus === 'verified' || nextSellerStatus === 'verified'
-        ? 'verified'
-        : normalizedDecision;
+    const overallStatus = nextSellerStatus === 'verified' ? 'verified' : normalizedDecision;
 
     try {
       await updateDoc(doc(db, 'sellerVerifications', record.id), {
         status: normalizedDecision,
-        buyerStatus: nextBuyerStatus,
+        buyerStatus: 'not_requested',
         sellerStatus: nextSellerStatus,
         reviewedBy: firebaseUser.uid,
         reviewerEmail: firebaseUser.email || '',
@@ -2686,7 +2653,6 @@ export default function CardSwipersLanding() {
 
       await updateDoc(doc(db, 'users', record.userId), {
         verificationStatus: overallStatus,
-        buyerVerificationStatus: nextBuyerStatus,
         sellerVerificationStatus: nextSellerStatus,
         verificationReviewedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -4264,7 +4230,6 @@ export default function CardSwipersLanding() {
                     {ENABLE_PAYMENT_PIPELINE && (
                       <button
                         onClick={() => handleInstantPurchase(currentCard, { advanceAfterPurchase: true })}
-                        disabled={!hasBuyerPaymentAccess}
                         className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-3 py-2.5 md:px-4 md:py-3 text-left disabled:opacity-55 disabled:cursor-not-allowed"
                         type="button"
                       >
@@ -4273,9 +4238,7 @@ export default function CardSwipersLanding() {
                           <div>
                             <p className="font-semibold">Buy Now</p>
                             <p className="text-xs text-white/75">
-                              {hasBuyerPaymentAccess
-                                ? (currentCard.buyNowPrice || currentCard.tradeValue)
-                                : 'Buyer verification required'}
+                              {currentCard.buyNowPrice || currentCard.tradeValue}
                             </p>
                           </div>
                         </div>
