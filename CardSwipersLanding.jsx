@@ -17,6 +17,7 @@ import {
 import {
   addDoc,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDocFromCache,
@@ -662,6 +663,8 @@ export default function CardSwipersLanding() {
   const [clubActionBusyId, setClubActionBusyId] = useState('');
   const [clubInfo, setClubInfo] = useState('');
   const [clubError, setClubError] = useState('');
+  const [moderatedClubIds, setModeratedClubIds] = useState([]);
+  const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
   const [selectedClubPosts, setSelectedClubPosts] = useState([]);
@@ -726,7 +729,6 @@ export default function CardSwipersLanding() {
   const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
   const isSelectedClubBanned = Boolean(selectedClubBanRecord);
   const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
-  const clubModerationBadgeCount = canModerateClubPosts ? openSelectedClubReports.length : 0;
   const filteredClubs = clubs.filter((club) => {
     const searchTerm = clubSearchQuery.trim().toLowerCase();
     if (!searchTerm) return true;
@@ -866,6 +868,8 @@ export default function CardSwipersLanding() {
     setClubActionBusyId('');
     setClubInfo('');
     setClubError('');
+    setModeratedClubIds([]);
+    setClubModerationBadgeCount(0);
     setSelectedClubId('');
     setSelectedClubMembers([]);
     setSelectedClubPosts([]);
@@ -1490,6 +1494,67 @@ export default function CardSwipersLanding() {
 
     return () => unsubscribe();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setModeratedClubIds([]);
+      return;
+    }
+
+    const membershipQuery = query(collectionGroup(db, 'members'), where('uid', '==', firebaseUser.uid));
+    const unsubscribe = onSnapshot(
+      membershipQuery,
+      (snapshot) => {
+        const moderated = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data() || {};
+            const clubId = docSnap.ref.parent.parent?.id || '';
+            return { clubId, role: data.role || '' };
+          })
+          .filter((entry) => entry.clubId && isClubModeratorRole(entry.role))
+          .map((entry) => entry.clubId);
+
+        setModeratedClubIds(Array.from(new Set(moderated)));
+      },
+      (error) => {
+        console.error('Failed loading club moderation memberships:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser || moderatedClubIds.length === 0) {
+      setClubModerationBadgeCount(0);
+      return;
+    }
+
+    const reportCountsByClub = {};
+    const unsubscribers = moderatedClubIds.map((clubId) => {
+      const openReportsQuery = query(
+        collection(db, 'clubs', clubId, 'reports'),
+        where('status', '==', 'open'),
+        limit(200)
+      );
+
+      return onSnapshot(
+        openReportsQuery,
+        (snapshot) => {
+          reportCountsByClub[clubId] = snapshot.size;
+          const nextCount = Object.values(reportCountsByClub).reduce((sum, value) => sum + Number(value || 0), 0);
+          setClubModerationBadgeCount(nextCount);
+        },
+        (error) => {
+          console.error(`Failed loading open reports for club ${clubId}:`, error);
+        }
+      );
+    });
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [firebaseUser, moderatedClubIds]);
 
   useEffect(() => {
     if (!clubs.length) {
