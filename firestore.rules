@@ -13,6 +13,35 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function clubMemberPath(clubId, uid) {
+      return /databases/$(database)/documents/clubs/$(clubId)/members/$(uid);
+    }
+
+    function clubBanPath(clubId, uid) {
+      return /databases/$(database)/documents/clubs/$(clubId)/bans/$(uid);
+    }
+
+    function isClubMember(clubId) {
+      return signedIn() && exists(clubMemberPath(clubId, request.auth.uid));
+    }
+
+    function isClubBanned(clubId) {
+      return signedIn() && exists(clubBanPath(clubId, request.auth.uid));
+    }
+
+    function isClubOwner(clubId) {
+      return signedIn() && exists(clubMemberPath(clubId, request.auth.uid)) &&
+        get(clubMemberPath(clubId, request.auth.uid)).data.role == 'owner';
+    }
+
+    function isClubModerator(clubId) {
+      return isAdmin() || (
+        signedIn() &&
+        exists(clubMemberPath(clubId, request.auth.uid)) &&
+        get(clubMemberPath(clubId, request.auth.uid)).data.role in ['owner', 'agent']
+      );
+    }
+
     match /users/{userId} {
       allow create: if isSelf(userId);
       allow read: if isSelf(userId) || isAdmin();
@@ -122,6 +151,53 @@ service cloud.firestore {
         );
 
       allow update, delete: if false;
+    }
+
+    match /chatReports/{reportId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.reportedByUid == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.reportedByUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /clubs/{clubId} {
+      allow read: if isAdmin() || (signedIn() && !isClubBanned(clubId));
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isAdmin() || isClubOwner(clubId);
+
+      match /members/{memberId} {
+        allow read: if isAdmin() || (signedIn() && !isClubBanned(clubId));
+        allow create: if isAdmin() || (
+          signedIn() &&
+          memberId == request.auth.uid &&
+          !isClubBanned(clubId) &&
+          request.resource.data.uid == request.auth.uid
+        );
+        allow update: if isAdmin() || isClubOwner(clubId);
+        allow delete: if isAdmin() || isClubModerator(clubId) || (signedIn() && memberId == request.auth.uid);
+      }
+
+      match /posts/{postId} {
+        allow read: if isAdmin() || (isClubMember(clubId) && !isClubBanned(clubId));
+        allow create: if signedIn() &&
+          !isClubBanned(clubId) &&
+          isClubMember(clubId) &&
+          request.resource.data.createdByUid == request.auth.uid;
+        allow update, delete: if isAdmin() || isClubModerator(clubId) || (signedIn() && resource.data.createdByUid == request.auth.uid);
+      }
+
+      match /reports/{reportId} {
+        allow read: if isAdmin() || isClubMember(clubId);
+        allow create: if signedIn() &&
+          !isClubBanned(clubId) &&
+          isClubMember(clubId) &&
+          request.resource.data.reportedByUid == request.auth.uid;
+        allow update, delete: if isAdmin() || isClubModerator(clubId);
+      }
+
+      match /bans/{memberId} {
+        allow read: if isAdmin() || isClubModerator(clubId) || (signedIn() && request.auth.uid == memberId);
+        allow create, update, delete: if isAdmin() || isClubModerator(clubId);
+      }
     }
 
     match /flaggedCards/{flagId} {

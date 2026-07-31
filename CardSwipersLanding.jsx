@@ -665,6 +665,8 @@ export default function CardSwipersLanding() {
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
   const [selectedClubPosts, setSelectedClubPosts] = useState([]);
+  const [selectedClubReports, setSelectedClubReports] = useState([]);
+  const [selectedClubBanRecord, setSelectedClubBanRecord] = useState(null);
   const [clubPostDraft, setClubPostDraft] = useState({
     title: '',
     askingPrice: '',
@@ -672,6 +674,8 @@ export default function CardSwipersLanding() {
     imageUrl: ''
   });
   const [clubPostBusy, setClubPostBusy] = useState(false);
+  const [clubReportBusy, setClubReportBusy] = useState(false);
+  const [chatReportBusy, setChatReportBusy] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersError, setAdminUsersError] = useState('');
@@ -680,6 +684,9 @@ export default function CardSwipersLanding() {
   const [flaggedCards, setFlaggedCards] = useState([]);
   const [flaggedCardsLoading, setFlaggedCardsLoading] = useState(false);
   const [flaggedCardsError, setFlaggedCardsError] = useState('');
+  const [chatReports, setChatReports] = useState([]);
+  const [chatReportsLoading, setChatReportsLoading] = useState(false);
+  const [chatReportsError, setChatReportsError] = useState('');
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
   const [flagCardId, setFlagCardId] = useState(null);
@@ -703,6 +710,8 @@ export default function CardSwipersLanding() {
   const pendingInterestIdsRef = useRef(new Set());
   const matchIdsRef = useRef(new Set());
   const unreadMatchIdsRef = useRef(new Set());
+  const clubReportIdsRef = useRef(new Set());
+  const clubReportsHydratedRef = useRef(false);
   const currentCard = personalizedDeck[cardIndex] || null;
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
@@ -715,6 +724,8 @@ export default function CardSwipersLanding() {
   const selectedClubRole = selectedClubMembership?.role || '';
   const canManageClubMembers = selectedClubRole === 'owner';
   const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
+  const isSelectedClubBanned = Boolean(selectedClubBanRecord);
+  const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
   const filteredClubs = clubs.filter((club) => {
     const searchTerm = clubSearchQuery.trim().toLowerCase();
     if (!searchTerm) return true;
@@ -857,6 +868,8 @@ export default function CardSwipersLanding() {
     setSelectedClubId('');
     setSelectedClubMembers([]);
     setSelectedClubPosts([]);
+    setSelectedClubReports([]);
+    setSelectedClubBanRecord(null);
     setClubPostDraft({
       title: '',
       askingPrice: '',
@@ -864,6 +877,13 @@ export default function CardSwipersLanding() {
       imageUrl: ''
     });
     setClubPostBusy(false);
+    setClubReportBusy(false);
+    setChatReportBusy(false);
+    setChatReports([]);
+    setChatReportsLoading(false);
+    setChatReportsError('');
+    clubReportIdsRef.current = new Set();
+    clubReportsHydratedRef.current = false;
     setChatOffers([]);
     setOfferDraftAmount('');
     setOfferBusy(false);
@@ -1337,6 +1357,34 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     if (!isAdmin || currentTab !== 'admin') {
+      setChatReports([]);
+      setChatReportsLoading(false);
+      setChatReportsError('');
+      return;
+    }
+
+    setChatReportsLoading(true);
+    setChatReportsError('');
+    const reportsQuery = query(collection(db, 'chatReports'), orderBy('createdAt', 'desc'), limit(500));
+
+    const unsubscribe = onSnapshot(
+      reportsQuery,
+      (snapshot) => {
+        setChatReports(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+        setChatReportsLoading(false);
+      },
+      (error) => {
+        console.error('Failed loading chat reports for admin:', error);
+        setChatReportsError('Unable to load chat reports. Check Firestore rules and try again.');
+        setChatReportsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAdmin, currentTab]);
+
+  useEffect(() => {
+    if (!isAdmin || currentTab !== 'admin') {
       setPurchaseIntents([]);
       setPremiumSubscriptions([]);
       setSellerVerifications([]);
@@ -1457,11 +1505,16 @@ export default function CardSwipersLanding() {
     if (!selectedClubId) {
       setSelectedClubMembers([]);
       setSelectedClubPosts([]);
+      setSelectedClubReports([]);
+      setSelectedClubBanRecord(null);
+      clubReportIdsRef.current = new Set();
+      clubReportsHydratedRef.current = false;
       return;
     }
 
     const membersRef = collection(doc(db, 'clubs', selectedClubId), 'members');
     const postsRef = collection(doc(db, 'clubs', selectedClubId), 'posts');
+    const reportsRef = collection(doc(db, 'clubs', selectedClubId), 'reports');
 
     const unsubMembers = onSnapshot(
       membersRef,
@@ -1489,11 +1542,66 @@ export default function CardSwipersLanding() {
       }
     );
 
+    const unsubReports = onSnapshot(
+      query(reportsRef, orderBy('createdAt', 'desc'), limit(200)),
+      (snapshot) => {
+        setSelectedClubReports(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        console.error('Failed loading club reports:', error);
+      }
+    );
+
+    let unsubBan = () => {};
+    if (firebaseUser?.uid) {
+      unsubBan = onSnapshot(
+        doc(db, 'clubs', selectedClubId, 'bans', firebaseUser.uid),
+        (snapshot) => {
+          setSelectedClubBanRecord(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+        },
+        (error) => {
+          console.error('Failed loading club ban status:', error);
+        }
+      );
+    }
+
     return () => {
       unsubMembers();
       unsubPosts();
+      unsubReports();
+      unsubBan();
     };
-  }, [selectedClubId]);
+  }, [selectedClubId, firebaseUser]);
+
+  useEffect(() => {
+    if (!selectedClubId || !canModerateClubPosts) {
+      clubReportIdsRef.current = new Set();
+      clubReportsHydratedRef.current = false;
+      return;
+    }
+
+    const openReports = selectedClubReports.filter((report) => report.status === 'open');
+    const currentIds = new Set(openReports.map((report) => report.id));
+
+    if (!clubReportsHydratedRef.current) {
+      clubReportsHydratedRef.current = true;
+      clubReportIdsRef.current = currentIds;
+      return;
+    }
+
+    openReports.forEach((report) => {
+      if (!clubReportIdsRef.current.has(report.id)) {
+        addNotification({
+          type: 'club-report',
+          title: 'New Club Report',
+          message: `${selectedClub?.name || 'Club'} has a new moderation report.`,
+          actionTab: 'onboarding'
+        });
+      }
+    });
+
+    clubReportIdsRef.current = currentIds;
+  }, [selectedClubId, selectedClubReports, canModerateClubPosts, selectedClub, addNotification]);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -3211,6 +3319,12 @@ export default function CardSwipersLanding() {
       }
 
       const clubDoc = clubSnapshot.docs[0];
+      const banSnapshot = await getDoc(doc(clubDoc.ref, 'bans', firebaseUser.uid));
+      if (banSnapshot.exists()) {
+        setClubError('You have been blocked from this club by its moderators.');
+        return;
+      }
+
       await setDoc(doc(clubDoc.ref, 'members', firebaseUser.uid), {
         uid: firebaseUser.uid,
         displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
@@ -3228,6 +3342,117 @@ export default function CardSwipersLanding() {
       setClubError('Unable to join that club right now.');
     } finally {
       setClubJoinBusy(false);
+    }
+  };
+
+  const handleReportChatUser = async () => {
+    if (!firebaseUser || !activeChat?.id || chatReportBusy) return;
+
+    const reasonInput = window.prompt(`Report @${activeChat.counterpartyName || 'this user'} for:`, 'Harassment, scam attempt, or abusive behavior');
+    const reason = String(reasonInput || '').trim();
+    if (!reason) return;
+
+    setChatReportBusy(true);
+    setAuthError('');
+    try {
+      await addDoc(collection(db, 'chatReports'), {
+        status: 'open',
+        contextType: 'direct-match',
+        matchId: activeChat.id,
+        reportedUserId: activeChat.counterpartyUserId || null,
+        reportedUserName: activeChat.counterpartyName || activeChat.user || 'Collector',
+        reportedByUid: firebaseUser.uid,
+        reportedByEmail: firebaseUser.email || '',
+        reportedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        reason,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setAuthInfo('Report submitted to CardSwipers admin for review.');
+    } catch (error) {
+      console.error('Failed to report chat user:', error);
+      setAuthError('Could not submit your report right now. Please try again.');
+    } finally {
+      setChatReportBusy(false);
+    }
+  };
+
+  const handleReportClubMember = async (member) => {
+    if (!firebaseUser || !selectedClubId || !member?.uid || clubReportBusy) return;
+    if (!selectedClubMembership) {
+      setClubError('Join this club before submitting reports.');
+      return;
+    }
+
+    const reasonInput = window.prompt(`Report ${member.displayName || member.email || member.uid} for:`, 'Spam, abuse, or policy violation');
+    const reason = String(reasonInput || '').trim();
+    if (!reason) return;
+
+    setClubReportBusy(true);
+    setClubError('');
+    setClubInfo('');
+    try {
+      await addDoc(collection(db, 'clubs', selectedClubId, 'reports'), {
+        status: 'open',
+        reportType: 'member',
+        clubId: selectedClubId,
+        clubName: selectedClub?.name || '',
+        reportedByUid: firebaseUser.uid,
+        reportedByEmail: firebaseUser.email || '',
+        reportedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        targetUid: member.uid,
+        targetName: member.displayName || member.email || member.uid,
+        targetRole: member.role || 'member',
+        reason,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Report submitted. Club owner and agents can now review it.');
+    } catch (error) {
+      console.error('Failed reporting club member:', error);
+      setClubError('Could not submit club report right now.');
+    } finally {
+      setClubReportBusy(false);
+    }
+  };
+
+  const handleReportClubPost = async (post) => {
+    if (!firebaseUser || !selectedClubId || !post?.id || clubReportBusy) return;
+    if (!selectedClubMembership) {
+      setClubError('Join this club before submitting reports.');
+      return;
+    }
+
+    const reasonInput = window.prompt(`Report post "${post.title || 'Untitled Card'}" for:`, 'Fake listing, abusive content, or scam attempt');
+    const reason = String(reasonInput || '').trim();
+    if (!reason) return;
+
+    setClubReportBusy(true);
+    setClubError('');
+    setClubInfo('');
+    try {
+      await addDoc(collection(db, 'clubs', selectedClubId, 'reports'), {
+        status: 'open',
+        reportType: 'post',
+        clubId: selectedClubId,
+        clubName: selectedClub?.name || '',
+        reportedByUid: firebaseUser.uid,
+        reportedByEmail: firebaseUser.email || '',
+        reportedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        targetUid: post.createdByUid || null,
+        targetName: post.createdByName || 'Unknown',
+        targetPostId: post.id,
+        targetPostTitle: post.title || '',
+        reason,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Post report submitted for moderator review.');
+    } catch (error) {
+      console.error('Failed reporting club post:', error);
+      setClubError('Could not submit post report right now.');
+    } finally {
+      setClubReportBusy(false);
     }
   };
 
@@ -3253,9 +3478,9 @@ export default function CardSwipersLanding() {
   };
 
   const handleRemoveClubMember = async (member) => {
-    if (!firebaseUser || !selectedClubId || !member?.uid) return;
-    if (member.role === 'owner') return;
-    if (!canModerateClubPosts) return;
+    if (!firebaseUser || !selectedClubId || !member?.uid) return false;
+    if (member.role === 'owner') return false;
+    if (!canModerateClubPosts) return false;
 
     setClubActionBusyId(`remove-${member.uid}`);
     setClubError('');
@@ -3264,16 +3489,120 @@ export default function CardSwipersLanding() {
     try {
       await deleteDoc(doc(db, 'clubs', selectedClubId, 'members', member.uid));
       setClubInfo('Member removed from this club.');
+      return true;
     } catch (error) {
       console.error('Failed removing club member:', error);
       setClubError('Could not remove that member.');
+      return false;
     } finally {
       setClubActionBusyId('');
     }
   };
 
+  const handleBanClubMember = async (member, reason = '') => {
+    if (!firebaseUser || !selectedClubId || !member?.uid) return false;
+    if (!canModerateClubPosts || member.role === 'owner' || member.uid === selectedClub?.ownerUid) return false;
+
+    const banReason = String(reason || '').trim() || 'Club moderation action';
+    setClubActionBusyId(`ban-${member.uid}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await setDoc(doc(db, 'clubs', selectedClubId, 'bans', member.uid), {
+        uid: member.uid,
+        displayName: member.displayName || member.email || member.uid,
+        email: member.email || '',
+        reason: banReason,
+        bannedByUid: firebaseUser.uid,
+        bannedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'members', member.uid));
+      setClubInfo('Member has been blocked and removed from this club.');
+      return true;
+    } catch (error) {
+      console.error('Failed banning club member:', error);
+      setClubError('Could not block that member right now.');
+      return false;
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleResolveClubReport = async (report, status = 'resolved', action = 'dismissed') => {
+    if (!firebaseUser || !selectedClubId || !report?.id || !canModerateClubPosts) return;
+    setClubActionBusyId(`report-${report.id}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await updateDoc(doc(db, 'clubs', selectedClubId, 'reports', report.id), {
+        status,
+        moderationAction: action,
+        moderatedByUid: firebaseUser.uid,
+        moderatedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
+        moderatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Report has been updated.');
+    } catch (error) {
+      console.error('Failed updating club report:', error);
+      setClubError('Could not update that report.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleModerationActionFromReport = async (report, action) => {
+    if (!report || !canModerateClubPosts) return;
+
+    if (action === 'dismiss') {
+      await handleResolveClubReport(report, 'dismissed', 'dismissed');
+      return;
+    }
+
+    if (action === 'remove-member' && report.targetUid) {
+      const member = selectedClubMembers.find((entry) => entry.uid === report.targetUid);
+      if (member) {
+        const removed = await handleRemoveClubMember(member);
+        if (!removed) return;
+      }
+      await handleResolveClubReport(report, 'resolved', 'member_removed');
+      return;
+    }
+
+    if (action === 'ban-member' && report.targetUid) {
+      const member = selectedClubMembers.find((entry) => entry.uid === report.targetUid) || {
+        uid: report.targetUid,
+        displayName: report.targetName || report.targetUid,
+        email: '',
+        role: report.targetRole || 'member'
+      };
+      const banned = await handleBanClubMember(member, report.reason || 'Banned from report review');
+      if (!banned) return;
+      await handleResolveClubReport(report, 'resolved', 'member_banned');
+      return;
+    }
+
+    if (action === 'delete-post' && report.targetPostId) {
+      const targetPost = selectedClubPosts.find((entry) => entry.id === report.targetPostId) || {
+        id: report.targetPostId,
+        createdByUid: report.targetUid || null
+      };
+      const deleted = await handleDeleteClubPost(targetPost);
+      if (!deleted) return;
+      await handleResolveClubReport(report, 'resolved', 'post_deleted');
+    }
+  };
+
   const handlePublishClubPost = async () => {
     if (!firebaseUser || !selectedClubId || clubPostBusy) return;
+    if (isSelectedClubBanned) {
+      setClubError('You are blocked from posting in this club.');
+      return;
+    }
     if (!selectedClubMembership) {
       setClubError('Join this club before posting.');
       return;
@@ -3319,9 +3648,9 @@ export default function CardSwipersLanding() {
   };
 
   const handleDeleteClubPost = async (post) => {
-    if (!firebaseUser || !selectedClubId || !post?.id) return;
+    if (!firebaseUser || !selectedClubId || !post?.id) return false;
     const canDelete = canModerateClubPosts || post.createdByUid === firebaseUser.uid;
-    if (!canDelete) return;
+    if (!canDelete) return false;
 
     setClubActionBusyId(`post-${post.id}`);
     setClubError('');
@@ -3330,9 +3659,11 @@ export default function CardSwipersLanding() {
     try {
       await deleteDoc(doc(db, 'clubs', selectedClubId, 'posts', post.id));
       setClubInfo('Post removed from club feed.');
+      return true;
     } catch (error) {
       console.error('Failed deleting club post:', error);
       setClubError('Could not remove that post.');
+      return false;
     } finally {
       setClubActionBusyId('');
     }
@@ -3446,6 +3777,53 @@ export default function CardSwipersLanding() {
     } catch (error) {
       console.error('Failed to update user status:', error);
       setAdminUsersError('Failed to update account status. Please try again.');
+    } finally {
+      setAdminActionUserId(null);
+    }
+  };
+
+  const handleResolveChatReport = async (reportId) => {
+    if (!reportId) return;
+    try {
+      await updateDoc(doc(db, 'chatReports', reportId), {
+        status: 'resolved',
+        resolvedAt: serverTimestamp(),
+        resolvedBy: firebaseUser?.uid || null,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed resolving chat report:', error);
+      setChatReportsError('Failed to resolve chat report.');
+    }
+  };
+
+  const handleBlockUserFromChatReport = async (report) => {
+    if (!report?.reportedUserId) {
+      setChatReportsError('Cannot block this report target because no user id was attached.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Block ${report.reportedUserName || report.reportedUserId} from platform access?`);
+    if (!confirmed) return;
+
+    setAdminActionUserId(report.reportedUserId);
+    try {
+      await updateDoc(doc(db, 'users', report.reportedUserId), {
+        status: 'deactivated',
+        blockedAt: serverTimestamp(),
+        blockedBy: firebaseUser?.uid || null,
+        updatedAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, 'chatReports', report.id), {
+        status: 'actioned',
+        moderationAction: 'user_blocked',
+        resolvedAt: serverTimestamp(),
+        resolvedBy: firebaseUser?.uid || null,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed blocking user from chat report:', error);
+      setChatReportsError('Failed to block reported user.');
     } finally {
       setAdminActionUserId(null);
     }
@@ -4204,6 +4582,11 @@ export default function CardSwipersLanding() {
             flaggedCardsLoading={flaggedCardsLoading}
             handleDeleteFlaggedCard={handleDeleteFlaggedCard}
             handleDeleteFlagRecord={handleDeleteFlagRecord}
+            chatReports={chatReports}
+            chatReportsError={chatReportsError}
+            chatReportsLoading={chatReportsLoading}
+            handleResolveChatReport={handleResolveChatReport}
+            handleBlockUserFromChatReport={handleBlockUserFromChatReport}
             adminUsersLoading={adminUsersLoading}
             filteredAdminUsers={filteredAdminUsers}
             firebaseUser={firebaseUser}
@@ -5002,6 +5385,9 @@ export default function CardSwipersLanding() {
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Your Role</p>
                   <p className="mt-1 text-sm text-white/80">{selectedClubRole ? selectedClubRole.toUpperCase() : 'Select a club'}</p>
                   <p className="mt-1 text-[11px] text-white/55">Owner can assign agents. Owner and agents can moderate posts.</p>
+                  {isSelectedClubBanned && (
+                    <p className="mt-2 text-[11px] text-red-200">You are blocked from this club.</p>
+                  )}
                 </div>
               </div>
               {(clubInfo || clubError) && (
@@ -5155,6 +5541,28 @@ export default function CardSwipersLanding() {
                                         Remove
                                       </button>
                                     )}
+                                    {member.role !== 'owner' && canModerateClubPosts && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleBanClubMember(member, 'Manual moderator action')}
+                                        disabled={clubActionBusyId === `ban-${member.uid}`}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-800/55 border border-red-300/40 text-red-100 hover:bg-red-800/70 disabled:opacity-60"
+                                      >
+                                        Block
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {member.uid !== firebaseUser?.uid && (
+                                  <div className="mt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReportClubMember(member)}
+                                      disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                    >
+                                      Report
+                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -5200,10 +5608,10 @@ export default function CardSwipersLanding() {
                           <button
                             type="button"
                             onClick={handlePublishClubPost}
-                            disabled={clubPostBusy || !selectedClubMembership}
+                            disabled={clubPostBusy || !selectedClubMembership || isSelectedClubBanned}
                             className="w-full px-3 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-55 disabled:cursor-not-allowed"
                           >
-                            {clubPostBusy ? 'Posting...' : selectedClubMembership ? 'Post In Club Feed' : 'Join Club To Post'}
+                            {clubPostBusy ? 'Posting...' : isSelectedClubBanned ? 'Blocked From Club' : selectedClubMembership ? 'Post In Club Feed' : 'Join Club To Post'}
                           </button>
                         </div>
                       </div>
@@ -5226,13 +5634,35 @@ export default function CardSwipersLanding() {
                                     <p className="text-[11px] text-white/55 mt-1">Posted by {post.createdByName || 'Unknown'} {post.createdByRole ? `(${post.createdByRole})` : ''}</p>
                                   </div>
                                   {canDeletePost && (
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteClubPost(post)}
+                                        disabled={clubActionBusyId === `post-${post.id}`}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                      >
+                                        Delete
+                                      </button>
+                                      {post.createdByUid && post.createdByUid !== firebaseUser?.uid && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleReportClubPost(post)}
+                                          disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                        >
+                                          Report
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                  {!canDeletePost && post.createdByUid !== firebaseUser?.uid && (
                                     <button
                                       type="button"
-                                      onClick={() => handleDeleteClubPost(post)}
-                                      disabled={clubActionBusyId === `post-${post.id}`}
-                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                      onClick={() => handleReportClubPost(post)}
+                                      disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
                                     >
-                                      Delete
+                                      Report
                                     </button>
                                   )}
                                 </div>
@@ -5253,6 +5683,70 @@ export default function CardSwipersLanding() {
                         )}
                       </div>
                     </div>
+
+                    {canModerateClubPosts && (
+                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Moderation Queue</p>
+                          <span className="text-[11px] text-white/65">Open: {openSelectedClubReports.length}</span>
+                        </div>
+                        <div className="mt-2 space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {openSelectedClubReports.length === 0 ? (
+                            <p className="text-xs text-white/60">No open reports in this club.</p>
+                          ) : (
+                            openSelectedClubReports.map((report) => (
+                              <div key={report.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 space-y-2">
+                                <p className="text-sm font-semibold">
+                                  {report.reportType === 'post' ? 'Post Report' : 'Member Report'}: {report.targetName || report.targetPostTitle || 'Unknown target'}
+                                </p>
+                                <p className="text-[11px] text-white/60">Reason: {report.reason || 'No reason provided'}</p>
+                                <p className="text-[11px] text-white/50">Reported by {report.reportedByName || report.reportedByEmail || report.reportedByUid}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleModerationActionFromReport(report, 'dismiss')}
+                                    disabled={clubActionBusyId === `report-${report.id}`}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                  >
+                                    Dismiss
+                                  </button>
+                                  {report.targetUid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleModerationActionFromReport(report, 'remove-member')}
+                                      disabled={clubActionBusyId === `report-${report.id}`}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                    >
+                                      Remove Member
+                                    </button>
+                                  )}
+                                  {report.targetUid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleModerationActionFromReport(report, 'ban-member')}
+                                      disabled={clubActionBusyId === `report-${report.id}`}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-red-800/55 border border-red-300/40 text-red-100 hover:bg-red-800/70 disabled:opacity-60"
+                                    >
+                                      Block Member
+                                    </button>
+                                  )}
+                                  {report.targetPostId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleModerationActionFromReport(report, 'delete-post')}
+                                      disabled={clubActionBusyId === `report-${report.id}`}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-amber-700/40 border border-amber-300/30 text-amber-100 hover:bg-amber-700/60 disabled:opacity-60"
+                                    >
+                                      Delete Post
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="h-full min-h-0 flex items-center justify-center text-center">
@@ -5690,7 +6184,15 @@ export default function CardSwipersLanding() {
                   <button onClick={() => setActiveChat(null)} className="text-red-200 text-sm hover:text-white" type="button">
                     ◀ Back
                   </button>
-                  <h3 className="font-bold text-base">Chatting with @{activeChat.counterpartyName || activeChat.user}</h3>
+                  <h3 className="font-bold text-base flex-1">Chatting with @{activeChat.counterpartyName || activeChat.user}</h3>
+                  <button
+                    type="button"
+                    onClick={handleReportChatUser}
+                    disabled={chatReportBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                  >
+                    {chatReportBusy ? 'Submitting...' : 'Report User'}
+                  </button>
                 </div>
 
                 <div className="rounded-2xl border border-red-400/30 bg-red-950/35 p-3 space-y-3">

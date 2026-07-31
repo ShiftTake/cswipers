@@ -12,6 +12,11 @@ export default function AdminPanel({
   flaggedCardsLoading,
   handleDeleteFlaggedCard,
   handleDeleteFlagRecord,
+  chatReports,
+  chatReportsError,
+  chatReportsLoading,
+  handleResolveChatReport,
+  handleBlockUserFromChatReport,
   adminUsersLoading,
   filteredAdminUsers,
   firebaseUser,
@@ -229,6 +234,61 @@ export default function AdminPanel({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-white/10 pt-8 mt-8">
+        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+          Reported Chat Users
+          {chatReports.length > 0 && <span className="px-2 py-1 rounded-full bg-red-600 text-xs font-semibold">{chatReports.filter((report) => report.status === 'open').length}</span>}
+        </h3>
+
+        {chatReportsError && (
+          <div className="text-sm text-red-200 bg-red-900/40 border border-red-400/30 rounded-xl p-3 mb-4">{chatReportsError}</div>
+        )}
+
+        {chatReportsLoading ? (
+          <div className="p-4 text-sm text-red-100">Loading chat reports...</div>
+        ) : chatReports.length === 0 ? (
+          <div className="p-4 text-sm text-red-100 bg-red-950/30 border border-red-400/20 rounded-xl">No reported chat users yet.</div>
+        ) : (
+          <div className="space-y-3">
+            {chatReports.map((report) => {
+              const reportStatus = String(report.status || 'open').toLowerCase();
+              const isOpen = reportStatus === 'open';
+              const isBlocking = adminActionUserId === report.reportedUserId;
+              return (
+                <div key={report.id} className="bg-red-950/40 border border-red-400/30 rounded-xl p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-white">{report.reportedUserName || report.reportedUserId || 'Unknown user'}</p>
+                      <p className="text-xs text-red-200 mt-1">Reported by {report.reportedByEmail || report.reportedByName || report.reportedByUid}</p>
+                      <p className="text-xs text-red-200 mt-1">Reason: {report.reason || 'No reason provided'}</p>
+                      <p className="text-[11px] text-red-300 mt-1">Status: {reportStatus}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleResolveChatReport(report.id)}
+                        disabled={!isOpen}
+                        className="text-xs px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Resolve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBlockUserFromChatReport(report)}
+                        disabled={!report.reportedUserId || isBlocking}
+                        className="text-xs px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isBlocking ? 'Blocking...' : 'Block User'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
