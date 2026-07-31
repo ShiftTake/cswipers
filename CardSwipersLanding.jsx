@@ -374,6 +374,9 @@ const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
 const ESCROW_API_BASE = '/api';
 const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community marketplace rules.';
 
+const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
+
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
 
 const formatMoney = (value) => {
@@ -649,6 +652,26 @@ export default function CardSwipersLanding() {
     priceRange: [250, 1000],
     priorities: []
   });
+  const [clubs, setClubs] = useState([]);
+  const [clubSearchQuery, setClubSearchQuery] = useState('');
+  const [clubJoinCode, setClubJoinCode] = useState('');
+  const [clubDraftName, setClubDraftName] = useState('');
+  const [clubDraftDescription, setClubDraftDescription] = useState('');
+  const [clubCreateBusy, setClubCreateBusy] = useState(false);
+  const [clubJoinBusy, setClubJoinBusy] = useState(false);
+  const [clubActionBusyId, setClubActionBusyId] = useState('');
+  const [clubInfo, setClubInfo] = useState('');
+  const [clubError, setClubError] = useState('');
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const [selectedClubMembers, setSelectedClubMembers] = useState([]);
+  const [selectedClubPosts, setSelectedClubPosts] = useState([]);
+  const [clubPostDraft, setClubPostDraft] = useState({
+    title: '',
+    askingPrice: '',
+    description: '',
+    imageUrl: ''
+  });
+  const [clubPostBusy, setClubPostBusy] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersError, setAdminUsersError] = useState('');
@@ -687,6 +710,17 @@ export default function CardSwipersLanding() {
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
+  const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
+  const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
+  const selectedClubRole = selectedClubMembership?.role || '';
+  const canManageClubMembers = selectedClubRole === 'owner';
+  const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
+  const filteredClubs = clubs.filter((club) => {
+    const searchTerm = clubSearchQuery.trim().toLowerCase();
+    if (!searchTerm) return true;
+    const haystack = `${club.name || ''} ${club.description || ''} ${club.code || ''}`.toLowerCase();
+    return haystack.includes(searchTerm);
+  });
   const ratingStatsByUser = reviews.reduce((accumulator, review) => {
     const reviewedUid = review.reviewedUid;
     if (!reviewedUid) return accumulator;
@@ -810,6 +844,26 @@ export default function CardSwipersLanding() {
     if (firebaseUser) return;
     setNotifications([]);
     setShowNotificationsPanel(false);
+    setClubs([]);
+    setClubSearchQuery('');
+    setClubJoinCode('');
+    setClubDraftName('');
+    setClubDraftDescription('');
+    setClubCreateBusy(false);
+    setClubJoinBusy(false);
+    setClubActionBusyId('');
+    setClubInfo('');
+    setClubError('');
+    setSelectedClubId('');
+    setSelectedClubMembers([]);
+    setSelectedClubPosts([]);
+    setClubPostDraft({
+      title: '',
+      askingPrice: '',
+      description: '',
+      imageUrl: ''
+    });
+    setClubPostBusy(false);
     setChatOffers([]);
     setOfferDraftAmount('');
     setOfferBusy(false);
@@ -1366,6 +1420,80 @@ export default function CardSwipersLanding() {
       unsubSeller();
     };
   }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setClubs([]);
+      return;
+    }
+
+    const clubsQuery = query(collection(db, 'clubs'), orderBy('createdAt', 'desc'), limit(150));
+    const unsubscribe = onSnapshot(
+      clubsQuery,
+      (snapshot) => {
+        const loadedClubs = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setClubs(loadedClubs);
+      },
+      (error) => {
+        console.error('Failed loading clubs:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!clubs.length) {
+      setSelectedClubId('');
+      return;
+    }
+
+    if (!selectedClubId || !clubs.some((club) => club.id === selectedClubId)) {
+      setSelectedClubId(clubs[0].id);
+    }
+  }, [clubs, selectedClubId]);
+
+  useEffect(() => {
+    if (!selectedClubId) {
+      setSelectedClubMembers([]);
+      setSelectedClubPosts([]);
+      return;
+    }
+
+    const membersRef = collection(doc(db, 'clubs', selectedClubId), 'members');
+    const postsRef = collection(doc(db, 'clubs', selectedClubId), 'posts');
+
+    const unsubMembers = onSnapshot(
+      membersRef,
+      (snapshot) => {
+        const loadedMembers = snapshot.docs
+          .map((docSnap) => ({ uid: docSnap.id, ...docSnap.data() }))
+          .sort((a, b) => {
+            const rank = { owner: 0, agent: 1, member: 2 };
+            return (rank[a.role] ?? 3) - (rank[b.role] ?? 3);
+          });
+        setSelectedClubMembers(loadedMembers);
+      },
+      (error) => {
+        console.error('Failed loading club members:', error);
+      }
+    );
+
+    const unsubPosts = onSnapshot(
+      query(postsRef, orderBy('createdAt', 'desc'), limit(200)),
+      (snapshot) => {
+        setSelectedClubPosts(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        console.error('Failed loading club posts:', error);
+      }
+    );
+
+    return () => {
+      unsubMembers();
+      unsubPosts();
+    };
+  }, [selectedClubId]);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -3018,6 +3146,198 @@ export default function CardSwipersLanding() {
     setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
   };
 
+  const handleCreateClub = async () => {
+    if (!firebaseUser || clubCreateBusy) return;
+    const trimmedName = clubDraftName.trim();
+    if (!trimmedName) {
+      setClubError('Enter a club name before creating your club.');
+      return;
+    }
+
+    setClubCreateBusy(true);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      const clubRef = await addDoc(collection(db, 'clubs'), {
+        name: trimmedName,
+        description: clubDraftDescription.trim(),
+        code: buildClubCode(),
+        ownerUid: firebaseUser.uid,
+        ownerEmail: firebaseUser.email || '',
+        ownerName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      await setDoc(doc(clubRef, 'members', firebaseUser.uid), {
+        uid: firebaseUser.uid,
+        displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        email: firebaseUser.email || '',
+        role: 'owner',
+        joinedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      setClubDraftName('');
+      setClubDraftDescription('');
+      setSelectedClubId(clubRef.id);
+      setClubInfo('Club created. You are the owner and can assign agents now.');
+    } catch (error) {
+      console.error('Failed creating club:', error);
+      setClubError('Could not create club right now. Please try again.');
+    } finally {
+      setClubCreateBusy(false);
+    }
+  };
+
+  const handleJoinClubByCode = async () => {
+    if (!firebaseUser || clubJoinBusy) return;
+    const normalizedCode = clubJoinCode.trim().toUpperCase();
+    if (!normalizedCode) {
+      setClubError('Enter a club code to join.');
+      return;
+    }
+
+    setClubJoinBusy(true);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      const clubSnapshot = await getDocs(query(collection(db, 'clubs'), where('code', '==', normalizedCode), limit(1)));
+      if (clubSnapshot.empty) {
+        setClubError('No club found for that code.');
+        return;
+      }
+
+      const clubDoc = clubSnapshot.docs[0];
+      await setDoc(doc(clubDoc.ref, 'members', firebaseUser.uid), {
+        uid: firebaseUser.uid,
+        displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        email: firebaseUser.email || '',
+        role: 'member',
+        joinedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      setSelectedClubId(clubDoc.id);
+      setClubJoinCode('');
+      setClubInfo(`Joined ${clubDoc.data()?.name || 'club'}.`);
+    } catch (error) {
+      console.error('Failed joining club:', error);
+      setClubError('Unable to join that club right now.');
+    } finally {
+      setClubJoinBusy(false);
+    }
+  };
+
+  const handleUpdateClubMemberRole = async (memberUid, role) => {
+    if (!firebaseUser || !selectedClubId || !canManageClubMembers) return;
+    if (memberUid === firebaseUser.uid) return;
+    setClubActionBusyId(`role-${memberUid}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await setDoc(doc(db, 'clubs', selectedClubId, 'members', memberUid), {
+        role,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setClubInfo('Member role updated.');
+    } catch (error) {
+      console.error('Failed updating club role:', error);
+      setClubError('Could not update that member role.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleRemoveClubMember = async (member) => {
+    if (!firebaseUser || !selectedClubId || !member?.uid) return;
+    if (member.role === 'owner') return;
+    if (!canModerateClubPosts) return;
+
+    setClubActionBusyId(`remove-${member.uid}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'members', member.uid));
+      setClubInfo('Member removed from this club.');
+    } catch (error) {
+      console.error('Failed removing club member:', error);
+      setClubError('Could not remove that member.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handlePublishClubPost = async () => {
+    if (!firebaseUser || !selectedClubId || clubPostBusy) return;
+    if (!selectedClubMembership) {
+      setClubError('Join this club before posting.');
+      return;
+    }
+
+    const title = clubPostDraft.title.trim();
+    const askingPrice = clubPostDraft.askingPrice.trim();
+    if (!title || !askingPrice) {
+      setClubError('Add a card title and asking price before posting.');
+      return;
+    }
+
+    setClubPostBusy(true);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await addDoc(collection(db, 'clubs', selectedClubId, 'posts'), {
+        title,
+        askingPrice,
+        description: clubPostDraft.description.trim(),
+        imageUrl: clubPostDraft.imageUrl.trim(),
+        createdByUid: firebaseUser.uid,
+        createdByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        createdByRole: selectedClubRole || 'member',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setClubPostDraft({
+        title: '',
+        askingPrice: '',
+        description: '',
+        imageUrl: ''
+      });
+      setClubInfo('Card posted to this club feed.');
+    } catch (error) {
+      console.error('Failed publishing club post:', error);
+      setClubError('Could not publish this card post.');
+    } finally {
+      setClubPostBusy(false);
+    }
+  };
+
+  const handleDeleteClubPost = async (post) => {
+    if (!firebaseUser || !selectedClubId || !post?.id) return;
+    const canDelete = canModerateClubPosts || post.createdByUid === firebaseUser.uid;
+    if (!canDelete) return;
+
+    setClubActionBusyId(`post-${post.id}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'posts', post.id));
+      setClubInfo('Post removed from club feed.');
+    } catch (error) {
+      console.error('Failed deleting club post:', error);
+      setClubError('Could not remove that post.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
   const toggleOnboardingValue = (field, value, maxItems = Infinity) => {
     setOnboardingData((prev) => {
       const currentValues = Array.isArray(prev[field]) ? prev[field] : [];
@@ -3440,7 +3760,7 @@ export default function CardSwipersLanding() {
                         className="w-full text-left px-4 py-3 text-white hover:bg-white/5 transition-colors text-sm"
                         type="button"
                       >
-                        My Interests
+                        Card Clubs
                       </button>
                       <button
                         onClick={() => {
@@ -4665,6 +4985,284 @@ export default function CardSwipersLanding() {
                   </ul>
                 </div>
               </aside>
+            </div>
+          </div>
+        )}
+
+        {currentTab === 'onboarding' && (
+          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col gap-3 md:gap-4 py-1.5 md:py-3 overflow-hidden">
+            <div className="rounded-[22px] border border-white/10 bg-[#11161F] px-4 py-4 sm:px-6 sm:py-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">Card Clubs</p>
+                  <h2 className="mt-2 text-[1.28rem] sm:text-[2rem] leading-[1.06] font-black tracking-[-0.04em]">Build Your Club Network</h2>
+                  <p className="mt-2 text-sm text-white/65 max-w-xl">Create clubs, assign agents, moderate posts, and list specific cards with asking prices.</p>
+                </div>
+                <div className="min-w-[220px] sm:min-w-[260px] rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Your Role</p>
+                  <p className="mt-1 text-sm text-white/80">{selectedClubRole ? selectedClubRole.toUpperCase() : 'Select a club'}</p>
+                  <p className="mt-1 text-[11px] text-white/55">Owner can assign agents. Owner and agents can moderate posts.</p>
+                </div>
+              </div>
+              {(clubInfo || clubError) && (
+                <div className={`mt-3 rounded-xl px-3 py-2 text-xs ${clubError ? 'bg-red-900/40 border border-red-400/40 text-red-100' : 'bg-emerald-900/30 border border-emerald-400/40 text-emerald-100'}`}>
+                  {clubError || clubInfo}
+                </div>
+              )}
+            </div>
+
+            <div className="grid xl:grid-cols-[0.92fr_1.08fr] gap-4 md:gap-6 min-h-0 flex-1">
+              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={clubSearchQuery}
+                    onChange={(event) => setClubSearchQuery(event.target.value)}
+                    placeholder="Search clubs or code"
+                    className="w-full px-3 py-2.5 rounded-xl bg-[#0D1117] border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={clubJoinCode}
+                      onChange={(event) => setClubJoinCode(event.target.value.toUpperCase())}
+                      placeholder="Join code"
+                      className="w-full px-3 py-2.5 rounded-xl bg-[#0D1117] border border-white/15 text-sm uppercase focus:outline-none focus:border-white/35"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleJoinClubByCode}
+                      disabled={clubJoinBusy}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {clubJoinBusy ? 'Joining...' : 'Join'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 space-y-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Create Club</p>
+                  <input
+                    type="text"
+                    value={clubDraftName}
+                    onChange={(event) => setClubDraftName(event.target.value)}
+                    placeholder="Club name"
+                    className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                  />
+                  <textarea
+                    value={clubDraftDescription}
+                    onChange={(event) => setClubDraftDescription(event.target.value)}
+                    placeholder="What this club focuses on"
+                    className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
+                    rows={2}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCreateClub}
+                    disabled={clubCreateBusy}
+                    className="w-full px-4 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-55 disabled:cursor-not-allowed"
+                  >
+                    {clubCreateBusy ? 'Creating...' : 'Create Club'}
+                  </button>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
+                  {filteredClubs.length === 0 ? (
+                    <p className="text-sm text-white/65 px-1 py-2">No clubs match your search yet.</p>
+                  ) : (
+                    filteredClubs.map((club) => {
+                      const isActive = club.id === selectedClubId;
+                      return (
+                        <button
+                          key={club.id}
+                          type="button"
+                          onClick={() => setSelectedClubId(club.id)}
+                          className={`w-full text-left rounded-2xl border px-3 py-3 transition-colors ${isActive ? 'border-[#FB7185]/70 bg-[#25111A]' : 'border-white/10 bg-[#0D1117] hover:border-white/25'}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-white">{club.name || 'Untitled Club'}</p>
+                              <p className="text-[11px] text-white/55 mt-1">{club.description || 'No description yet.'}</p>
+                            </div>
+                            <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{club.code || '------'}</span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-white/50">Owner: {club.ownerName || club.ownerEmail || 'Unknown'}</p>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
+                {selectedClub ? (
+                  <>
+                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg sm:text-xl font-black">{selectedClub.name}</h3>
+                          <p className="text-xs text-white/60 mt-1">{selectedClub.description || 'No description provided.'}</p>
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.15em] border border-white/20 bg-white/10">Code {selectedClub.code || '------'}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid lg:grid-cols-2 gap-3 min-h-0">
+                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
+                        <div className="space-y-2 overflow-y-auto pr-1">
+                          {selectedClubMembers.length === 0 ? (
+                            <p className="text-xs text-white/60">No members yet.</p>
+                          ) : (
+                            selectedClubMembers.map((member) => (
+                              <div key={member.uid} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold truncate">{member.displayName || member.email || member.uid}</p>
+                                    <p className="text-[11px] text-white/55 truncate">{member.email || member.uid}</p>
+                                  </div>
+                                  <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{member.role || 'member'}</span>
+                                </div>
+                                {(canManageClubMembers || canModerateClubPosts) && member.uid !== firebaseUser?.uid && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {canManageClubMembers && member.role !== 'owner' && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'agent')}
+                                          disabled={clubActionBusyId === `role-${member.uid}`}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                        >
+                                          Make Agent
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'member')}
+                                          disabled={clubActionBusyId === `role-${member.uid}`}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                        >
+                                          Make Member
+                                        </button>
+                                      </>
+                                    )}
+                                    {member.role !== 'owner' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveClubMember(member)}
+                                        disabled={clubActionBusyId === `remove-${member.uid}`}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col gap-3">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Post Card In Club</p>
+                          <p className="text-[11px] text-white/55 mt-1">Members can post cards. Owners and agents can delete posts.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={clubPostDraft.title}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, title: event.target.value }))}
+                            placeholder="Card title"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                          />
+                          <input
+                            type="text"
+                            value={clubPostDraft.askingPrice}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, askingPrice: event.target.value }))}
+                            placeholder="Asking price (e.g. $450 or trade + $200)"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                          />
+                          <input
+                            type="text"
+                            value={clubPostDraft.imageUrl}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                            placeholder="Image URL (optional)"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                          />
+                          <textarea
+                            value={clubPostDraft.description}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, description: event.target.value }))}
+                            placeholder="Condition, comp references, and shipping notes"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
+                            rows={3}
+                          />
+                          <button
+                            type="button"
+                            onClick={handlePublishClubPost}
+                            disabled={clubPostBusy || !selectedClubMembership}
+                            className="w-full px-3 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-55 disabled:cursor-not-allowed"
+                          >
+                            {clubPostBusy ? 'Posting...' : selectedClubMembership ? 'Post In Club Feed' : 'Join Club To Post'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex-1 overflow-y-auto">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Club Feed</p>
+                      <div className="space-y-2">
+                        {selectedClubPosts.length === 0 ? (
+                          <p className="text-sm text-white/60">No card posts yet in this club.</p>
+                        ) : (
+                          selectedClubPosts.map((post) => {
+                            const canDeletePost = canModerateClubPosts || post.createdByUid === firebaseUser?.uid;
+                            return (
+                              <div key={post.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-bold">{post.title || 'Untitled Card'}</p>
+                                    <p className="text-xs text-[#FECACA] mt-1">Asking: {post.askingPrice || 'N/A'}</p>
+                                    <p className="text-[11px] text-white/55 mt-1">Posted by {post.createdByName || 'Unknown'} {post.createdByRole ? `(${post.createdByRole})` : ''}</p>
+                                  </div>
+                                  {canDeletePost && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteClubPost(post)}
+                                      disabled={clubActionBusyId === `post-${post.id}`}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
+                                {post.imageUrl && (
+                                  <a
+                                    href={post.imageUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-2 inline-block text-[11px] text-red-200 hover:text-red-100"
+                                  >
+                                    View card image
+                                  </a>
+                                )}
+                                {post.description && <p className="mt-2 text-sm text-white/75">{post.description}</p>}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-full min-h-0 flex items-center justify-center text-center">
+                    <div>
+                      <p className="text-lg font-bold">No club selected</p>
+                      <p className="text-sm text-white/60 mt-1">Create a club or pick one from the list.</p>
+                    </div>
+                  </div>
+                )}
+              </section>
             </div>
           </div>
         )}
