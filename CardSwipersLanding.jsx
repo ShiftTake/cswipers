@@ -157,6 +157,24 @@ function InboxIcon() {
   );
 }
 
+function CardClubsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M6.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM17.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+      <path d="M2.5 20c0-2.5 2-4.5 4.5-4.5h0c2.5 0 4.5 2 4.5 4.5M10 20c0-2.8 2.2-5 5-5h0c2.8 0 5 2.2 5 5" />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h2l1.2-1.4h4.6L15.5 6h2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
+      <circle cx="12" cy="12.5" r="3.25" />
+    </svg>
+  );
+}
+
 function ShieldIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
@@ -649,7 +667,7 @@ export default function CardSwipersLanding() {
     birthDate: '',
     phone: '',
     email: '',
-    verificationTypes: ['buyer', 'seller'],
+    verificationTypes: ['seller'],
     notes: ''
   });
   const [verificationDocFile, setVerificationDocFile] = useState(null);
@@ -696,13 +714,10 @@ export default function CardSwipersLanding() {
   const currentSellerRating = currentCard?.ownerUid ? ratingStatsByUser[currentCard.ownerUid]?.seller : null;
   const currentUserBuyerRating = firebaseUser?.uid ? ratingStatsByUser[firebaseUser.uid]?.buyer : null;
   const currentUserSellerRating = firebaseUser?.uid ? ratingStatsByUser[firebaseUser.uid]?.seller : null;
-  const buyerVerificationStatus = String(
-    currentUserProfile?.buyerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
-  ).toLowerCase();
   const sellerVerificationStatus = String(
     currentUserProfile?.sellerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
   ).toLowerCase();
-  const hasBuyerPaymentAccess = buyerVerificationStatus === 'verified' || buyerVerificationStatus === 'pending';
+  const hasBuyerPaymentAccess = false;
   const hasSellerPaymentAccess = sellerVerificationStatus === 'verified' || sellerVerificationStatus === 'pending';
   const existingReviewKeys = new Set(
     reviews.map((review) => `${review.purchaseId || ''}:${review.reviewerUid || ''}`)
@@ -1820,8 +1835,7 @@ export default function CardSwipersLanding() {
     const listingSellerStatus = String(card.sellerVerificationStatus || 'unverified').toLowerCase();
 
     if (!hasBuyerPaymentAccess) {
-      setAuthError('Buyer verification is required before instant purchase. Submit verification in My Trading Binder.');
-      setCurrentTab('collection');
+      setAuthError('Instant purchase is not available in this non-payment release. Use trade request.');
       return;
     }
 
@@ -2440,6 +2454,15 @@ export default function CardSwipersLanding() {
     });
   };
 
+  const handleQuickCaptureFromDock = () => {
+    setActiveChat(null);
+    setPostComposerStep(1);
+    navigateToTab('post');
+    window.setTimeout(() => {
+      postFrontImageInputRef.current?.click();
+    }, 80);
+  };
+
   const handleVerificationDocumentChange = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2528,20 +2551,14 @@ export default function CardSwipersLanding() {
     const birthDate = String(verificationForm.birthDate || '').trim();
     const phone = String(verificationForm.phone || '').trim();
     const email = String(verificationForm.email || firebaseUser.email || '').trim().toLowerCase();
-    const verificationTypes = Array.isArray(verificationForm.verificationTypes)
-      ? verificationForm.verificationTypes
-      : [];
+    const verificationTypes = ['seller'];
 
     if (!legalName || !birthDate || !phone || !email) {
       setVerificationError('Legal name, birth date, phone, and email are all required.');
       return;
     }
-    if (verificationTypes.length === 0) {
-      setVerificationError('Select buyer and/or seller verification.');
-      return;
-    }
     if (!hasAcceptedVerificationTerms) {
-      setVerificationError('You must accept the 48-hour inspection and dispute policy before submitting verification or linking a Stripe wallet.');
+      setVerificationError('You must accept the marketplace terms before submitting verification.');
       return;
     }
     if (!verificationDocFile) {
@@ -2572,8 +2589,8 @@ export default function CardSwipersLanding() {
           birthDate,
           phone,
           status: 'pending',
-          buyerStatus: verificationTypes.includes('buyer') ? 'pending' : 'not_requested',
-          sellerStatus: verificationTypes.includes('seller') ? 'pending' : 'not_requested',
+          buyerStatus: 'not_requested',
+          sellerStatus: 'pending',
           verificationTypes,
           verificationDocumentUrl,
           verificationDocumentPath: docPath,
@@ -2596,42 +2613,22 @@ export default function CardSwipersLanding() {
         verificationSubmittedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
-      if (verificationTypes.includes('buyer')) {
-        nextUserPayload.buyerVerificationStatus = 'pending';
-        await setDoc(
-          doc(db, 'subscriptions', `verified_buyer_${firebaseUser.uid}`),
-          {
-            userId: firebaseUser.uid,
-            email,
-            planType: 'verified_buyer',
-            planName: 'Verified Buyer',
-            amount: VERIFIED_BUYER_SUBSCRIPTION_PRICE,
-            billingInterval: 'monthly',
-            status: 'pending_verification',
-            updatedAt: serverTimestamp(),
-            createdAt: serverTimestamp()
-          },
-          { merge: true }
-        );
-      }
-      if (verificationTypes.includes('seller')) {
-        nextUserPayload.sellerVerificationStatus = 'pending';
-        await setDoc(
-          doc(db, 'subscriptions', `verified_seller_${firebaseUser.uid}`),
-          {
-            userId: firebaseUser.uid,
-            email,
-            planType: 'verified_seller',
-            planName: 'Verified Seller',
-            amount: VERIFIED_SELLER_SUBSCRIPTION_PRICE,
-            billingInterval: 'monthly',
-            status: 'pending_verification',
-            updatedAt: serverTimestamp(),
-            createdAt: serverTimestamp()
-          },
-          { merge: true }
-        );
-      }
+      nextUserPayload.sellerVerificationStatus = 'pending';
+      await setDoc(
+        doc(db, 'subscriptions', `verified_seller_${firebaseUser.uid}`),
+        {
+          userId: firebaseUser.uid,
+          email,
+          planType: 'verified_seller',
+          planName: 'Verified Seller',
+          amount: VERIFIED_SELLER_SUBSCRIPTION_PRICE,
+          billingInterval: 'monthly',
+          status: 'pending_verification',
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        },
+        { merge: true }
+      );
 
       await withTimeout(updateDoc(doc(db, 'users', firebaseUser.uid), nextUserPayload), 10000, 'Profile update timed out');
 
@@ -3291,10 +3288,7 @@ export default function CardSwipersLanding() {
   const premiumMRR = premiumSubscriptions.reduce((total, subscription) => {
     const status = String(subscription.status || '').toLowerCase();
     if (status && status !== 'active') return total;
-    const planType = String(subscription.planType || '').toLowerCase();
-    const defaultAmount = planType.includes('buyer')
-      ? VERIFIED_BUYER_SUBSCRIPTION_PRICE
-      : VERIFIED_SELLER_SUBSCRIPTION_PRICE;
+    const defaultAmount = VERIFIED_SELLER_SUBSCRIPTION_PRICE;
     return total + parseDollarValue(subscription.amount || defaultAmount);
   }, 0);
 
@@ -3317,7 +3311,7 @@ export default function CardSwipersLanding() {
   }, {});
   return (
     <div
-      className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
+      className="text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden bg-black"
       style={
         isNativeApp && nativeViewportHeight
           ? {
@@ -4728,7 +4722,7 @@ export default function CardSwipersLanding() {
               <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-red-200">Verification Center</p>
-                  <h3 className="text-base font-bold">Buyer & Seller Verification</h3>
+                  <h3 className="text-base font-bold">Seller Verification</h3>
                 </div>
                 <span className="text-xs text-red-100">Manage</span>
               </summary>
@@ -4738,9 +4732,6 @@ export default function CardSwipersLanding() {
                   <p className="text-xs text-red-100 mt-1">Upload your license/ID once. CS support reviews in 1-2 days. You can keep trading while pending.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
-                    Buyer: {buyerVerificationStatus}
-                  </span>
                   <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
                     Seller: {sellerVerificationStatus}
                   </span>
@@ -4781,22 +4772,6 @@ export default function CardSwipersLanding() {
                   placeholder="Email"
                   className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
                 />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {['buyer', 'seller'].map((type) => {
-                  const selected = verificationForm.verificationTypes.includes(type);
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => toggleVerificationType(type)}
-                      className={`px-3 py-1.5 rounded-full text-xs border ${selected ? 'bg-[#E50914] border-[#E50914]' : 'bg-white/10 border-white/20 hover:border-white/35'}`}
-                    >
-                      {selected ? '✓ ' : ''}{type === 'buyer' ? 'Verify Buyer' : 'Verify Seller'}
-                    </button>
-                  );
-                })}
               </div>
 
               <div className="space-y-2">
@@ -5786,7 +5761,7 @@ export default function CardSwipersLanding() {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
       >
         <div className="max-w-lg mx-auto pointer-events-auto">
-        <nav className={`grid ${canAccessAdmin ? 'grid-cols-5' : 'grid-cols-4'} items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(20,25,37,0.94),rgba(10,14,24,0.96))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl ring-1 ring-white/8`}>
+        <nav className="grid grid-cols-5 items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(10,10,10,0.98),rgba(0,0,0,0.98))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl ring-1 ring-white/8">
           <button
             onClick={() => {
               navigateToTab('swipe');
@@ -5805,17 +5780,30 @@ export default function CardSwipersLanding() {
 
           <button
             onClick={() => {
-              navigateToTab('post');
+              navigateToTab('onboarding');
               setActiveChat(null);
             }}
+            className="group relative flex items-center justify-center"
+            type="button"
+          >
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'onboarding' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
+            <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'onboarding' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><CardClubsIcon /></NavIcon>
+              <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'onboarding' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Card Clubs</span>
+              <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'onboarding' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
+            </span>
+          </button>
+
+          <button
+            onClick={handleQuickCaptureFromDock}
             className="group relative flex items-center justify-center -mt-4"
             type="button"
           >
             <span className={`absolute inset-x-1 inset-y-0 rounded-[26px] border transition-all duration-300 ${currentTab === 'post' ? 'border-[#F5C542]/25 bg-[radial-gradient(circle_at_top,rgba(245,197,66,0.3),rgba(225,29,72,0.24)_62%,rgba(255,255,255,0.08))] shadow-[0_16px_30px_rgba(225,29,72,0.24)]' : 'border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] group-hover:bg-white/[0.08]'}`} />
-            <span className="relative flex min-h-[72px] flex-col items-center justify-center gap-1 px-3 py-2.5">
-              <span className={`absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent transition-opacity duration-300 ${currentTab === 'post' ? 'opacity-100' : 'opacity-0'}`} />
-              <NavIcon className={`transition-all duration-300 ${currentTab === 'post' ? 'w-[1.45rem] h-[1.45rem] text-white' : 'w-[1.3rem] h-[1.3rem] text-white/78 group-hover:text-white'}`}><PostIcon /></NavIcon>
-              <span className={`text-[11px] font-bold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'post' ? 'text-white' : 'text-white/72 group-hover:text-white'}`}>Post Card</span>
+            <span className="relative flex min-h-[74px] flex-col items-center justify-center gap-1 px-3 py-2.5">
+              <span className="absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'post' ? 'w-[1.5rem] h-[1.5rem] text-white' : 'w-[1.4rem] h-[1.4rem] text-white/85 group-hover:text-white'}`}><CameraIcon /></NavIcon>
+              <span className={`text-[11px] font-bold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'post' ? 'text-white' : 'text-white/80 group-hover:text-white'}`}>Camera</span>
               <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'post' ? 'w-9 opacity-100' : 'w-3 opacity-40'}`} />
             </span>
           </button>
@@ -5851,28 +5839,10 @@ export default function CardSwipersLanding() {
                 </span>
               )}
             </div>
-            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Inbox</span>
+            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Imbox</span>
             <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'messages' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
             </span>
           </button>
-
-          {canAccessAdmin && (
-            <button
-              onClick={() => {
-                navigateToTab('admin');
-                setActiveChat(null);
-              }}
-              className="group relative flex items-center justify-center"
-              type="button"
-            >
-              <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'admin' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
-              <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
-                <NavIcon className={`transition-all duration-300 ${currentTab === 'admin' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><ShieldIcon /></NavIcon>
-                <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'admin' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Admin</span>
-                <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'admin' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
-              </span>
-            </button>
-          )}
         </nav>
         </div>
       </footer>
