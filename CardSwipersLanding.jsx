@@ -2700,17 +2700,19 @@ export default function CardSwipersLanding() {
       if (side === 'front') {
         setPostFrontImagePreview(preview);
         setPostFrontImageFile(file);
+        window.setTimeout(() => {
+          postBackImageInputRef.current?.click();
+        }, 180);
       } else {
         setPostBackImagePreview(preview);
         setPostBackImageFile(file);
+        setPostComposerStep(2);
       }
       setPostImageError('');
     };
     reader.readAsDataURL(file);
 
-    if (side === 'front') {
-      setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
-    }
+    e.target.value = '';
   };
 
   const toggleLookingForOption = (option) => {
@@ -4041,11 +4043,10 @@ export default function CardSwipersLanding() {
   }, {});
   return (
     <div
-      className="text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden bg-black"
+      className="text-white font-sans flex flex-col relative min-h-[100dvh] bg-black"
       style={
         isNativeApp && nativeViewportHeight
           ? {
-              height: `${nativeViewportHeight}px`,
               minHeight: `${nativeViewportHeight}px`
             }
           : undefined
@@ -4102,10 +4103,19 @@ export default function CardSwipersLanding() {
 
       {(isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header
-        className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#111827]/95 border-white/10'} backdrop-blur-md border-b sticky top-0 z-50`}
+        className="bg-black/95 border-white/10 backdrop-blur-md border-b sticky top-0 z-50"
         style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-end">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-between gap-3">
+
+          <button
+            type="button"
+            onClick={() => navigateToTab(isAuthenticated ? 'swipe' : 'landing')}
+            className="flex items-center gap-2.5 shrink-0"
+          >
+            <img src={authHeroImage} alt="CardSwipers" className="w-8 h-8 object-contain rounded-lg" />
+            <span className="text-sm sm:text-base font-black tracking-wide uppercase text-white">CardSwipers</span>
+          </button>
 
           <div className="flex items-center">
             {isLandingScreen && (
@@ -4238,9 +4248,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        className={`flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
       >
-        <div className="max-w-6xl mx-auto w-full h-full max-h-[100dvh] flex flex-col min-h-0 overflow-hidden">
+        <div className="max-w-6xl mx-auto w-full flex flex-col min-h-0">
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -4819,7 +4829,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'swipe' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-hidden">
+          <div className="h-full min-h-0 max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-y-auto overscroll-y-contain pr-1">
             {currentCard ? (
               <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
@@ -5079,7 +5089,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-hidden">
+          <div className="h-full min-h-0 max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-y-auto overscroll-y-contain pr-1">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -5137,7 +5147,7 @@ export default function CardSwipersLanding() {
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Front Photo</p>
-                            <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
+                            <p className="mt-1 text-[11px] text-white/55">Front required first</p>
                           </div>
                         )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
@@ -5148,7 +5158,14 @@ export default function CardSwipersLanding() {
 
                     <button
                       type="button"
-                      onClick={() => postBackImageInputRef.current?.click()}
+                      onClick={() => {
+                        if (!postFrontImagePreview) {
+                          setPostImageError('Capture the front image first.');
+                          postFrontImageInputRef.current?.click();
+                          return;
+                        }
+                        postBackImageInputRef.current?.click();
+                      }}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
                       <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
@@ -5162,7 +5179,7 @@ export default function CardSwipersLanding() {
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Back Photo</p>
-                            <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
+                            <p className="mt-1 text-[11px] text-white/55">Capture right after front</p>
                           </div>
                         )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
@@ -5439,7 +5456,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col gap-3 md:gap-4 py-1.5 md:py-3 overflow-hidden">
+          <div className="h-full min-h-0 max-w-6xl mx-auto w-full flex flex-col gap-3 md:gap-4 py-1.5 md:py-3 overflow-y-auto overscroll-y-contain pr-1">
             <div className="rounded-[22px] border border-white/10 bg-[#11161F] px-4 py-4 sm:px-6 sm:py-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)]">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
