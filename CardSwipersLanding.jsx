@@ -4104,17 +4104,17 @@ export default function CardSwipersLanding() {
       {(isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header
         className="bg-black/95 border-white/10 backdrop-blur-md border-b sticky top-0 z-50"
-        style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
+        style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: '0.35rem' } : undefined}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-between gap-3">
+        <div className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 ${isNativeCoreApp ? 'py-2 min-h-[50px]' : 'py-2.5 sm:py-4'}`}>
 
           <button
             type="button"
             onClick={() => navigateToTab(isAuthenticated ? 'swipe' : 'landing')}
-            className="flex items-center gap-2.5 shrink-0"
+            className={`flex items-center shrink-0 ${isNativeCoreApp ? 'gap-2' : 'gap-2.5'}`}
           >
-            <img src={authHeroImage} alt="CardSwipers" className="w-8 h-8 object-contain rounded-lg" />
-            <span className="text-sm sm:text-base font-black tracking-wide uppercase text-white">CardSwipers</span>
+            <img src={authHeroImage} alt="CardSwipers" className={`${isNativeCoreApp ? 'w-7 h-7 rounded-md' : 'w-8 h-8 rounded-lg'} object-contain`} />
+            <span className={`${isNativeCoreApp ? 'text-[15px] tracking-[0.08em]' : 'text-sm sm:text-base tracking-wide'} font-black uppercase text-white`}>CardSwipers</span>
           </button>
 
           <div className="flex items-center">
@@ -4173,11 +4173,11 @@ export default function CardSwipersLanding() {
             )}
 
             {isCoreAppScreen && isAuthenticated && (
-              <div className="flex items-center gap-2">
+              <div className={`flex items-center ${isNativeCoreApp ? 'gap-1.5' : 'gap-2'}`}>
                 <button
                   type="button"
                   onClick={handleOpenNotifications}
-                  className="relative w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white"
+                  className={`relative rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white ${isNativeCoreApp ? 'w-10 h-10' : 'w-11 h-11'}`}
                 >
                   <BellIcon />
                   {unreadNotificationCount > 0 && (
@@ -4190,7 +4190,7 @@ export default function CardSwipersLanding() {
                   <button
                     type="button"
                     onClick={() => setAccountMenuOpen(!accountMenuOpen)}
-                    className="w-11 h-11 rounded-full bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 transition-all flex items-center justify-center text-white font-bold shadow-lg"
+                    className={`rounded-full bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 transition-all flex items-center justify-center text-white font-bold shadow-lg ${isNativeCoreApp ? 'w-10 h-10 text-sm' : 'w-11 h-11'}`}
                   >
                     {firebaseUser?.email?.[0].toUpperCase() || 'U'}
                   </button>
