@@ -726,6 +726,7 @@ export default function CardSwipersLanding() {
   const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
   const isSelectedClubBanned = Boolean(selectedClubBanRecord);
   const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
+  const clubModerationBadgeCount = canModerateClubPosts ? openSelectedClubReports.length : 0;
   const filteredClubs = clubs.filter((club) => {
     const searchTerm = clubSearchQuery.trim().toLowerCase();
     if (!searchTerm) return true;
@@ -6851,6 +6852,11 @@ export default function CardSwipersLanding() {
           >
             <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'onboarding' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
             <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
+              {clubModerationBadgeCount > 0 && (
+                <span className="absolute -top-0.5 right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] border border-red-300/40 text-[10px] leading-4 text-white font-bold text-center">
+                  {clubModerationBadgeCount > 99 ? '99+' : clubModerationBadgeCount}
+                </span>
+              )}
               <NavIcon className={`transition-all duration-300 ${currentTab === 'onboarding' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><CardClubsIcon /></NavIcon>
               <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'onboarding' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Card Clubs</span>
               <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'onboarding' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
