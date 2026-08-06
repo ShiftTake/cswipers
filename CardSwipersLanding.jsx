@@ -36,7 +36,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { auth, db, storage } from './firebase';
-import { fetchPokemonCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
+import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
 import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
@@ -2826,7 +2826,7 @@ export default function CardSwipersLanding() {
       setScannerInfo('Looking up card metadata...');
       let metadata = null;
       try {
-        metadata = await fetchPokemonCardMetadata(parsed);
+        metadata = await fetchCardMetadata(parsed, lines);
       } catch {
         metadata = null;
       }

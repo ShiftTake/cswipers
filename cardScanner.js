@@ -1,4 +1,5 @@
 const POKEMON_TCG_API_BASE = 'https://api.pokemontcg.io/v2/cards';
+const WIKIDATA_SEARCH_API_BASE = 'https://www.wikidata.org/w/api.php';
 
 /**
  * @typedef {Object} ParsedCard
@@ -132,6 +133,66 @@ export async function fetchPokemonCardMetadata(parsedCard) {
     confidenceNote: 'Matched via pokemontcg.io',
     imageUrl: card?.images?.small || card?.images?.large || ''
   };
+}
+
+const inferSportsBrand = (lines = []) => {
+  const haystack = normalizeDetectedLines(lines).join(' ').toLowerCase();
+  if (haystack.includes('bowman')) return 'Bowman';
+  if (haystack.includes('upper deck')) return 'Upper Deck';
+  if (haystack.includes('panini')) return 'Panini';
+  if (haystack.includes('topps')) return 'Topps';
+  return '';
+};
+
+export async function fetchFallbackCardMetadata(parsedCard, detectedLines = []) {
+  const cardName = String(parsedCard?.cardName || '').trim();
+  if (!cardName) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    action: 'wbsearchentities',
+    format: 'json',
+    language: 'en',
+    type: 'item',
+    search: cardName,
+    origin: '*'
+  });
+
+  const response = await fetch(`${WIKIDATA_SEARCH_API_BASE}?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Fallback metadata request failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const result = Array.isArray(payload?.search) ? payload.search[0] : null;
+  if (!result) {
+    return null;
+  }
+
+  return {
+    title: result.label || cardName,
+    brand: inferSportsBrand(detectedLines) || '',
+    estimatedValue: '',
+    cardNumber: parsedCard?.cardNumber || '',
+    setNumber: parsedCard?.setNumber || '',
+    setName: result.description || '',
+    confidenceNote: 'Matched via Wikidata fallback',
+    imageUrl: ''
+  };
+}
+
+export async function fetchCardMetadata(parsedCard, detectedLines = []) {
+  try {
+    const primary = await fetchPokemonCardMetadata(parsedCard);
+    if (primary) {
+      return primary;
+    }
+  } catch {
+    // Fall through to the alternate source.
+  }
+
+  return fetchFallbackCardMetadata(parsedCard, detectedLines);
 }
 
 export function summarizeOcrLines(rawLines) {
