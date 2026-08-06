@@ -5672,31 +5672,40 @@ export default function CardSwipersLanding() {
 
             <div className="grid xl:grid-cols-[0.92fr_1.08fr] gap-4 md:gap-6 min-h-0 flex-1">
               <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
-                <div className="grid sm:grid-cols-2 gap-2">
+                {/* Search Club bar — full-width pill with magnifying glass */}
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
+                      <circle cx="8.5" cy="8.5" r="5.5" />
+                      <path d="m13.5 13.5 3 3" strokeLinecap="round" />
+                    </svg>
+                  </span>
                   <input
                     type="text"
                     value={clubSearchQuery}
                     onChange={(event) => setClubSearchQuery(event.target.value)}
-                    placeholder="Search clubs or code"
-                    className="w-full px-3 py-2.5 rounded-xl bg-[#0D1117] border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                    placeholder="Search Club"
+                    className="w-full pl-9 pr-4 py-3 rounded-full bg-white text-[#111] placeholder-[#aaa] text-sm focus:outline-none shadow-sm"
                   />
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={clubJoinCode}
-                      onChange={(event) => setClubJoinCode(event.target.value.toUpperCase())}
-                      placeholder="Join code"
-                      className="w-full px-3 py-2.5 rounded-xl bg-[#0D1117] border border-white/15 text-sm uppercase focus:outline-none focus:border-white/35"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleJoinClubByCode}
-                      disabled={clubJoinBusy}
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 disabled:opacity-55 disabled:cursor-not-allowed"
-                    >
-                      {clubJoinBusy ? 'Joining...' : 'Join'}
-                    </button>
-                  </div>
+                </div>
+
+                {/* Join by code */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={clubJoinCode}
+                    onChange={(event) => setClubJoinCode(event.target.value.toUpperCase())}
+                    placeholder="Have a join code?"
+                    className="w-full px-3 py-2.5 rounded-xl bg-[#0D1117] border border-white/15 text-sm uppercase focus:outline-none focus:border-white/35"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleJoinClubByCode}
+                    disabled={clubJoinBusy}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 disabled:opacity-55 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {clubJoinBusy ? 'Joining...' : 'Join'}
+                  </button>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden">
