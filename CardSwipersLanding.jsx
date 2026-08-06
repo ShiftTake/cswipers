@@ -1179,6 +1179,33 @@ export default function CardSwipersLanding() {
   }, [isNativeApp, currentTab, isAuthenticated]);
 
   useEffect(() => {
+    if (!isNativeApp || typeof window === 'undefined') return;
+    if (currentTab === 'auth') return;
+
+    let frameId = 0;
+    const resyncViewport = () => {
+      const visualViewportHeight = Number(window.visualViewport?.height || 0);
+      const innerHeight = Number(window.innerHeight || 0);
+      const measuredHeight = Math.round(Math.max(visualViewportHeight, innerHeight));
+      if (measuredHeight > 0) {
+        setNativeViewportHeight(measuredHeight);
+      }
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+
+    resyncViewport();
+    window.setTimeout(resyncViewport, 80);
+    window.setTimeout(resyncViewport, 260);
+    frameId = window.requestAnimationFrame(resyncViewport);
+
+    return () => {
+      if (frameId) cancelAnimationFrame(frameId);
+    };
+  }, [isNativeApp, currentTab, isAuthenticated]);
+
+  useEffect(() => {
     let isMounted = true;
     let profileUnsubscribe = () => {};
 
@@ -3464,11 +3491,8 @@ export default function CardSwipersLanding() {
 
   const handleCreateClub = async () => {
     if (!firebaseUser || clubCreateBusy) return;
-    const trimmedName = clubDraftName.trim();
-    if (!trimmedName) {
-      setClubError('Enter a club name before creating your club.');
-      return;
-    }
+    const ownerName = currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector';
+    const generatedClubName = `${ownerName.split(' ')[0] || 'My'} Club`;
 
     setClubCreateBusy(true);
     setClubError('');
@@ -3476,12 +3500,12 @@ export default function CardSwipersLanding() {
 
     try {
       const clubRef = await addDoc(collection(db, 'clubs'), {
-        name: trimmedName,
-        description: clubDraftDescription.trim(),
+        name: generatedClubName,
+        description: '',
         code: buildClubCode(),
         ownerUid: firebaseUser.uid,
         ownerEmail: firebaseUser.email || '',
-        ownerName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        ownerName,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -3495,8 +3519,6 @@ export default function CardSwipersLanding() {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      setClubDraftName('');
-      setClubDraftDescription('');
       setSelectedClubId(clubRef.id);
       setClubInfo('Club created. You are the owner and can assign agents now.');
     } catch (error) {
@@ -5657,10 +5679,10 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'onboarding' && (
           <div className="h-full max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-hidden">
-            <div className="grid xl:grid-cols-[0.92fr_1.08fr] gap-3 md:gap-4 min-h-0 flex-1 overflow-hidden">
-              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
+            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-3 md:gap-4 min-h-0 flex-1 overflow-hidden">
+              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0 items-center justify-between">
                 {/* Search Club bar — full-width pill with magnifying glass */}
-                <div className="relative">
+                <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
                       <circle cx="8.5" cy="8.5" r="5.5" />
@@ -5676,54 +5698,32 @@ export default function CardSwipersLanding() {
                   />
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden">
-                  {/* Hero card — square image with overlay text, like the reference */}
-                  <div className="relative w-full aspect-square bg-[#0A0D13] overflow-hidden">
-                    <img
-                      src={authHeroImage}
-                      alt="Create a club"
-                      className="w-full h-full object-cover opacity-80"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
-                      <div className="w-16 h-16 rounded-2xl bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-xl">
-                        <CardClubsIcon />
-                      </div>
-                      <p className="text-white text-sm font-bold leading-snug mt-1 drop-shadow">
-                        Create a club and run<br />your own card club
-                      </p>
+                <div className="w-full max-w-[320px] mx-auto flex flex-col items-center gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden w-full shadow-[0_14px_28px_rgba(0,0,0,0.24)]">
+                    <div className="relative w-full aspect-square bg-[#0A0D13] overflow-hidden">
+                      <img
+                        src={authHeroImage}
+                        alt="Create a club"
+                        className="w-full h-full object-cover opacity-80"
+                      />
                     </div>
                   </div>
 
-                  {/* Create Club button sits directly below the square */}
-                  <div className="p-3 space-y-2">
-                    <button
-                      type="button"
-                      onClick={handleCreateClub}
-                      disabled={clubCreateBusy || !clubDraftName.trim()}
-                      className="w-full py-3 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
-                    >
-                      {clubCreateBusy ? 'Creating...' : 'Create Club'}
-                    </button>
-
-                    <input
-                      type="text"
-                      value={clubDraftName}
-                      onChange={(event) => setClubDraftName(event.target.value)}
-                      placeholder="Club name"
-                      className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                    />
-                    <textarea
-                      value={clubDraftDescription}
-                      onChange={(event) => setClubDraftDescription(event.target.value)}
-                      placeholder="What this club focuses on"
-                      className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
-                      rows={2}
-                    />
+                  <div className="w-14 h-14 rounded-2xl bg-[#22C55E] flex items-center justify-center shadow-[0_8px_20px_rgba(34,197,94,0.35)] border border-white/10">
+                    <CardClubsIcon />
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCreateClub}
+                    disabled={clubCreateBusy}
+                    className="w-full py-3 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
+                  >
+                    {clubCreateBusy ? 'Creating...' : 'Create Club'}
+                  </button>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-hidden space-y-2">
+                <div className="flex-1 min-h-0 w-full overflow-hidden space-y-2">
                   {filteredClubs.length === 0 ? (
                     <p className="text-sm text-white/65 px-1 py-2">No clubs match your search yet.</p>
                   ) : (
