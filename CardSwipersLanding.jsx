@@ -1701,7 +1701,7 @@ export default function CardSwipersLanding() {
       setCurrentTab('auth');
       return;
     }
-    setCurrentTab(hasAdminAccess ? 'admin' : 'swipe');
+    setCurrentTab(hasAdminAccess ? 'admin' : 'onboarding');
   }, [isAdminPath, isAuthenticated, hasAdminAccess]);
 
   useEffect(() => {
@@ -1730,10 +1730,10 @@ export default function CardSwipersLanding() {
     if (authLoading || !isAuthenticated) return;
     if (currentTab === 'auth' || currentTab === 'landing') {
       if (isAdminPath) {
-        setCurrentTab(hasAdminAccess ? 'admin' : 'swipe');
+        setCurrentTab(hasAdminAccess ? 'admin' : 'onboarding');
         return;
       }
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
     }
   }, [authLoading, isAuthenticated, currentTab, isAdminPath, hasAdminAccess]);
 
@@ -1853,7 +1853,7 @@ export default function CardSwipersLanding() {
       setOnboardingBusy(false);
       setOnboardingError('');
       setShowOnboarding(true);
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
     } else {
       setShowOnboarding(false);
     }
@@ -3261,7 +3261,7 @@ export default function CardSwipersLanding() {
           'Signing in timed out'
         );
       }
-      setCurrentTab('swipe');
+        setCurrentTab('onboarding');
     } catch (error) {
       setAuthError(getAuthErrorMessage(error, authMode === 'create' ? 'create' : 'login'));
     } finally {
@@ -3286,7 +3286,7 @@ export default function CardSwipersLanding() {
       }
 
       await signInWithPopup(auth, provider);
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
     } catch (error) {
       setIsGoogleRedirecting(false);
       setAuthError(getAuthErrorMessage(error, 'google'));
@@ -3299,7 +3299,7 @@ export default function CardSwipersLanding() {
       return;
     }
     if (nextTab === 'admin' && !canAccessAdmin) {
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
       return;
     }
     setCurrentTab(nextTab);
@@ -4106,15 +4106,15 @@ export default function CardSwipersLanding() {
         className="bg-black/95 border-white/10 backdrop-blur-md border-b sticky top-0 z-50"
         style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: '0.35rem' } : undefined}
       >
-        <div className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 ${isNativeCoreApp ? 'py-2 min-h-[50px]' : 'py-2.5 sm:py-4'}`}>
+        <div className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 ${isNativeCoreApp ? 'py-2 min-h-[64px]' : 'py-2.5 sm:py-4'}`}>
 
           <button
             type="button"
             onClick={() => navigateToTab(isAuthenticated ? 'swipe' : 'landing')}
             className={`flex items-center shrink-0 ${isNativeCoreApp ? 'gap-2' : 'gap-2.5'}`}
           >
-            <img src={authHeroImage} alt="CardSwipers" className={`${isNativeCoreApp ? 'w-7 h-7 rounded-md' : 'w-8 h-8 rounded-lg'} object-contain`} />
-            <span className={`${isNativeCoreApp ? 'text-[15px] tracking-[0.08em]' : 'text-sm sm:text-base tracking-wide'} font-black uppercase text-white`}>CardSwipers</span>
+            <img src={authHeroImage} alt="CardSwipers" className={`${isNativeCoreApp ? 'w-14 h-14 rounded-lg' : 'w-16 h-16 rounded-xl'} object-contain`} />
+            <span className={`${isNativeCoreApp ? 'text-[16px] tracking-[0.08em]' : 'text-base sm:text-lg tracking-wide'} font-black uppercase italic text-white`}>CardSwipers</span>
           </button>
 
           <div className="flex items-center">
@@ -4162,7 +4162,7 @@ export default function CardSwipersLanding() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCurrentTab('swipe')}
+                      onClick={() => setCurrentTab('onboarding')}
                       className="h-11 px-6 rounded-xl bg-gradient-to-b from-[#FF3040] to-[#D72638] text-white text-sm font-semibold shadow-[0_10px_30px_rgba(215,38,56,0.35)]"
                     >
                       Enter App
@@ -4291,7 +4291,7 @@ export default function CardSwipersLanding() {
                   ) : isAuthenticated ? (
                     <button
                       type="button"
-                      onClick={() => setCurrentTab('swipe')}
+                      onClick={() => setCurrentTab('onboarding')}
                       className="h-11 px-6 rounded-xl bg-gradient-to-b from-[#FF3040] to-[#D72638] hover:from-[#ff3f4d] hover:to-[#c92031] text-white text-sm font-semibold shadow-[0_10px_30px_rgba(215,38,56,0.35)] transition-all"
                     >
                       Enter App
@@ -4829,7 +4829,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'swipe' && (
-          <div className="h-full min-h-0 max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-y-auto overscroll-y-contain pr-1">
+          <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-y-auto overscroll-y-contain pr-1">
             {currentCard ? (
               <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
@@ -5089,7 +5089,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="h-full min-h-0 max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-y-auto overscroll-y-contain pr-1">
+          <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-y-auto overscroll-y-contain pr-1">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -5456,7 +5456,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="h-full min-h-0 max-w-6xl mx-auto w-full flex flex-col gap-3 md:gap-4 py-1.5 md:py-3 overflow-y-auto overscroll-y-contain pr-1">
+          <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col gap-3 md:gap-4 py-1.5 md:py-3 overflow-y-auto overscroll-y-contain pr-1">
             <div className="rounded-[22px] border border-white/10 bg-[#11161F] px-4 py-4 sm:px-6 sm:py-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)]">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -5845,7 +5845,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'collection' && (
-          <div className="h-full min-h-0 max-h-full space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pr-1">
+          <div className="min-h-0 space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pr-1">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg sm:text-2xl font-black">My Trading Binder</h2>
@@ -5855,120 +5855,6 @@ export default function CardSwipersLanding() {
                 + Add
               </button>
             </div>
-
-            <details className="rounded-2xl border border-red-400/30 bg-red-950/40 p-4 space-y-4" open={!isNativeCoreApp}>
-              <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-red-200">Verification Center</p>
-                  <h3 className="text-base font-bold">Seller Verification</h3>
-                </div>
-                <span className="text-xs text-red-100">Manage</span>
-              </summary>
-              <div className="mt-4 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs text-red-100 mt-1">Upload your license/ID once. CS support reviews in 1-2 days. You can keep trading while pending.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
-                    Seller: {sellerVerificationStatus}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
-                    Buyer Rating: {currentUserBuyerRating?.count ? `${currentUserBuyerRating.average.toFixed(1)} ★ (${currentUserBuyerRating.count})` : 'No reviews yet'}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
-                    Seller Rating: {currentUserSellerRating?.count ? `${currentUserSellerRating.average.toFixed(1)} ★ (${currentUserSellerRating.count})` : 'No reviews yet'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  value={verificationForm.legalName}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, legalName: event.target.value }))}
-                  placeholder="Legal full name"
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                />
-                <input
-                  type="date"
-                  value={verificationForm.birthDate}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, birthDate: event.target.value }))}
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                />
-                <input
-                  type="tel"
-                  value={verificationForm.phone}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, phone: event.target.value }))}
-                  placeholder="Phone number"
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                />
-                <input
-                  type="email"
-                  value={verificationForm.email}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, email: event.target.value }))}
-                  placeholder="Email"
-                  className="px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <input
-                  ref={verificationDocInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleVerificationDocumentChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => verificationDocInputRef.current?.click()}
-                  className="px-3 py-2 rounded-xl border border-white/20 bg-white/10 text-xs font-semibold"
-                >
-                  {verificationDocFile ? `ID selected: ${verificationDocFile.name}` : 'Upload Driver License / Government ID'}
-                </button>
-                <textarea
-                  rows={2}
-                  value={verificationForm.notes}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, notes: event.target.value }))}
-                  placeholder="Optional notes for CS support"
-                  className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
-                />
-                <label className="flex items-start gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-3 text-left">
-                  <input
-                    type="checkbox"
-                    checked={hasAcceptedVerificationTerms}
-                    onChange={(event) => setHasAcceptedVerificationTerms(event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-white/25 bg-transparent"
-                  />
-                  <span className="text-xs text-red-100 leading-5">
-                    {ESCROW_TERMS_LABEL}{' '}
-                    <button
-                      type="button"
-                      onClick={() => setShowTermsOfService(true)}
-                      className="underline underline-offset-2 text-white"
-                    >
-                      Review Terms
-                    </button>
-                  </span>
-                </label>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  disabled={verificationBusy}
-                  onClick={handleSubmitVerificationRequest}
-                  className="px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#E11D48] text-sm font-semibold disabled:opacity-60"
-                >
-                  {verificationBusy ? 'Submitting...' : 'Submit Verification'}
-                </button>
-                <p className="text-xs text-red-100">Verification reviews are typically completed in 1-2 business days.</p>
-                {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
-                {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
-              </div>
-              </div>
-            </details>
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {myCollection.map((card) => (
@@ -5999,7 +5885,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'messages' && (
-          <div className="space-y-3 py-1.5 h-full min-h-0 max-h-full flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pr-1">
+          <div className="space-y-3 py-1.5 min-h-0 flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pr-1">
             {!activeChat ? (
               <div className="space-y-3">
                 <div>
@@ -6910,22 +6796,6 @@ export default function CardSwipersLanding() {
         <nav className="grid grid-cols-5 items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(10,10,10,0.98),rgba(0,0,0,0.98))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl ring-1 ring-white/8">
           <button
             onClick={() => {
-              navigateToTab('swipe');
-              setActiveChat(null);
-            }}
-            className="group relative flex items-center justify-center"
-            type="button"
-          >
-            <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'swipe' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
-            <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
-              <NavIcon className={`transition-all duration-300 ${currentTab === 'swipe' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><SwipeDeckIcon /></NavIcon>
-              <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'swipe' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Discover</span>
-              <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'swipe' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
-            </span>
-          </button>
-
-          <button
-            onClick={() => {
               navigateToTab('onboarding');
               setActiveChat(null);
             }}
@@ -6942,6 +6812,22 @@ export default function CardSwipersLanding() {
               <NavIcon className={`transition-all duration-300 ${currentTab === 'onboarding' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><CardClubsIcon /></NavIcon>
               <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'onboarding' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Card Clubs</span>
               <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'onboarding' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              navigateToTab('swipe');
+              setActiveChat(null);
+            }}
+            className="group relative flex items-center justify-center"
+            type="button"
+          >
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'swipe' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
+            <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'swipe' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><SwipeDeckIcon /></NavIcon>
+              <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'swipe' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Discover</span>
+              <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'swipe' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
             </span>
           </button>
 
