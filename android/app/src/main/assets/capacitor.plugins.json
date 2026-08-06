@@ -1,1 +1,10 @@
-[]
+[
+	{
+		"pkg": "@capacitor-mlkit/text-recognition",
+		"classpath": "io.capawesome.capacitorjs.plugins.mlkit.textrecognition.TextRecognitionPlugin"
+	},
+	{
+		"pkg": "@capacitor/camera",
+		"classpath": "com.capacitorjs.plugins.camera.CameraPlugin"
+	}
+]

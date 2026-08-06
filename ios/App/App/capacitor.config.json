@@ -5,5 +5,8 @@
 	"server": {
 		"iosScheme": "https"
 	},
-	"packageClassList": []
+	"packageClassList": [
+		"TextRecognitionPlugin",
+		"CAPCameraPlugin"
+	]
 }

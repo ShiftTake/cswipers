@@ -34,7 +34,9 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { auth, db, storage } from './firebase';
+import { fetchPokemonCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
 import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
@@ -507,6 +509,63 @@ const compressImageFile = async (file) => {
   return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
 };
 
+const extractTextLinesFromMlKitResult = (result) => {
+  const collected = [];
+
+  if (typeof result?.text === 'string') {
+    collected.push(...result.text.split(/\r?\n/));
+  }
+
+  if (typeof result?.recognizedText === 'string') {
+    collected.push(...result.recognizedText.split(/\r?\n/));
+  }
+
+  const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
+  blocks.forEach((block) => {
+    if (typeof block?.text === 'string') {
+      collected.push(block.text);
+    }
+    const lines = Array.isArray(block?.lines) ? block.lines : [];
+    lines.forEach((line) => {
+      if (typeof line?.text === 'string') {
+        collected.push(line.text);
+      }
+    });
+  });
+
+  return summarizeOcrLines(Array.from(new Set(collected)));
+};
+
+const runMlKitTextRecognition = async (imagePath) => {
+  const mlkitModule = await import('@capacitor-mlkit/text-recognition');
+  const plugin = mlkitModule?.TextRecognition || mlkitModule?.default || mlkitModule;
+  const methods = [plugin?.recognize, plugin?.recognizeText, plugin?.processImage].filter(
+    (candidate) => typeof candidate === 'function'
+  );
+
+  if (!methods.length) {
+    throw new Error('Text recognition plugin is unavailable. Install and sync @capacitor-mlkit/text-recognition.');
+  }
+
+  const payloads = [{ path: imagePath }, { imagePath }, { filePath: imagePath }];
+  let lastError = null;
+
+  for (const method of methods) {
+    for (const payload of payloads) {
+      try {
+        const result = await method.call(plugin, payload);
+        if (result) {
+          return result;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  throw lastError || new Error('Text recognition failed to return a result.');
+};
+
 const scoreCardForUser = (card, profile, likedCards = [], successfulMatches = []) => {
   let score = 0;
   const interests = (profile?.interests || []).map(normalizeTag);
@@ -598,6 +657,8 @@ export default function CardSwipersLanding() {
   const [newCard, setNewCard] = useState({
     title: '',
     brand: 'Topps',
+    cardNumber: '',
+    setNumber: '',
     gradingCompany: 'Raw (Ungraded)',
     rawCondition: 'Near Mint - Mint',
     grade: '10 Gem Mint',
@@ -614,6 +675,9 @@ export default function CardSwipersLanding() {
   const [postBackImageFile, setPostBackImageFile] = useState(null);
   const [postFrontImagePreview, setPostFrontImagePreview] = useState('');
   const [postBackImagePreview, setPostBackImagePreview] = useState('');
+  const [scannerBusy, setScannerBusy] = useState(false);
+  const [scannerInfo, setScannerInfo] = useState('');
+  const [scannerDetectedLines, setScannerDetectedLines] = useState([]);
   const postFrontImageInputRef = useRef(null);
   const postBackImageInputRef = useRef(null);
   const [activeCardImageSide, setActiveCardImageSide] = useState('front');
@@ -2663,6 +2727,8 @@ export default function CardSwipersLanding() {
     setNewCard({
       title: '',
       brand: 'Topps',
+      cardNumber: '',
+      setNumber: '',
       gradingCompany: 'Raw (Ungraded)',
       rawCondition: 'Near Mint - Mint',
       grade: '10 Gem Mint',
@@ -2713,6 +2779,80 @@ export default function CardSwipersLanding() {
     reader.readAsDataURL(file);
 
     e.target.value = '';
+  };
+
+  const handleScanCardWithOcr = async () => {
+    if (scannerBusy) return;
+
+    setScannerBusy(true);
+    setScannerInfo('Opening camera...');
+    setPostImageError('');
+
+    try {
+      const photo = await Camera.getPhoto({
+        quality: 95,
+        allowEditing: false,
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Camera,
+        correctOrientation: true,
+        width: 2200
+      });
+
+      const recognitionPath = photo?.path || photo?.webPath;
+      if (!recognitionPath) {
+        throw new Error('No image was captured for OCR.');
+      }
+
+      if (photo?.webPath) {
+        setPostFrontImagePreview(photo.webPath);
+        const blob = await fetch(photo.webPath).then((response) => response.blob());
+        const imageFile = new File([blob], `scan-front-${Date.now()}.jpg`, {
+          type: blob.type || 'image/jpeg'
+        });
+        setPostFrontImageFile(imageFile);
+      }
+
+      setScannerInfo('Running on-device OCR...');
+      const ocrResult = await runMlKitTextRecognition(recognitionPath);
+      const lines = extractTextLinesFromMlKitResult(ocrResult);
+      const parsed = parseCardText(lines);
+      setScannerDetectedLines(lines.slice(0, 8));
+
+      if (!parsed.cardName && !parsed.cardNumber) {
+        setScannerInfo('OCR completed, but no confident card title/number was detected. Try better lighting.');
+        return;
+      }
+
+      setScannerInfo('Looking up card metadata...');
+      let metadata = null;
+      try {
+        metadata = await fetchPokemonCardMetadata(parsed);
+      } catch {
+        metadata = null;
+      }
+
+      setNewCard((prev) => ({
+        ...prev,
+        title: metadata?.title || parsed.cardName || prev.title,
+        brand: metadata?.brand || prev.brand,
+        estimatedValue: metadata?.estimatedValue || prev.estimatedValue,
+        cardNumber: metadata?.cardNumber || parsed.cardNumber || prev.cardNumber,
+        setNumber: metadata?.setNumber || parsed.setNumber || prev.setNumber
+      }));
+
+      setPostComposerStep(2);
+      setScannerInfo(
+        metadata
+          ? 'Scan complete. Fields were auto-filled from OCR + card database.'
+          : 'Scan complete. Fields were auto-filled from OCR.'
+      );
+    } catch (error) {
+      console.error('Card scan failed:', error);
+      setPostImageError(error?.message || 'Card scan failed. Please try again.');
+      setScannerInfo('Scanner failed. Check camera permissions and try again.');
+    } finally {
+      setScannerBusy(false);
+    }
   };
 
   const toggleLookingForOption = (option) => {
@@ -5189,6 +5329,33 @@ export default function CardSwipersLanding() {
                     </button>
                   </div>
 
+                  <div className="rounded-[18px] border border-white/10 bg-[#0D1117] px-4 py-4 space-y-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">On-Device OCR Scanner</p>
+                    <div className="relative h-36 sm:h-44 rounded-[14px] bg-black/45 overflow-hidden">
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.12),transparent_70%)]" />
+                      <div className="absolute inset-4 sm:inset-6 rounded-xl border-2 border-dashed border-[#FB7185]/70" />
+                      <div className="absolute inset-x-0 bottom-2 text-center text-[11px] text-white/70 px-2">
+                        Align card inside the frame before capture
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleScanCardWithOcr}
+                        disabled={scannerBusy}
+                        className="px-4 py-2 rounded-full text-xs font-semibold bg-[#E11D48] hover:brightness-110 disabled:opacity-60"
+                      >
+                        {scannerBusy ? 'Scanning...' : 'Scan Card Text'}
+                      </button>
+                      {scannerInfo && <p className="text-xs text-white/70">{scannerInfo}</p>}
+                    </div>
+                    {scannerDetectedLines.length > 0 && (
+                      <p className="text-[11px] text-white/55">
+                        OCR lines: {scannerDetectedLines.join(' • ')}
+                      </p>
+                    )}
+                  </div>
+
                   <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#0D1117] px-4 py-3">
                     <p className="text-xs text-white/70">Step {postComposerStep} of 2: {postComposerStep === 1 ? 'Capture photos' : 'Enter details manually'}</p>
                     {postComposerStep === 1 ? (
@@ -5226,6 +5393,29 @@ export default function CardSwipersLanding() {
                     onChange={(e) => setNewCard({ ...newCard, title: e.target.value })}
                     className="w-full px-4 py-3 text-base font-semibold bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                   />
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">Card Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., 025"
+                      value={newCard.cardNumber || ''}
+                      onChange={(e) => setNewCard({ ...newCard, cardNumber: e.target.value })}
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">Set Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., 182"
+                      value={newCard.setNumber || ''}
+                      onChange={(e) => setNewCard({ ...newCard, setNumber: e.target.value })}
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4">
