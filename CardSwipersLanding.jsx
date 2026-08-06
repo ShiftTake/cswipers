@@ -5646,31 +5646,8 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col gap-3 md:gap-4 py-1.5 md:py-3 overflow-y-auto overscroll-y-contain pr-1">
-            <div className="rounded-[22px] border border-white/10 bg-[#11161F] px-4 py-4 sm:px-6 sm:py-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)]">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">Card Clubs</p>
-                  <h2 className="mt-2 text-[1.28rem] sm:text-[2rem] leading-[1.06] font-black tracking-[-0.04em]">Build Your Club Network</h2>
-                  <p className="mt-2 text-sm text-white/65 max-w-xl">Create clubs, assign agents, moderate posts, and list specific cards with asking prices.</p>
-                </div>
-                <div className="min-w-[220px] sm:min-w-[260px] rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Your Role</p>
-                  <p className="mt-1 text-sm text-white/80">{selectedClubRole ? selectedClubRole.toUpperCase() : 'Select a club'}</p>
-                  <p className="mt-1 text-[11px] text-white/55">Owner can assign agents. Owner and agents can moderate posts.</p>
-                  {isSelectedClubBanned && (
-                    <p className="mt-2 text-[11px] text-red-200">You are blocked from this club.</p>
-                  )}
-                </div>
-              </div>
-              {(clubInfo || clubError) && (
-                <div className={`mt-3 rounded-xl px-3 py-2 text-xs ${clubError ? 'bg-red-900/40 border border-red-400/40 text-red-100' : 'bg-emerald-900/30 border border-emerald-400/40 text-emerald-100'}`}>
-                  {clubError || clubInfo}
-                </div>
-              )}
-            </div>
-
-            <div className="grid xl:grid-cols-[0.92fr_1.08fr] gap-4 md:gap-6 min-h-0 flex-1">
+          <div className="h-full max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-hidden">
+            <div className="grid xl:grid-cols-[0.92fr_1.08fr] gap-3 md:gap-4 min-h-0 flex-1 overflow-hidden">
               <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
                 {/* Search Club bar — full-width pill with magnifying glass */}
                 <div className="relative">
@@ -5687,25 +5664,6 @@ export default function CardSwipersLanding() {
                     placeholder="Search Club"
                     className="w-full pl-9 pr-4 py-3 rounded-full bg-white text-[#111] placeholder-[#aaa] text-sm focus:outline-none shadow-sm"
                   />
-                </div>
-
-                {/* Join by code */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={clubJoinCode}
-                    onChange={(event) => setClubJoinCode(event.target.value.toUpperCase())}
-                    placeholder="Have a join code?"
-                    className="w-full px-3 py-2.5 rounded-xl bg-[#0D1117] border border-white/15 text-sm uppercase focus:outline-none focus:border-white/35"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleJoinClubByCode}
-                    disabled={clubJoinBusy}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 disabled:opacity-55 disabled:cursor-not-allowed whitespace-nowrap"
-                  >
-                    {clubJoinBusy ? 'Joining...' : 'Join'}
-                  </button>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden">
@@ -5755,7 +5713,7 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
+                <div className="flex-1 min-h-0 overflow-hidden space-y-2">
                   {filteredClubs.length === 0 ? (
                     <p className="text-sm text-white/65 px-1 py-2">No clubs match your search yet.</p>
                   ) : (
