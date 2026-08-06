@@ -5699,30 +5699,51 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 space-y-2">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Create Club</p>
-                  <input
-                    type="text"
-                    value={clubDraftName}
-                    onChange={(event) => setClubDraftName(event.target.value)}
-                    placeholder="Club name"
-                    className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                  />
-                  <textarea
-                    value={clubDraftDescription}
-                    onChange={(event) => setClubDraftDescription(event.target.value)}
-                    placeholder="What this club focuses on"
-                    className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
-                    rows={2}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCreateClub}
-                    disabled={clubCreateBusy}
-                    className="w-full px-4 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-55 disabled:cursor-not-allowed"
-                  >
-                    {clubCreateBusy ? 'Creating...' : 'Create Club'}
-                  </button>
+                <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden">
+                  {/* Hero card — square image with overlay text, like the reference */}
+                  <div className="relative w-full aspect-square bg-[#0A0D13] overflow-hidden">
+                    <img
+                      src={authHeroImage}
+                      alt="Create a club"
+                      className="w-full h-full object-cover opacity-80"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                      <div className="w-16 h-16 rounded-2xl bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-xl">
+                        <CardClubsIcon />
+                      </div>
+                      <p className="text-white text-sm font-bold leading-snug mt-1 drop-shadow">
+                        Create a club and run<br />your own card club
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Create Club button sits directly below the square */}
+                  <div className="p-3 space-y-2">
+                    <button
+                      type="button"
+                      onClick={handleCreateClub}
+                      disabled={clubCreateBusy || !clubDraftName.trim()}
+                      className="w-full py-3 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
+                    >
+                      {clubCreateBusy ? 'Creating...' : 'Create Club'}
+                    </button>
+
+                    <input
+                      type="text"
+                      value={clubDraftName}
+                      onChange={(event) => setClubDraftName(event.target.value)}
+                      placeholder="Club name"
+                      className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                    />
+                    <textarea
+                      value={clubDraftDescription}
+                      onChange={(event) => setClubDraftDescription(event.target.value)}
+                      placeholder="What this club focuses on"
+                      className="w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
+                      rows={2}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
