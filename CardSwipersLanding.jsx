@@ -4388,9 +4388,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        className={`flex-1 min-h-0 w-full ${isAuthScreen ? 'h-full overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
       >
-        <div className="max-w-6xl mx-auto w-full flex flex-col min-h-0">
+        <div className={`${isAuthScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full flex flex-col min-h-0`}>
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -4542,7 +4542,17 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'auth' && (
-          <div className={`h-full min-h-0 w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}>
+          <div
+            className={`h-full min-h-full w-full flex flex-col ${isNativeApp ? 'justify-start px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
+            style={
+              isNativeApp
+                ? {
+                    paddingTop: 'max(1.5rem, env(safe-area-inset-top))',
+                    paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
+                  }
+                : undefined
+            }
+          >
             {isNativeApp && (
               <>
                 <img
