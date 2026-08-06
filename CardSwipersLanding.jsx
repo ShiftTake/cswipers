@@ -4596,13 +4596,13 @@ export default function CardSwipersLanding() {
                       'radial-gradient(115% 85% at 8% 8%, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0) 60%), radial-gradient(120% 96% at 92% 20%, rgba(255,227,233,0.68) 0%, rgba(255,227,233,0) 70%), linear-gradient(170deg, rgba(225,7,46,0) 44%, rgba(217,4,41,0.88) 100%)'
                   }}
                 />
-                <div className="relative z-10 w-full max-w-[780px] px-3 shrink-0">
-                  <img src={authHeroImage} alt="CardSwipers mark" className="w-full h-auto max-h-[270px] object-contain" />
+                <div className="relative z-10 w-full max-w-[740px] px-3 shrink-0">
+                  <img src={authHeroImage} alt="CardSwipers mark" className="w-full h-auto max-h-[240px] object-contain" />
                 </div>
               </>
             )}
 
-            <div className={`w-full ${isNativeApp ? 'max-w-[500px] mx-auto' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[34px] p-5' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
+            <div className={`w-full ${isNativeApp ? 'max-w-[480px] mx-auto' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[32px] p-4.5 sm:p-5' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
               <div className="space-y-2 text-center">
                 <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
@@ -5679,8 +5679,8 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'onboarding' && (
           <div className="max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
-            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-3 md:gap-4 min-h-0 flex-1">
-              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0 items-center justify-between">
+            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1">
+              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-between">
                 {/* Search Club bar — full-width pill with magnifying glass */}
                 <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
@@ -5698,7 +5698,7 @@ export default function CardSwipersLanding() {
                   />
                 </div>
 
-                <div className="w-full max-w-[320px] mx-auto flex flex-col items-center gap-3">
+                <div className="w-full max-w-[296px] mx-auto flex flex-col items-center gap-2.5">
                   <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden w-full shadow-[0_14px_28px_rgba(0,0,0,0.24)]">
                     <div className="relative w-full aspect-square bg-[#0A0D13] overflow-hidden">
                       <img
@@ -5709,7 +5709,7 @@ export default function CardSwipersLanding() {
                     </div>
                   </div>
 
-                  <div className="w-14 h-14 rounded-2xl bg-[#22C55E] flex items-center justify-center shadow-[0_8px_20px_rgba(34,197,94,0.35)] border border-white/10">
+                  <div className="w-12 h-12 rounded-2xl bg-[#22C55E] flex items-center justify-center shadow-[0_8px_20px_rgba(34,197,94,0.35)] border border-white/10">
                     <CardClubsIcon />
                   </div>
 
@@ -5717,7 +5717,7 @@ export default function CardSwipersLanding() {
                     type="button"
                     onClick={handleCreateClub}
                     disabled={clubCreateBusy}
-                    className="w-full py-3 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
+                    className="w-full py-2.5 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
                   >
                     {clubCreateBusy ? 'Creating...' : 'Create Club'}
                   </button>
