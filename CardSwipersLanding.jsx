@@ -5678,8 +5678,8 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="h-full max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-hidden">
-            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-3 md:gap-4 min-h-0 flex-1 overflow-hidden">
+          <div className="max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
+            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-3 md:gap-4 min-h-0 flex-1">
               <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0 items-center justify-between">
                 {/* Search Club bar — full-width pill with magnifying glass */}
                 <div className="relative w-full">
@@ -5723,7 +5723,7 @@ export default function CardSwipersLanding() {
                   </button>
                 </div>
 
-                <div className="flex-1 min-h-0 w-full overflow-hidden space-y-2">
+                <div className="flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain space-y-2 pr-1">
                   {filteredClubs.length === 0 ? (
                     <p className="text-sm text-white/65 px-1 py-2">No clubs match your search yet.</p>
                   ) : (
