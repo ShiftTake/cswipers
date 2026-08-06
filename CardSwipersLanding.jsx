@@ -4543,7 +4543,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'auth' && (
           <div
-            className={`h-full min-h-full w-full flex flex-col ${isNativeApp ? 'justify-start px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
+            className={`h-full min-h-full w-full flex flex-col ${isNativeApp ? 'justify-between px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
             style={
               isNativeApp
                 ? {
@@ -4574,13 +4574,13 @@ export default function CardSwipersLanding() {
                       'radial-gradient(115% 85% at 8% 8%, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0) 60%), radial-gradient(120% 96% at 92% 20%, rgba(255,227,233,0.68) 0%, rgba(255,227,233,0) 70%), linear-gradient(170deg, rgba(225,7,46,0) 44%, rgba(217,4,41,0.88) 100%)'
                   }}
                 />
-                <div className="relative z-10 w-full max-w-[780px] px-3 mb-2">
+                <div className="relative z-10 w-full max-w-[780px] px-3 shrink-0">
                   <img src={authHeroImage} alt="CardSwipers mark" className="w-full h-auto max-h-[270px] object-contain" />
                 </div>
               </>
             )}
 
-            <div className={`w-full ${isNativeApp ? 'max-w-[500px]' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[34px] p-6' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
+            <div className={`w-full ${isNativeApp ? 'max-w-[500px] mx-auto' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[34px] p-5' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
               <div className="space-y-2 text-center">
                 <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
@@ -4765,7 +4765,7 @@ export default function CardSwipersLanding() {
               </form>
             </div>
 
-            <div className={`text-center ${isNativeApp ? 'pt-4' : 'pt-7'} relative z-10 ${isNativeApp ? 'text-white' : ''}`}>
+            <div className={`text-center ${isNativeApp ? 'pt-3 shrink-0' : 'pt-7'} relative z-10 ${isNativeApp ? 'text-white' : ''}`}>
               <p className={`${isNativeApp ? 'text-[10px]' : 'text-xs'} mb-2 ${isNativeApp ? 'text-white' : 'text-[#9CA3AF]'}`}>Need help? Contact help@cardswipers.com</p>
               {!isNativeApp && (
                 <button
