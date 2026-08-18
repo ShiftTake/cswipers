@@ -379,6 +379,15 @@ const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community market
 
 const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
+const CLUB_LOGO_PRESETS = [
+  { id: 'club', symbol: '♣', className: 'from-emerald-800 via-green-700 to-emerald-950' },
+  { id: 'diamond', symbol: '♦', className: 'from-blue-900 via-blue-700 to-slate-950' },
+  { id: 'heart', symbol: '♥', className: 'from-red-950 via-red-700 to-orange-950' },
+  { id: 'spade', symbol: '♠', className: 'from-slate-800 via-zinc-600 to-black' },
+  { id: 'jack', symbol: 'J', className: 'from-fuchsia-950 via-purple-800 to-slate-950' },
+  { id: 'queen', symbol: 'Q', className: 'from-cyan-950 via-slate-700 to-slate-950' },
+  { id: 'king', symbol: 'K', className: 'from-amber-950 via-amber-700 to-stone-950' }
+];
 const normalizeClubRole = (role) => {
   const normalized = String(role || 'member').toLowerCase();
   if (normalized === 'owner' || normalized === 'agent') return normalized;
@@ -731,6 +740,11 @@ export default function CardSwipersLanding() {
   const [clubJoinCode, setClubJoinCode] = useState('');
   const [clubDraftName, setClubDraftName] = useState('');
   const [clubDraftDescription, setClubDraftDescription] = useState('');
+  const [clubDraftLogoId, setClubDraftLogoId] = useState('');
+  const [clubDraftLogoFile, setClubDraftLogoFile] = useState(null);
+  const [clubDraftLogoPreview, setClubDraftLogoPreview] = useState('');
+  const [clubDraftError, setClubDraftError] = useState('');
+  const clubLogoInputRef = useRef(null);
   const [clubCreateBusy, setClubCreateBusy] = useState(false);
   const [clubJoinBusy, setClubJoinBusy] = useState(false);
   const [clubActionBusyId, setClubActionBusyId] = useState('');
@@ -3513,20 +3527,98 @@ export default function CardSwipersLanding() {
     setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
   };
 
+  const resetClubDraft = () => {
+    if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
+    setClubDraftName('');
+    setClubDraftDescription('');
+    setClubDraftLogoId('');
+    setClubDraftLogoFile(null);
+    setClubDraftLogoPreview('');
+    setClubDraftError('');
+  };
+
+  const openCreateClub = () => {
+    resetClubDraft();
+    setClubError('');
+    setClubInfo('');
+    setCurrentTab('create-club');
+  };
+
+  const handleClubLogoFileChange = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setClubDraftError('Choose an image file for the club logo.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setClubDraftError('Club logos must be 5 MB or smaller.');
+      return;
+    }
+
+    const image = new Image();
+    const previewUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      if (image.width !== 640 || image.height !== 640) {
+        URL.revokeObjectURL(previewUrl);
+        setClubDraftError('Custom club logos must be exactly 640 x 640 pixels.');
+        return;
+      }
+      if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
+      setClubDraftLogoFile(file);
+      setClubDraftLogoPreview(previewUrl);
+      setClubDraftLogoId('custom');
+      setClubDraftError('');
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(previewUrl);
+      setClubDraftError('That image could not be read. Choose another file.');
+    };
+    image.src = previewUrl;
+  };
+
   const handleCreateClub = async () => {
     if (!firebaseUser || clubCreateBusy) return;
     const ownerName = currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector';
-    const generatedClubName = `${ownerName.split(' ')[0] || 'My'} Club`;
+    const clubName = clubDraftName.trim();
+    if (clubName.length < 3 || clubName.length > 20) {
+      setClubDraftError('Club names must be between 3 and 20 characters.');
+      return;
+    }
+    if (!clubDraftLogoId) {
+      setClubDraftError('Choose a club logo before confirming.');
+      return;
+    }
 
     setClubCreateBusy(true);
     setClubError('');
+    setClubDraftError('');
     setClubInfo('');
 
     try {
+      let logoUrl = '';
+      if (clubDraftLogoId === 'custom' && clubDraftLogoFile) {
+        const safeFileName = clubDraftLogoFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const logoRef = ref(storage, `club-logos/${firebaseUser.uid}/${Date.now()}-${safeFileName}`);
+        await withTimeout(uploadBytes(logoRef, clubDraftLogoFile), 15000, 'Club logo upload timed out');
+        logoUrl = await withTimeout(getDownloadURL(logoRef), 12000, 'Club logo URL fetch timed out');
+      }
+
+      let clubCode = buildClubCode();
+      for (let attempts = 0; attempts < 5; attempts += 1) {
+        const existing = await getDocs(query(collection(db, 'clubs'), where('code', '==', clubCode), limit(1)));
+        if (existing.empty) break;
+        clubCode = buildClubCode();
+      }
+
       const clubRef = await addDoc(collection(db, 'clubs'), {
-        name: generatedClubName,
-        description: 'Club built for card trade nights and member credit management.',
-        code: buildClubCode(),
+        name: clubName,
+        description: clubDraftDescription.trim() || 'Club built for card trade nights and member credit management.',
+        code: clubCode,
+        logoType: clubDraftLogoId === 'custom' ? 'custom' : 'preset',
+        logoPresetId: clubDraftLogoId === 'custom' ? null : clubDraftLogoId,
+        logoUrl,
         accessMode: 'private',
         creditHierarchy: 'owner→agent→member',
         ownerUid: firebaseUser.uid,
@@ -3577,9 +3669,11 @@ export default function CardSwipersLanding() {
 
       setSelectedClubId(clubRef.id);
       setClubInfo('Club created. Owner-led credit hierarchy is active and agents can be assigned for trade nights.');
+      resetClubDraft();
+      setCurrentTab('onboarding');
     } catch (error) {
       console.error('Failed creating club:', error);
-      setClubError('Could not create club right now. Please try again.');
+      setClubDraftError('Could not create club right now. Please try again.');
     } finally {
       setClubCreateBusy(false);
     }
@@ -4313,8 +4407,9 @@ export default function CardSwipersLanding() {
 
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
-  const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
-  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen;
+  const isCreateClubScreen = currentTab === 'create-club';
+  const isCoreAppScreen = !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
+  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
   const canAccessAdmin = hasAdminAccess && !isNativeApp;
   const totalUsers = adminUsers.length;
@@ -4445,7 +4540,7 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
-      {(isAuthenticated || (isLandingScreen && !isNativeApp)) && (
+      {!isCreateClubScreen && (isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header
         className="bg-black/95 border-white/10 backdrop-blur-md border-b sticky top-0 z-50"
         style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: '0.35rem' } : undefined}
@@ -5859,6 +5954,111 @@ export default function CardSwipersLanding() {
           </div>
         )}
 
+        {currentTab === 'create-club' && (
+          <div className="min-h-full w-full bg-white text-[#191919] overflow-y-auto">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleCreateClub();
+              }}
+              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-6 pb-8 pt-10 sm:px-10"
+            >
+              <div className="relative flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetClubDraft();
+                    setCurrentTab('onboarding');
+                  }}
+                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full text-[#202020] hover:bg-black/5"
+                  aria-label="Back to clubs"
+                >
+                  <span className="text-5xl font-light leading-none">‹</span>
+                </button>
+                <h1 className="text-3xl font-bold tracking-0">Create Club</h1>
+              </div>
+
+              <div className="mt-14">
+                <label htmlFor="club-name" className="block text-xl font-medium">Club Name</label>
+                <input
+                  id="club-name"
+                  type="text"
+                  value={clubDraftName}
+                  onChange={(event) => {
+                    setClubDraftName(event.target.value.slice(0, 20));
+                    setClubDraftError('');
+                  }}
+                  placeholder="Please enter your club name."
+                  maxLength={20}
+                  autoFocus
+                  className="mt-4 h-[94px] w-full rounded-2xl border border-[#B9C2C9] px-6 text-xl text-[#202020] placeholder:text-[#89919D] focus:border-[#16C779] focus:outline-none focus:ring-2 focus:ring-[#16C779]/20"
+                />
+                <p className="mt-2 text-right text-xs text-[#7B8490]">{clubDraftName.trim().length}/20</p>
+              </div>
+
+              <div className="mt-8">
+                <p className="text-xl font-medium">Club Logo</p>
+                <input
+                  ref={clubLogoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleClubLogoFileChange}
+                  className="hidden"
+                />
+                <div className="mt-5 grid grid-cols-3 gap-4 sm:gap-5">
+                  <button
+                    type="button"
+                    onClick={() => clubLogoInputRef.current?.click()}
+                    className={`aspect-square rounded-2xl border-2 border-dashed p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#16C779] bg-[#F1FFF7]' : 'border-[#B9C2C9] bg-white hover:border-[#7B8490]'}`}
+                  >
+                    {clubDraftLogoPreview ? (
+                      <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
+                    ) : (
+                      <span className="flex h-full flex-col items-center justify-center text-center text-[#404040]">
+                        <span className="text-4xl leading-none">↑</span>
+                        <span className="mt-3 text-sm font-medium">Add Image</span>
+                        <span className="mt-1 text-xs text-[#69717B]">640 x 640</span>
+                      </span>
+                    )}
+                  </button>
+                  {CLUB_LOGO_PRESETS.map((preset) => {
+                    const selected = clubDraftLogoId === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
+                          setClubDraftLogoPreview('');
+                          setClubDraftLogoFile(null);
+                          setClubDraftLogoId(preset.id);
+                          setClubDraftError('');
+                        }}
+                        className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#16C779] ring-2 ring-[#16C779]' : 'border-[#CFD6DA]'}`}
+                        aria-label={`Use ${preset.id} club logo`}
+                      >
+                        <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
+                        <span className="relative flex h-full items-center justify-center text-[5.4rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)]">{preset.symbol}</span>
+                        {selected && <span className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-[#16C779] text-xl font-bold text-white">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {clubDraftError && <p className="mt-5 text-sm font-medium text-[#D91B3C]">{clubDraftError}</p>}
+
+              <button
+                type="submit"
+                disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
+                className="mt-auto min-h-16 w-full rounded-2xl bg-[#16C779] px-6 py-4 text-2xl font-bold text-white shadow-[0_8px_18px_rgba(22,199,121,0.22)] transition-colors hover:bg-[#10AD65] disabled:bg-[#D3E9E0] disabled:text-white/70 disabled:shadow-none"
+              >
+                {clubCreateBusy ? 'Creating...' : 'Confirm'}
+              </button>
+            </form>
+          </div>
+        )}
+
         {currentTab === 'onboarding' && (
           <div className="max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
             <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1">
@@ -5897,11 +6097,10 @@ export default function CardSwipersLanding() {
 
                   <button
                     type="button"
-                    onClick={handleCreateClub}
-                    disabled={clubCreateBusy}
+                    onClick={openCreateClub}
                     className="w-full py-2.5 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
                   >
-                    {clubCreateBusy ? 'Creating...' : 'Create Club'}
+                    Create Club
                   </button>
                 </div>
 
@@ -5911,6 +6110,7 @@ export default function CardSwipersLanding() {
                   ) : (
                     filteredClubs.map((club) => {
                       const isActive = club.id === selectedClubId;
+                      const logoPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === club.logoPresetId);
                       return (
                         <button
                           key={club.id}
@@ -5919,9 +6119,16 @@ export default function CardSwipersLanding() {
                           className={`w-full text-left rounded-2xl border px-3 py-3 transition-colors ${isActive ? 'border-[#FB7185]/70 bg-[#25111A]' : 'border-white/10 bg-[#0D1117] hover:border-white/25'}`}
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-bold text-white">{club.name || 'Untitled Club'}</p>
-                              <p className="text-[11px] text-white/55 mt-1">{club.description || 'No description yet.'}</p>
+                            <div className="flex min-w-0 gap-3">
+                              {club.logoUrl ? (
+                                <img src={club.logoUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />
+                              ) : logoPreset ? (
+                                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${logoPreset.className} text-2xl font-bold text-white`}>{logoPreset.symbol}</span>
+                              ) : null}
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-white">{club.name || 'Untitled Club'}</p>
+                                <p className="mt-1 text-[11px] text-white/55">{club.description || 'No description yet.'}</p>
+                              </div>
                             </div>
                             <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{club.code || '------'}</span>
                           </div>
