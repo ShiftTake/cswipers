@@ -176,6 +176,19 @@ service cloud.firestore {
         allow delete: if isAdmin() || isClubModerator(clubId) || (signedIn() && memberId == request.auth.uid);
       }
 
+      match /events/{eventId} {
+        allow read: if isAdmin() || (isClubMember(clubId) && !isClubBanned(clubId));
+        allow create: if isClubModerator(clubId) &&
+          request.resource.data.createdByUid == request.auth.uid;
+        allow update, delete: if isAdmin() || isClubModerator(clubId);
+
+        match /registrations/{memberId} {
+          allow read: if isAdmin() || isClubModerator(clubId) ||
+            (isClubMember(clubId) && memberId == request.auth.uid);
+          allow write: if false;
+        }
+      }
+
       match /posts/{postId} {
         allow read: if isAdmin() || (isClubMember(clubId) && !isClubBanned(clubId));
         allow create: if signedIn() &&

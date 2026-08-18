@@ -37,6 +37,14 @@
         "function": "createOrderPaymentIntent"
       },
       {
+        "source": "/api/clubs/allocate-credits",
+        "function": "allocateClubCredits"
+      },
+      {
+        "source": "/api/clubs/register-trade-night",
+        "function": "registerTradeNight"
+      },
+      {
         "source": "/release-seller-funds",
         "function": "releaseSellerFunds"
       },

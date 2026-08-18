@@ -379,6 +379,15 @@ const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community market
 
 const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
+const normalizeClubRole = (role) => {
+  const normalized = String(role || 'member').toLowerCase();
+  if (normalized === 'owner' || normalized === 'agent') return normalized;
+  return 'member';
+};
+const getClubAccessMode = (clubData = {}) => {
+  const accessMode = String(clubData.accessMode || clubData.visibility || 'private').toLowerCase();
+  return accessMode === 'public' || accessMode === 'auto-join' ? 'public' : 'private';
+};
 
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
 
@@ -731,6 +740,7 @@ export default function CardSwipersLanding() {
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
+  const [selectedClubEvents, setSelectedClubEvents] = useState([]);
   const [selectedClubPosts, setSelectedClubPosts] = useState([]);
   const [selectedClubReports, setSelectedClubReports] = useState([]);
   const [selectedClubBanRecord, setSelectedClubBanRecord] = useState(null);
@@ -741,6 +751,7 @@ export default function CardSwipersLanding() {
     imageUrl: ''
   });
   const [clubPostBusy, setClubPostBusy] = useState(false);
+  const [clubEventBusyId, setClubEventBusyId] = useState('');
   const [clubReportBusy, setClubReportBusy] = useState(false);
   const [chatReportBusy, setChatReportBusy] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
@@ -1661,6 +1672,7 @@ export default function CardSwipersLanding() {
   useEffect(() => {
     if (!selectedClubId) {
       setSelectedClubMembers([]);
+      setSelectedClubEvents([]);
       setSelectedClubPosts([]);
       setSelectedClubReports([]);
       setSelectedClubBanRecord(null);
@@ -1670,6 +1682,7 @@ export default function CardSwipersLanding() {
     }
 
     const membersRef = collection(doc(db, 'clubs', selectedClubId), 'members');
+    const eventsRef = collection(doc(db, 'clubs', selectedClubId), 'events');
     const postsRef = collection(doc(db, 'clubs', selectedClubId), 'posts');
     const reportsRef = collection(doc(db, 'clubs', selectedClubId), 'reports');
 
@@ -1699,6 +1712,16 @@ export default function CardSwipersLanding() {
       }
     );
 
+    const unsubEvents = onSnapshot(
+      query(eventsRef, orderBy('scheduledFor', 'asc'), limit(20)),
+      (snapshot) => {
+        setSelectedClubEvents(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        console.error('Failed loading club events:', error);
+      }
+    );
+
     const unsubReports = onSnapshot(
       query(reportsRef, orderBy('createdAt', 'desc'), limit(200)),
       (snapshot) => {
@@ -1724,6 +1747,7 @@ export default function CardSwipersLanding() {
 
     return () => {
       unsubMembers();
+      unsubEvents();
       unsubPosts();
       unsubReports();
       unsubBan();
@@ -3501,13 +3525,41 @@ export default function CardSwipersLanding() {
     try {
       const clubRef = await addDoc(collection(db, 'clubs'), {
         name: generatedClubName,
-        description: '',
+        description: 'Club built for card trade nights and member credit management.',
         code: buildClubCode(),
+        accessMode: 'private',
+        creditHierarchy: 'owner→agent→member',
         ownerUid: firebaseUser.uid,
         ownerEmail: firebaseUser.email || '',
         ownerName,
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        memberCount: 1,
+        activeTables: 0,
+        totalEscrow: 0,
+        creditLedger: {
+          ownerUid: firebaseUser.uid,
+          ownerBalance: 'infinite',
+          agentQuotas: {},
+          memberBalances: {
+            [firebaseUser.uid]: {
+              role: 'owner',
+              credits: 'infinite',
+              creditLimit: 'infinite',
+              escrowHeld: 0,
+              status: 'active'
+            }
+          },
+          escrowVault: 0
+        },
+        defaultEventConfig: {
+          buyInCredits: 50,
+          guaranteedPool: 1000,
+          registrationWindowMinutes: 30,
+          roundMinutes: 10,
+          capLimit: 64,
+          status: 'upcoming'
+        }
       });
 
       await setDoc(doc(clubRef, 'members', firebaseUser.uid), {
@@ -3516,11 +3568,15 @@ export default function CardSwipersLanding() {
         email: firebaseUser.email || '',
         role: 'owner',
         joinedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        credits: 'infinite',
+        creditLimit: 'infinite',
+        escrowHeld: 0,
+        status: 'active'
       }, { merge: true });
 
       setSelectedClubId(clubRef.id);
-      setClubInfo('Club created. You are the owner and can assign agents now.');
+      setClubInfo('Club created. Owner-led credit hierarchy is active and agents can be assigned for trade nights.');
     } catch (error) {
       console.error('Failed creating club:', error);
       setClubError('Could not create club right now. Please try again.');
@@ -3549,29 +3605,126 @@ export default function CardSwipersLanding() {
       }
 
       const clubDoc = clubSnapshot.docs[0];
+      const clubData = clubDoc.data();
+      const clubAccessMode = getClubAccessMode(clubData);
       const banSnapshot = await getDoc(doc(clubDoc.ref, 'bans', firebaseUser.uid));
       if (banSnapshot.exists()) {
         setClubError('You have been blocked from this club by its moderators.');
         return;
       }
 
-      await setDoc(doc(clubDoc.ref, 'members', firebaseUser.uid), {
+      const memberProfile = {
         uid: firebaseUser.uid,
         displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
         email: firebaseUser.email || '',
         role: 'member',
         joinedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+        updatedAt: serverTimestamp(),
+        credits: 0,
+        creditLimit: 0,
+        escrowHeld: 0,
+        status: 'active'
+      };
+
+      if (clubAccessMode === 'public') {
+        await setDoc(doc(clubDoc.ref, 'members', firebaseUser.uid), memberProfile, { merge: true });
+
+        setSelectedClubId(clubDoc.id);
+        setClubJoinCode('');
+        setClubInfo(`Joined ${clubData?.name || 'club'}. Credits are tied to the club ledger and trade-night escrow rules.`);
+        return;
+      }
+
+      await addDoc(collection(db, 'clubs', clubDoc.id, 'joinRequests'), {
+        userId: firebaseUser.uid,
+        userName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        role: 'member',
+        status: 'pending',
+        requestedAt: serverTimestamp(),
+        creditRequest: 0,
+        requestType: 'member-join'
+      });
 
       setSelectedClubId(clubDoc.id);
       setClubJoinCode('');
-      setClubInfo(`Joined ${clubDoc.data()?.name || 'club'}.`);
+      setClubInfo(`Private club request sent to ${clubData?.name || 'the club owner'}. Awaiting approval.`);
     } catch (error) {
       console.error('Failed joining club:', error);
       setClubError('Unable to join that club right now.');
     } finally {
       setClubJoinBusy(false);
+    }
+  };
+
+  const handleCreateTradeNight = async () => {
+    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubEventBusyId) return;
+
+    setClubEventBusyId('create');
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      const config = selectedClub?.defaultEventConfig || {};
+      const buyInCredits = Math.max(1, Number(config.buyInCredits || 50));
+      const capLimit = Math.max(2, Number(config.capLimit || 64));
+      const guaranteedPool = Math.max(0, Number(config.guaranteedPool || 0));
+      const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      await addDoc(collection(db, 'clubs', selectedClubId, 'events'), {
+        title: 'Trade Night',
+        status: 'registration',
+        format: 'mtt-trade-night',
+        buyInCredits,
+        guaranteedPool,
+        capLimit,
+        currentRegistrations: 0,
+        escrowTotal: 0,
+        roundMinutes: Math.max(1, Number(config.roundMinutes || 10)),
+        scheduledFor,
+        createdByUid: firebaseUser.uid,
+        createdByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Trade night opened for registration. Buy-ins will be held in club escrow.');
+    } catch (error) {
+      console.error('Failed creating trade night:', error);
+      setClubError('Could not create the trade night.');
+    } finally {
+      setClubEventBusyId('');
+    }
+  };
+
+  const handleRegisterForTradeNight = async (event) => {
+    if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
+    if (!selectedClubMembership || isSelectedClubBanned) {
+      setClubError('Join the club before registering for a trade night.');
+      return;
+    }
+
+    setClubEventBusyId(`register-${event.id}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      const response = await fetch('/api/clubs/register-trade-night', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Registration could not be completed.');
+      }
+      setClubInfo(`Registered for ${event.title || 'Trade Night'}. ${payload.buyInCredits} credits are held in escrow.`);
+    } catch (error) {
+      console.error('Failed registering for trade night:', error);
+      setClubError(error.message || 'Could not register for this trade night.');
+    } finally {
+      setClubEventBusyId('');
     }
   };
 
@@ -3702,6 +3855,35 @@ export default function CardSwipersLanding() {
     } catch (error) {
       console.error('Failed updating club role:', error);
       setClubError('Could not update that member role.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleAllocateClubCredits = async (member) => {
+    if (!firebaseUser || !selectedClubId || !member?.uid || !canModerateClubPosts) return;
+    const creditsInput = window.prompt(`Credits to assign to ${member.displayName || member.email || 'this member'}:`, '50');
+    const credits = Math.floor(Number(creditsInput));
+    if (!Number.isFinite(credits) || credits <= 0) return;
+
+    setClubActionBusyId(`credits-${member.uid}`);
+    setClubError('');
+    setClubInfo('');
+    try {
+      const response = await fetch('/api/clubs/allocate-credits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({ clubId: selectedClubId, memberId: member.uid, credits })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Credit allocation failed.');
+      setClubInfo(`${credits} credits assigned to ${member.displayName || member.email || 'member'}.`);
+    } catch (error) {
+      console.error('Failed allocating club credits:', error);
+      setClubError(error.message || 'Could not allocate credits.');
     } finally {
       setClubActionBusyId('');
     }
@@ -5764,6 +5946,54 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
+                    <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Trade Nights</p>
+                          <p className="mt-1 text-xs text-white/60">Buy-ins are held in escrow until the event payout is verified.</p>
+                        </div>
+                        {canModerateClubPosts && (
+                          <button
+                            type="button"
+                            onClick={handleCreateTradeNight}
+                            disabled={Boolean(clubEventBusyId)}
+                            className="px-3 py-2 rounded-lg text-xs font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed"
+                          >
+                            {clubEventBusyId === 'create' ? 'Opening...' : 'Open Trade Night'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {selectedClubEvents.length === 0 ? (
+                          <p className="text-sm text-white/60">No trade nights are open yet.</p>
+                        ) : (
+                          selectedClubEvents.map((event) => {
+                            const eventDate = toDateValue(event.scheduledFor);
+                            const registrationOpen = String(event.status || '').toLowerCase() === 'registration';
+                            return (
+                              <div key={event.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3 flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-bold">{event.title || 'Trade Night'}</p>
+                                  <p className="mt-1 text-[11px] text-white/55">
+                                    {event.buyInCredits || 0} credits · {event.currentRegistrations || 0}/{event.capLimit || '∞'} registered
+                                    {eventDate ? ` · ${eventDate.toLocaleDateString()}` : ''}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRegisterForTradeNight(event)}
+                                  disabled={!registrationOpen || !selectedClubMembership || isSelectedClubBanned || Boolean(clubEventBusyId)}
+                                  className="px-3 py-2 rounded-lg text-xs font-bold bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-55 disabled:cursor-not-allowed"
+                                >
+                                  {clubEventBusyId === `register-${event.id}` ? 'Registering...' : registrationOpen ? 'Register' : String(event.status || 'closed')}
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </section>
+
                     <div className="grid lg:grid-cols-2 gap-3 min-h-0">
                       <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col">
                         <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
@@ -5777,6 +6007,7 @@ export default function CardSwipersLanding() {
                                   <div className="min-w-0">
                                     <p className="text-sm font-semibold truncate">{member.displayName || member.email || member.uid}</p>
                                     <p className="text-[11px] text-white/55 truncate">{member.email || member.uid}</p>
+                                    <p className="text-[11px] text-[#86EFAC] mt-1">{member.credits === 'infinite' ? 'Unlimited credits' : `${Number(member.credits || 0)} credits`} · {Number(member.escrowHeld || 0)} held</p>
                                   </div>
                                   <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{member.role || 'member'}</span>
                                 </div>
@@ -5810,6 +6041,16 @@ export default function CardSwipersLanding() {
                                         className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
                                       >
                                         Remove
+                                      </button>
+                                    )}
+                                    {member.role !== 'owner' && canModerateClubPosts && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAllocateClubCredits(member)}
+                                        disabled={clubActionBusyId === `credits-${member.uid}` || (selectedClubRole === 'agent' && member.role !== 'member')}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-emerald-500/15 border border-emerald-400/30 text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-60"
+                                      >
+                                        {clubActionBusyId === `credits-${member.uid}` ? 'Assigning...' : 'Add Credits'}
                                       </button>
                                     )}
                                     {member.role !== 'owner' && canModerateClubPosts && (

@@ -781,6 +781,158 @@ exports.resolveAdminDispute = onRequest({ secrets: [stripeSecret] }, async (req,
   }
 });
 
+exports.allocateClubCredits = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    const memberId = String(req.body?.memberId || '').trim();
+    const credits = Math.floor(Number(req.body?.credits));
+    if (!clubId || !memberId || !Number.isFinite(credits) || credits <= 0) {
+      throw new Error('clubId, memberId, and a positive credit amount are required.');
+    }
+
+    const result = await db.runTransaction(async (transaction) => {
+      const clubRef = db.collection('clubs').doc(clubId);
+      const actorRef = clubRef.collection('members').doc(user.uid);
+      const memberRef = clubRef.collection('members').doc(memberId);
+      const [clubSnap, actorSnap, memberSnap] = await Promise.all([
+        transaction.get(clubRef),
+        transaction.get(actorRef),
+        transaction.get(memberRef)
+      ]);
+      if (!clubSnap.exists || !actorSnap.exists || !memberSnap.exists) {
+        throw new Error('Club or member record was not found.');
+      }
+
+      const actor = actorSnap.data();
+      const member = memberSnap.data();
+      const actorRole = String(actor.role || '').toLowerCase();
+      const memberRole = String(member.role || '').toLowerCase();
+      if (!['owner', 'agent'].includes(actorRole)) {
+        throw new Error('Only club owners and agents can distribute credits.');
+      }
+      if (actorRole === 'agent' && memberRole !== 'member') {
+        throw new Error('Agents can distribute credits only to members.');
+      }
+      if (memberRole === 'owner') {
+        throw new Error('Credits cannot be allocated to the owner account.');
+      }
+
+      const actorBalance = actor.credits === 'infinite' ? Infinity : Number(actor.credits || 0);
+      if (actorBalance < credits) {
+        throw new Error('Insufficient available credits.');
+      }
+
+      const memberCredits = Number(member.credits || 0) + credits;
+      const actorUpdate = actorBalance === Infinity ? {} : { credits: actorBalance - credits, updatedAt: serverTimestamp() };
+      const club = clubSnap.data();
+      const ledger = club.creditLedger || {};
+      const memberBalances = { ...(ledger.memberBalances || {}) };
+      if (actorBalance !== Infinity) {
+        memberBalances[user.uid] = { ...(memberBalances[user.uid] || {}), role: actorRole, credits: actorBalance - credits };
+      }
+      memberBalances[memberId] = { ...(memberBalances[memberId] || {}), role: memberRole, credits: memberCredits };
+
+      if (Object.keys(actorUpdate).length) transaction.update(actorRef, actorUpdate);
+      transaction.update(memberRef, { credits: memberCredits, updatedAt: serverTimestamp() });
+      transaction.update(clubRef, {
+        creditLedger: { ...ledger, memberBalances },
+        updatedAt: serverTimestamp()
+      });
+      return { recipientCredits: memberCredits };
+    });
+
+    return sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    console.error('allocateClubCredits failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Could not allocate club credits.' });
+  }
+});
+
+exports.registerTradeNight = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    const eventId = String(req.body?.eventId || '').trim();
+    if (!clubId || !eventId) throw new Error('clubId and eventId are required.');
+
+    const result = await db.runTransaction(async (transaction) => {
+      const clubRef = db.collection('clubs').doc(clubId);
+      const memberRef = clubRef.collection('members').doc(user.uid);
+      const eventRef = clubRef.collection('events').doc(eventId);
+      const registrationRef = eventRef.collection('registrations').doc(user.uid);
+      const [clubSnap, memberSnap, eventSnap, registrationSnap] = await Promise.all([
+        transaction.get(clubRef),
+        transaction.get(memberRef),
+        transaction.get(eventRef),
+        transaction.get(registrationRef)
+      ]);
+      if (!clubSnap.exists || !memberSnap.exists || !eventSnap.exists) throw new Error('Club, membership, or event was not found.');
+      if (registrationSnap.exists) throw new Error('You are already registered for this trade night.');
+
+      const member = memberSnap.data();
+      const event = eventSnap.data();
+      if (member.status && member.status !== 'active') throw new Error('Your club membership is not active.');
+      if (String(event.status || '').toLowerCase() !== 'registration') throw new Error('Registration is closed for this trade night.');
+      const buyInCredits = Math.max(1, Math.floor(Number(event.buyInCredits || 0)));
+      const currentRegistrations = Number(event.currentRegistrations || 0);
+      const capLimit = Number(event.capLimit || 0);
+      if (capLimit > 0 && currentRegistrations >= capLimit) throw new Error('This trade night is full.');
+
+      const currentCredits = member.credits === 'infinite' ? Infinity : Number(member.credits || 0);
+      if (currentCredits < buyInCredits) throw new Error(`You need ${buyInCredits} available credits to register.`);
+      const remainingCredits = currentCredits === Infinity ? 'infinite' : currentCredits - buyInCredits;
+      const heldEscrow = Number(member.escrowHeld || 0) + buyInCredits;
+      const club = clubSnap.data();
+      const ledger = club.creditLedger || {};
+      const memberBalances = { ...(ledger.memberBalances || {}) };
+      memberBalances[user.uid] = {
+        ...(memberBalances[user.uid] || {}),
+        role: member.role || 'member',
+        credits: remainingCredits,
+        escrowHeld: heldEscrow,
+        status: 'active'
+      };
+
+      transaction.update(memberRef, { credits: remainingCredits, escrowHeld: heldEscrow, updatedAt: serverTimestamp() });
+      transaction.update(eventRef, {
+        currentRegistrations: currentRegistrations + 1,
+        escrowTotal: Number(event.escrowTotal || 0) + buyInCredits,
+        updatedAt: serverTimestamp()
+      });
+      transaction.set(registrationRef, {
+        userId: user.uid,
+        displayName: member.displayName || user.name || user.email || 'Collector',
+        status: 'registered',
+        buyInCredits,
+        escrowStatus: 'held',
+        registeredAt: serverTimestamp()
+      });
+      transaction.update(clubRef, {
+        totalEscrow: Number(club.totalEscrow || 0) + buyInCredits,
+        creditLedger: { ...ledger, memberBalances, escrowVault: Number(ledger.escrowVault || 0) + buyInCredits },
+        updatedAt: serverTimestamp()
+      });
+      return { buyInCredits, remainingCredits };
+    });
+
+    return sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    console.error('registerTradeNight failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Could not register for trade night.' });
+  }
+});
+
 exports.autoReleaseDeliveredOrders = onSchedule({ schedule: 'every 15 minutes', secrets: [stripeSecret] }, async () => {
   const cutoff = nowTimestamp();
   const snapshot = await db
