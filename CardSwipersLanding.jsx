@@ -4687,9 +4687,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full ${isAuthScreen ? 'h-full overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
+        className={`flex-1 min-h-0 w-full ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
       >
-        <div className={`${isAuthScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full flex flex-col min-h-0`}>
+        <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full flex flex-col min-h-0`}>
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -5955,13 +5955,13 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="min-h-full w-full bg-white text-[#191919] overflow-y-auto">
+          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-white text-[#191919] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <form
               onSubmit={(event) => {
                 event.preventDefault();
                 handleCreateClub();
               }}
-              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-6 pb-8 pt-10 sm:px-10"
+              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
             >
               <div className="relative flex items-center justify-center">
                 <button
@@ -5978,7 +5978,7 @@ export default function CardSwipersLanding() {
                 <h1 className="text-3xl font-bold tracking-0">Create Club</h1>
               </div>
 
-              <div className="mt-14">
+              <div className="mt-8 sm:mt-14">
                 <label htmlFor="club-name" className="block text-xl font-medium">Club Name</label>
                 <input
                   id="club-name"
@@ -5991,7 +5991,7 @@ export default function CardSwipersLanding() {
                   placeholder="Please enter your club name."
                   maxLength={20}
                   autoFocus
-                  className="mt-4 h-[94px] w-full rounded-2xl border border-[#B9C2C9] px-6 text-xl text-[#202020] placeholder:text-[#89919D] focus:border-[#16C779] focus:outline-none focus:ring-2 focus:ring-[#16C779]/20"
+                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#B9C2C9] px-5 text-lg text-[#202020] placeholder:text-[#89919D] focus:border-[#16C779] focus:outline-none focus:ring-2 focus:ring-[#16C779]/20 sm:h-[94px] sm:px-6 sm:text-xl"
                 />
                 <p className="mt-2 text-right text-xs text-[#7B8490]">{clubDraftName.trim().length}/20</p>
               </div>
@@ -6005,7 +6005,7 @@ export default function CardSwipersLanding() {
                   onChange={handleClubLogoFileChange}
                   className="hidden"
                 />
-                <div className="mt-5 grid grid-cols-3 gap-4 sm:gap-5">
+                <div className="mt-4 grid grid-cols-3 gap-3 sm:mt-5 sm:gap-5">
                   <button
                     type="button"
                     onClick={() => clubLogoInputRef.current?.click()}
@@ -6038,8 +6038,8 @@ export default function CardSwipersLanding() {
                         aria-label={`Use ${preset.id} club logo`}
                       >
                         <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
-                        <span className="relative flex h-full items-center justify-center text-[5.4rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)]">{preset.symbol}</span>
-                        {selected && <span className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-[#16C779] text-xl font-bold text-white">✓</span>}
+                        <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
+                        {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#16C779] text-base font-bold text-white sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
                       </button>
                     );
                   })}
@@ -6051,7 +6051,7 @@ export default function CardSwipersLanding() {
               <button
                 type="submit"
                 disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
-                className="mt-auto min-h-16 w-full rounded-2xl bg-[#16C779] px-6 py-4 text-2xl font-bold text-white shadow-[0_8px_18px_rgba(22,199,121,0.22)] transition-colors hover:bg-[#10AD65] disabled:bg-[#D3E9E0] disabled:text-white/70 disabled:shadow-none"
+                className="mt-8 min-h-14 w-full shrink-0 rounded-2xl bg-[#16C779] px-6 py-3 text-xl font-bold text-white shadow-[0_8px_18px_rgba(22,199,121,0.22)] transition-colors hover:bg-[#10AD65] disabled:bg-[#D3E9E0] disabled:text-white/70 disabled:shadow-none sm:mt-auto sm:min-h-16 sm:py-4 sm:text-2xl"
               >
                 {clubCreateBusy ? 'Creating...' : 'Confirm'}
               </button>
