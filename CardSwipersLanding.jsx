@@ -707,9 +707,14 @@ export default function CardSwipersLanding() {
 
   const stabilizeNativeViewport = useCallback(() => {
     if (!isNativeApp || typeof window === 'undefined') return;
-    const height = Math.round(window.visualViewport?.height || window.innerHeight || 0);
-    if (height > 0) {
-      setNativeViewportHeight(height);
+
+    const parsedViewportHeight = Number(window.visualViewport?.height || 0);
+    const parsedInnerHeight = Number(window.innerHeight || 0);
+    const parsedDocumentHeight = Number(document?.documentElement?.clientHeight || 0);
+    const measuredHeight = Math.round(Math.max(parsedViewportHeight, parsedInnerHeight, parsedDocumentHeight));
+
+    if (measuredHeight > 0) {
+      setNativeViewportHeight((previousHeight) => (previousHeight === measuredHeight ? previousHeight : measuredHeight));
     }
   }, [isNativeApp]);
 
@@ -739,6 +744,9 @@ export default function CardSwipersLanding() {
       window.requestAnimationFrame(() => {
         stabilizeNativeViewport();
       });
+      window.setTimeout(() => {
+        stabilizeNativeViewport();
+      }, 120);
     };
 
     refreshViewport();
@@ -748,6 +756,8 @@ export default function CardSwipersLanding() {
     window.addEventListener('orientationchange', refreshViewport);
     window.addEventListener('focusin', refreshViewport);
     window.addEventListener('focusout', refreshViewport);
+    window.addEventListener('pageshow', refreshViewport);
+    document.addEventListener('visibilitychange', refreshViewport);
     if (visualViewport) {
       visualViewport.addEventListener('resize', refreshViewport);
       visualViewport.addEventListener('scroll', refreshViewport);
@@ -758,12 +768,20 @@ export default function CardSwipersLanding() {
       window.removeEventListener('orientationchange', refreshViewport);
       window.removeEventListener('focusin', refreshViewport);
       window.removeEventListener('focusout', refreshViewport);
+      window.removeEventListener('pageshow', refreshViewport);
+      document.removeEventListener('visibilitychange', refreshViewport);
       if (visualViewport) {
         visualViewport.removeEventListener('resize', refreshViewport);
         visualViewport.removeEventListener('scroll', refreshViewport);
       }
     };
   }, [isNativeApp, stabilizeNativeViewport]);
+
+  useEffect(() => {
+    if (isNativeApp) {
+      stabilizeNativeViewport();
+    }
+  }, [isNativeApp, currentTab, isAuthenticated, stabilizeNativeViewport]);
 
   useEffect(() => {
     if (firebaseUser) return;
@@ -1002,6 +1020,7 @@ export default function CardSwipersLanding() {
           verificationStatus: 'unverified',
           buyerVerificationStatus: 'unverified',
           sellerVerificationStatus: 'unverified',
+          is_verified: false,
           status: 'active',
           role: declaredAdmin ? 'admin' : 'user',
           tos_accepted: false,
@@ -2644,6 +2663,7 @@ export default function CardSwipersLanding() {
               email: normalizedEmail,
               displayName,
               legalName: displayName,
+              is_verified: false,
               tos_accepted: true,
               tos_accepted_at: serverTimestamp(),
               tos_version_accepted: 'v1.1',
@@ -4007,11 +4027,6 @@ export default function CardSwipersLanding() {
                         <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 uppercase tracking-wider">
                           Active Listing
                         </span>
-                        {currentCard.sellerVerified && (
-                          <span className="bg-emerald-500/20 text-emerald-200 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-400/30 uppercase tracking-wider">
-                            Verified Seller
-                          </span>
-                        )}
                         {currentSellerRating?.count > 0 && (
                           <span className="bg-amber-500/15 text-amber-100 text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300/30 tracking-wider">
                             Seller Rating {currentSellerRating.average.toFixed(1)} ★ ({currentSellerRating.count})
@@ -4599,7 +4614,7 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
-            <details className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-4 space-y-4 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl" open={!isNativeCoreApp}>
+            {false && <details className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-4 space-y-4 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl" open={!isNativeCoreApp}>
               <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-red-200">Verification Center</p>
@@ -4729,7 +4744,7 @@ export default function CardSwipersLanding() {
                 {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
               </div>
               </div>
-            </details>
+            </details>}
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {myCollection.map((card) => (
@@ -5192,294 +5207,212 @@ export default function CardSwipersLanding() {
         </div>
       )}
 
-      {showOnboarding && (
-        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl bg-[#111827] border border-white/10 rounded-3xl p-7 space-y-6 my-8">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex-1">
-                  <h2 className="text-3xl font-black tracking-tight">Build Your Marketplace</h2>
-                  <p className="text-sm text-white/60 mt-1">We'll personalize your feed in under 30 seconds.</p>
+      {currentTab === 'onboarding' && (
+        <div className="h-full min-h-0 max-h-full w-full flex flex-col bg-[#0B0F19] text-white">
+          <header className="px-4 pt-4 pb-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-[#F5C542] via-[#E11D48] to-[#1D4ED8] shadow-[0_10px_24px_rgba(225,29,72,0.28)]">
+                  <div className="absolute inset-0 flex items-center justify-center text-sm font-black text-white">
+                    {String(firebaseUser?.displayName || 'P').charAt(0).toUpperCase()}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Member</p>
+                  <p className="text-sm font-semibold">{firebaseUser?.displayName || 'Player'}</p>
                 </div>
               </div>
 
-              <div className="flex gap-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 transition-all ${
-                      i < onboardingStep
-                        ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C]'
-                        : 'bg-white/15'
-                    }`}
-                  />
-                ))}
-              </div>
-              <p className="text-xs text-white/50 mt-2">Step {onboardingStep} of 5</p>
+              <button
+                type="button"
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white/80"
+              >
+                Share
+              </button>
             </div>
 
-            {onboardingIntroVisible ? (
-              <div className="rounded-2xl bg-gradient-to-r from-emerald-600/30 to-emerald-500/20 border border-emerald-400/40 p-6 text-center">
-                <p className="text-2xl font-black">✓ Your feed is ready</p>
-                <p className="text-sm text-white/80 mt-3">Based on your interests, we'll surface the best trade opportunities.</p>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-[#121A26] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <div className="flex items-center gap-3">
+                <span className="text-white/40">⌕</span>
+                <input
+                  type="text"
+                  value={clubSearchQuery}
+                  onChange={(event) => setClubSearchQuery(event.target.value)}
+                  placeholder="Search club ID"
+                  className="w-full bg-transparent text-sm text-white placeholder:text-white/35 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleJoinClubByCode()}
+                  disabled={clubJoinBusy}
+                  className="rounded-xl bg-[#E11D48] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-60"
+                >
+                  {clubJoinBusy ? '...' : 'Join'}
+                </button>
               </div>
-            ) : (
-              <>
-                {onboardingStep === 1 && (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm font-semibold text-white mb-3">What do you collect?</p>
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-xs text-white/50 uppercase tracking-widest font-bold mb-2">Sports</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {['Baseball', 'Basketball', 'Football', 'Hockey'].map((option) => {
-                              const selected = onboardingData.interests.includes(option);
-                              return (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  onClick={() => toggleOnboardingValue('interests', option)}
-                                  className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
-                                    selected
-                                      ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
-                                      : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
-                                  }`}
-                                >
-                                  {selected ? '✓ ' : ''}{option}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs text-white/50 uppercase tracking-widest font-bold mb-2">Trading Card Games</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {['Pokemon', 'Magic', 'Yu-Gi-Oh', 'One Piece'].map((option) => {
-                              const selected = onboardingData.interests.includes(option);
-                              return (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  onClick={() => toggleOnboardingValue('interests', option)}
-                                  className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
-                                    selected
-                                      ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
-                                      : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
-                                  }`}
-                                >
-                                  {selected ? '✓ ' : ''}{option}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs text-white/50 uppercase tracking-widest font-bold mb-2">Preferences</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {['Graded', 'Raw', 'Autographs', 'Memorabilia'].map((option) => {
-                              const selected = onboardingData.interests.includes(option);
-                              return (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  onClick={() => toggleOnboardingValue('interests', option)}
-                                  className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
-                                    selected
-                                      ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
-                                      : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
-                                  }`}
-                                >
-                                  {selected ? '✓ ' : ''}{option}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    {onboardingData.interests.length > 0 && (
-                      <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 text-xs">
-                        <p className="text-white/60 mb-2">Your feed will prioritize:</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {onboardingData.interests.slice(0, 3).map((int) => (
-                            <span key={int} className="px-2 py-1 rounded-lg bg-[#E50914]/20 text-[#FF6B7A] text-xs">
-                              ✓ {int}
-                            </span>
-                          ))}
-                          {onboardingData.interests.length > 3 && (
-                            <span className="px-2 py-1 rounded-lg bg-white/10 text-white/60 text-xs">
-                              +{onboardingData.interests.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+            </div>
+          </header>
 
-                {onboardingStep === 2 && (
-                  <div className="space-y-4">
-                    <p className="text-sm font-semibold text-white">What are you typically looking for?</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {ONBOARDING_INTENTS.map((option) => (
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-24">
+            <div className="mt-2">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Clubs</p>
+                <span className="text-[10px] text-white/55">{filteredClubs.length} active</span>
+              </div>
+
+              <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {filteredClubs.length === 0 ? (
+                  <div className="w-full min-w-full snap-center rounded-[26px] border border-dashed border-white/10 bg-[#121A26]/70 p-5">
+                    <div className="flex h-full min-h-[220px] flex-col items-center justify-center text-center">
+                      <div className="mb-4 text-4xl">🏆</div>
+                      <p className="text-lg font-bold">No clubs yet</p>
+                      <p className="mt-2 text-sm text-white/55">Create a club or join a club ID to get started.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {filteredClubs.map((club) => {
+                      const isActive = selectedClubId === club.id;
+                      const clubIdValue = String(club.code || club.clubId || '000000');
+                      const clubMembers = Number(club.membersCount || club.memberCount || 1192);
+                      const activeTables = Number(club.activeTables || club.tableCount || 308);
+
+                      return (
                         <button
-                          key={option}
+                          key={club.id}
                           type="button"
-                          onClick={() => setOnboardingData((prev) => ({ ...prev, intent: option }))}
-                          className={`text-xs px-3 py-3 rounded-xl border font-medium transition-all ${
-                            onboardingData.intent === option
-                              ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
-                              : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
+                          onClick={() => setSelectedClubId(club.id)}
+                          className={`group relative w-[83%] min-w-[83%] snap-center overflow-hidden rounded-[28px] border p-4 text-left shadow-[0_24px_50px_rgba(0,0,0,0.28)] transition-all ${
+                            isActive ? 'border-[#F5C542]/40 bg-[linear-gradient(180deg,#111827,#0E1729)]' : 'border-white/10 bg-[#111827] hover:border-white/20'
                           }`}
                         >
-                          {onboardingData.intent === option ? '✓ ' : ''}{option}
+                          <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,_rgba(245,197,66,0.28),transparent_63%)]" />
+                          <div className="relative flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#F5C542] via-[#E11D48] to-[#1D4ED8] text-sm font-black text-white shadow-[0_12px_20px_rgba(225,29,72,0.2)]">
+                                {String(club.name || 'C').charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="text-[10px] uppercase tracking-[0.22em] text-white/45">Union</p>
+                                <p className="text-sm font-bold text-white">{club.name || 'Club Name'}</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                navigator.clipboard?.writeText?.(String(club.code || club.clubId || ''));
+                              }}
+                              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-white/75"
+                            >
+                              Share
+                            </button>
+                          </div>
+
+                          <div className="relative mt-6 space-y-3">
+                            <div>
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Club ID</p>
+                              <p className="mt-1 text-3xl font-black tracking-[0.08em] text-white">{clubIdValue.padStart(6, '0').slice(-6)}</p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm text-white/75">
+                              <div className="rounded-2xl border border-white/8 bg-white/5 px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Members</p>
+                                <p className="mt-2 text-lg font-bold text-white">{clubMembers.toLocaleString()}</p>
+                              </div>
+                              <div className="rounded-2xl border border-white/8 bg-white/5 px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Tables</p>
+                                <p className="mt-2 text-lg font-bold text-white">{activeTables.toLocaleString()}</p>
+                              </div>
+                            </div>
+                          </div>
                         </button>
-                      ))}
-                    </div>
-                    <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-4 space-y-2">
-                      <p className="text-xs font-semibold text-white">Why this matters:</p>
-                      <ul className="text-xs text-white/70 space-y-1">
-                        <li>✓ Better trade match recommendations</li>
-                        <li>✓ Prioritize listings that fit your goals</li>
-                        <li>✓ Surface active collectors in your niche</li>
-                      </ul>
-                    </div>
-                  </div>
-                )}
+                      );
+                    })}
 
-                {onboardingStep === 3 && (
-                  <div className="space-y-4">
-                    <p className="text-sm font-semibold text-white">Typical trade value</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {ONBOARDING_PRICE_RANGES.map((option) => {
-                        const selected =
-                          onboardingData.priceRange[0] === option.value[0] &&
-                          onboardingData.priceRange[1] === option.value[1];
-                        return (
-                          <button
-                            key={option.label}
-                            type="button"
-                            onClick={() => setOnboardingData((prev) => ({ ...prev, priceRange: option.value }))}
-                            className={`text-xs px-3 py-3 rounded-xl border font-medium transition-all ${
-                              selected
-                                ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
-                                : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
-                            }`}
-                          >
-                            {selected ? '✓ ' : ''}{option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {onboardingStep === 4 && (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm font-semibold text-white">What are your top priorities? (Up to 3)</p>
-                      <p className="text-xs text-white/50 mt-1">This helps us rank which cards show first.</p>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {ONBOARDING_PRIORITIES.map((option) => {
-                        const selected = onboardingData.priorities.includes(option);
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            onClick={() => toggleOnboardingValue('priorities', option, 3)}
-                            className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
-                              selected
-                                ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
-                                : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
-                            }`}
-                          >
-                            {selected ? '✓ ' : ''}{option}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="text-xs text-white/50 font-medium">{onboardingData.priorities.length} / 3 selected</p>
-                  </div>
-                )}
-
-                {onboardingStep === 5 && (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm font-semibold text-white mb-4">Review your marketplace setup</p>
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => handleCreateClub()}
+                      className="group relative w-[83%] min-w-[83%] snap-center overflow-hidden rounded-[28px] border border-dashed border-[#F5C542]/35 bg-[linear-gradient(180deg,rgba(18,23,34,0.96),rgba(11,15,25,0.96))] p-5 text-left shadow-[0_24px_50px_rgba(0,0,0,0.24)]"
+                    >
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(245,197,66,0.22),transparent_65%)]" />
+                      <div className="relative flex h-full min-h-[220px] flex-col justify-between">
                         <div>
-                          <p className="text-white/60 font-medium mb-1">Collections:</p>
-                          <p className="text-white">{onboardingData.interests.join(', ') || 'Not selected'}</p>
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-[#F5C542]">Create</p>
+                          <h3 className="mt-4 text-2xl font-black leading-tight text-white">Create a club and run your own poker club</h3>
                         </div>
-                        <div className="border-t border-white/10 pt-3">
-                          <p className="text-white/60 font-medium mb-1">Looking for:</p>
-                          <p className="text-white capitalize">{onboardingData.intent}</p>
-                        </div>
-                        <div className="border-t border-white/10 pt-3">
-                          <p className="text-white/60 font-medium mb-1">Price Range:</p>
-                          <p className="text-white">${onboardingData.priceRange[0]} - ${onboardingData.priceRange[1]}</p>
-                        </div>
-                        <div className="border-t border-white/10 pt-3">
-                          <p className="text-white/60 font-medium mb-1">Top Priorities:</p>
-                          <p className="text-white">{onboardingData.priorities.join(', ') || 'Not selected'}</p>
+                        <div className="mt-6">
+                          <span className="inline-flex rounded-full bg-[#E11D48] px-4 py-2 text-sm font-bold text-white shadow-[0_12px_24px_rgba(225,29,72,0.24)]">
+                            {clubCreateBusy ? 'Creating...' : 'Create Club'}
+                          </span>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="rounded-xl bg-gradient-to-r from-emerald-600/20 to-emerald-500/10 border border-emerald-400/30 p-4 space-y-2">
-                      <p className="text-xs font-semibold text-emerald-300 uppercase">Your personalized feed will:</p>
-                      <ul className="text-xs text-white/80 space-y-1">
-                        <li>✓ Show better trade matches</li>
-                        <li>✓ Surface stronger collector connections</li>
-                        <li>✓ Hide irrelevant listings</li>
-                      </ul>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={onboardingBusy}
-                      onClick={handleCompleteOnboarding}
-                      className="w-full py-4 rounded-xl bg-gradient-to-r from-[#E50914] to-[#D72638] hover:from-[#FF3B5C] hover:to-[#E11D48] font-bold text-sm text-white shadow-lg shadow-red-500/25 transition-all disabled:opacity-60 uppercase tracking-wider"
-                    >
-                      {onboardingBusy ? 'Building Feed...' : 'Trade Now'}
                     </button>
-                    {onboardingError && <p className="text-xs text-red-300 text-center">{onboardingError}</p>}
-                  </div>
+                  </>
                 )}
+              </div>
 
-                {onboardingStep < 5 && (
-                  <div className="flex justify-between pt-2 gap-3">
-                    <button
-                      type="button"
-                      disabled={onboardingStep === 1}
-                      onClick={() => setOnboardingStep((prev) => Math.max(1, prev - 1))}
-                      className="px-5 py-2.5 text-xs rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-40 font-medium transition-all"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowOnboarding(false);
-                        setOnboardingBusy(false);
-                      }}
-                      className="px-4 py-2.5 text-xs rounded-xl bg-white/5 hover:bg-white/10 text-white/70 font-medium transition-all"
-                    >
-                      Skip for Now
-                    </button>
-                    <button
-                      type="button"
-                      disabled={onboardingStep === 5}
-                      onClick={() => setOnboardingStep((prev) => Math.min(5, prev + 1))}
-                      className="flex-1 px-5 py-2.5 text-xs rounded-xl bg-white/15 hover:bg-white/25 font-medium transition-all"
-                    >
-                      Continue
-                    </button>
-                  </div>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                {filteredClubs.length === 0 ? (
+                  <>
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#F5C542]" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+                  </>
+                ) : (
+                  <>
+                    {filteredClubs.concat({ id: 'create-card', createCard: true }).map((club, index) => (
+                      <span
+                        key={club.id || `${club.createCard ? 'create' : 'club'}-${index}`}
+                        className={`h-2.5 rounded-full transition-all ${
+                          selectedClubId === club.id || (!club.id && index === filteredClubs.length)
+                            ? 'w-6 bg-[#F5C542]'
+                            : 'w-2.5 bg-white/20'
+                        }`}
+                      />
+                    ))}
+                  </>
                 )}
-              </>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-[26px] border border-white/10 bg-gradient-to-r from-[#111827] via-[#111827] to-[#131B2B] p-2 shadow-[0_20px_40px_rgba(0,0,0,0.2)]">
+              <div className="overflow-hidden rounded-[22px]">
+                <img
+                  src="https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=80"
+                  alt="Club promo"
+                  className="h-32 w-full object-cover"
+                />
+              </div>
+            </div>
+
+            {selectedClub && (
+              <div className="mt-5 rounded-[24px] border border-white/10 bg-[#121A26] p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Active Club</p>
+                    <h3 className="mt-2 text-lg font-bold text-white">{selectedClub.name}</h3>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-white/65">
+                    {selectedClub.role || 'Member'}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-white/60">
+                  {selectedClub.description || 'Club feed, tables, and updates live here.'}
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+                  <div className="rounded-2xl border border-white/8 bg-white/5 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Members</div>
+                    <div className="mt-2 text-base font-bold text-white">{Number(selectedClub.membersCount || selectedClub.memberCount || 0).toLocaleString()}</div>
+                  </div>
+                  <div className="rounded-2xl border border-white/8 bg-white/5 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Tables</div>
+                    <div className="mt-2 text-base font-bold text-white">{Number(selectedClub.activeTables || selectedClub.tableCount || 0).toLocaleString()}</div>
+                  </div>
+                  <div className="rounded-2xl border border-white/8 bg-white/5 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">ID</div>
+                    <div className="mt-2 text-base font-bold text-white">{String(selectedClub.code || selectedClub.clubId || '000000').padStart(6, '0').slice(-6)}</div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
