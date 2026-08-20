@@ -11,8 +11,17 @@
       rel="stylesheet"
     />
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+        background-color: transparent;
+      }
+    </style>
   </head>
-  <body class="bg-neutral-950" style="font-family: Inter, sans-serif;">
+  <body style="font-family: Inter, sans-serif; background-color: transparent;">
     <div id="root"></div>
     <script type="module" src="/main.jsx"></script>
   </body>

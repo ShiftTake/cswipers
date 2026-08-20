@@ -34,6 +34,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
+import CardScannerModal from './CardScannerModal';
 import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jun 26, 2026 at 02_28_26 PM (1).png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
@@ -552,6 +553,8 @@ export default function CardSwipersLanding() {
   const [postBackImageFile, setPostBackImageFile] = useState(null);
   const [postFrontImagePreview, setPostFrontImagePreview] = useState('');
   const [postBackImagePreview, setPostBackImagePreview] = useState('');
+  const [showCardScanner, setShowCardScanner] = useState(false);
+  const closeCardScanner = useCallback(() => setShowCardScanner(false), []);
   const postFrontImageInputRef = useRef(null);
   const postBackImageInputRef = useRef(null);
   const hasAutoPromptedPostCaptureRef = useRef(false);
@@ -2105,7 +2108,7 @@ export default function CardSwipersLanding() {
 
     hasAutoPromptedPostCaptureRef.current = true;
     const timeoutId = window.setTimeout(() => {
-      postFrontImageInputRef.current?.click();
+      setShowCardScanner(true);
     }, 80);
 
     return () => {
@@ -2113,7 +2116,7 @@ export default function CardSwipersLanding() {
     };
   }, [currentTab, postFrontImagePreview, postBackImagePreview]);
 
-  const handlePostImageChange = (side, e) => {
+  const handlePostImageChange = (side, e, options = {}) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -2134,7 +2137,7 @@ export default function CardSwipersLanding() {
         setPostFrontImagePreview(preview);
         setPostFrontImageFile(file);
 
-        if (!postBackImagePreview) {
+        if (!options.skipAutoBack && !postBackImagePreview) {
           window.requestAnimationFrame(() => {
             postBackImageInputRef.current?.click();
           });
@@ -2161,6 +2164,12 @@ export default function CardSwipersLanding() {
       });
     }
 
+  };
+
+  const handleScannerImagesCaptured = (frontFile, backFile) => {
+    handlePostImageChange('front', { target: { files: [frontFile] } }, { skipAutoBack: true });
+    handlePostImageChange('back', { target: { files: [backFile] } }, { skipAutoBack: true });
+    setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
   };
 
   const toggleLookingForOption = (option) => {
@@ -4348,7 +4357,7 @@ export default function CardSwipersLanding() {
                   <div className="grid sm:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => postFrontImageInputRef.current?.click()}
+                      onClick={() => setShowCardScanner(true)}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
                       <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
@@ -4373,7 +4382,7 @@ export default function CardSwipersLanding() {
 
                     <button
                       type="button"
-                      onClick={() => postBackImageInputRef.current?.click()}
+                      onClick={() => setShowCardScanner(true)}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
                       <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
@@ -5483,7 +5492,13 @@ export default function CardSwipersLanding() {
         </div>
       )}
 
-      {showPersistentMobileDock && (
+      <CardScannerModal
+        isOpen={showCardScanner}
+        onClose={closeCardScanner}
+        onImagesCaptured={handleScannerImagesCaptured}
+      />
+
+      {showPersistentMobileDock && !showCardScanner && (
       <footer
         className="fixed bottom-0 left-0 right-0 z-[70] px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none"
         style={{
