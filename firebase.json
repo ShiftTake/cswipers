@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "source": "functions"
+  },
   "firestore": {
     "rules": "firestore.rules"
   },
@@ -9,6 +12,41 @@
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
+      {
+        "source": "/api/listings/create",
+        "function": {
+          "functionId": "createListing",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/listings/search",
+        "function": {
+          "functionId": "searchListings",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/listings/delete",
+        "function": {
+          "functionId": "deleteListing",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/orders/checkout",
+        "function": {
+          "functionId": "createOrderCheckout",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/webhooks/stripe",
+        "function": {
+          "functionId": "stripeWebhook",
+          "region": "us-central1"
+        }
+      },
       {
         "source": "/admin",
         "destination": "/admin.html"

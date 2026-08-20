@@ -31,6 +31,29 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
     }
 
+    match /masterCards/{masterCardId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /listings/{listingId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /Transactions/{transactionId} {
+      allow read: if isAdmin() || (signedIn() && (
+        resource.data.buyer_id == request.auth.uid || resource.data.seller_id == request.auth.uid
+      ));
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.user_id == request.auth.uid;
+      allow update: if signedIn() && resource.data.user_id == request.auth.uid;
+      allow create, delete: if false;
+    }
+
     match /swipes/{swipeId} {
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;

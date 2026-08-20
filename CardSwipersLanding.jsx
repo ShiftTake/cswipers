@@ -1923,6 +1923,7 @@ export default function CardSwipersLanding() {
     setIsPostingCard(true);
 
     let createdId = null;
+    let createdListingId = null;
     let frontImageUrl = '';
     let backImageUrl = '';
     let didPersist = false;
@@ -1946,42 +1947,62 @@ export default function CardSwipersLanding() {
       frontImageUrl = await uploadCardImage(postFrontImageFile, 'front');
       backImageUrl = await uploadCardImage(postBackImageFile, 'back');
 
-      const docRef = await withTimeout(
-        addDoc(collection(db, 'cards'), {
-        name: newCard.title,
-        brand: newCard.brand,
-        category: newCard.brand,
-        condition: conditionLabel,
-        gradingCompany: newCard.gradingCompany,
-        grade: isRawCard ? '' : newCard.grade,
-        rawCondition: isRawCard ? newCard.rawCondition : '',
-        lookingFor: newCard.lookingFor,
-        ownerUid: firebaseUser?.uid || null,
-        ownerName: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
-        tradeValue: newCard.estimatedValue || '$0',
-        value: newCard.estimatedValue || '$0',
-        seekingTags: (newCard.lookingFor || '')
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean),
-        buyNowPrice: newCard.estimatedValue || '$0',
-        saleMode: 'trade_only',
-        sellerConnectedAccountId: currentSellerConnectedAccountId || null,
-        connectedAccountId: currentSellerConnectedAccountId || null,
-        sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
-        sellerVerified: sellerVerificationProfileStatus === 'verified',
-        sellerVerificationStatus: sellerVerificationProfileStatus,
-        verifiedSellerBadge: sellerVerificationProfileStatus === 'verified',
-        listedAt: serverTimestamp(),
-        imageFrontUrl: frontImageUrl,
-        imageBackUrl: backImageUrl,
-        imageUrl: frontImageUrl,
-        createdAt: serverTimestamp()
+      const response = await withTimeout(
+        fetch('/api/listings/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+          },
+          body: JSON.stringify({
+            master_card: {
+              set_name: newCard.brand || 'Unknown set',
+              card_number: newCard.cardNumber || newCard.title,
+              rarity: newCard.rarity || 'unknown',
+              release_year: Number(newCard.releaseYear) || new Date().getFullYear(),
+              canonical_image_url: frontImageUrl
+            },
+            condition: conditionLabel,
+            grade_psa: isRawCard ? null : newCard.grade,
+            price: Number(String(newCard.estimatedValue || '0').replace(/[^0-9.]/g, '')) || 0,
+            status: 'active',
+            legacy_card: {
+              name: newCard.title,
+              title: newCard.title,
+              brand: newCard.brand,
+              category: newCard.brand,
+              condition: conditionLabel,
+              gradingCompany: newCard.gradingCompany,
+              grade: isRawCard ? '' : newCard.grade,
+              rawCondition: isRawCard ? newCard.rawCondition : '',
+              lookingFor: newCard.lookingFor,
+              ownerName: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
+              tradeValue: newCard.estimatedValue || '$0',
+              value: newCard.estimatedValue || '$0',
+              seekingTags: (newCard.lookingFor || '').split(',').map((value) => value.trim()).filter(Boolean),
+              buyNowPrice: newCard.estimatedValue || '$0',
+              saleMode: 'trade_only',
+              sellerConnectedAccountId: currentSellerConnectedAccountId || null,
+              connectedAccountId: currentSellerConnectedAccountId || null,
+              sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
+              sellerVerified: sellerVerificationProfileStatus === 'verified',
+              sellerVerificationStatus: sellerVerificationProfileStatus,
+              verifiedSellerBadge: sellerVerificationProfileStatus === 'verified',
+              imageFrontUrl: frontImageUrl,
+              imageBackUrl: backImageUrl,
+              imageUrl: frontImageUrl
+            }
+          })
         }),
         12000,
         'Card publish timed out'
       );
-      createdId = docRef.id;
+      const responseBody = await response.json().catch(() => ({}));
+      if (!response.ok || !responseBody.legacy_card_id) {
+        throw new Error(responseBody.error || 'Card publish failed.');
+      }
+      createdId = responseBody.legacy_card_id;
+      createdListingId = responseBody.listing_id;
       didPersist = true;
     } catch (error) {
       console.error('Failed to persist posted card:', error);
@@ -2000,6 +2021,7 @@ export default function CardSwipersLanding() {
 
     const newPostedCard = {
       id: createdId,
+      listingId: createdListingId,
       title: newCard.title,
       name: newCard.title,
       brand: newCard.brand,
