@@ -3203,7 +3203,7 @@ export default function CardSwipersLanding() {
   }, {});
   return (
     <div
-      className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
+      className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] w-full max-w-full overflow-x-hidden overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
       style={
         isNativeApp
           ? {
@@ -3460,10 +3460,10 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
+        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
         style={showPersistentMobileDock ? { paddingBottom: coreScreenBottomInset } : undefined}
       >
-        <div className="max-w-6xl mx-auto w-full h-full max-h-[100dvh] flex flex-col min-h-0 overflow-hidden">
+        <div className="max-w-6xl mx-auto w-full max-w-full h-full max-h-[100dvh] flex flex-col min-h-0 overflow-x-hidden overflow-hidden">
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -4313,7 +4313,8 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="h-full min-h-0 max-h-full max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-y-auto overscroll-y-contain">
+          <div className="h-full max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-28 px-4 py-1.5 md:py-2">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -4629,6 +4630,7 @@ export default function CardSwipersLanding() {
                   </ul>
                 </div>
               </aside>
+            </div>
             </div>
           </div>
         )}
