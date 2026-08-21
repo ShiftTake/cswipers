@@ -192,6 +192,46 @@ function PassIcon() {
   );
 }
 
+function StatusIcon({ status }) {
+  const normalizedStatus = String(status || '').toLowerCase();
+  if (['verified', 'active', 'completed', 'accepted', 'paid', 'success'].includes(normalizedStatus)) {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5" aria-hidden="true">
+        <path d="m4.5 10.2 3.2 3.1 7.8-7.1" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (['rejected', 'declined', 'failed', 'deactivated', 'error', 'cancelled'].includes(normalizedStatus)) {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5" aria-hidden="true">
+        <path d="M10 3.5 17 16H3z" strokeLinejoin="round" />
+        <path d="M10 7.5v4M10 14h.01" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5" aria-hidden="true">
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M10 6.8v3.6l2.2 1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StatusPill({ label, status = 'pending', tone = 'neutral' }) {
+  const toneClasses = {
+    success: 'border-emerald-300/60 bg-emerald-400/15 text-emerald-100',
+    warning: 'border-amber-300/60 bg-amber-400/15 text-amber-100',
+    error: 'border-rose-300/60 bg-rose-400/15 text-rose-100',
+    neutral: 'border-white/30 bg-white/10 text-white'
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold leading-none ${toneClasses[tone] || toneClasses.neutral}`}>
+      <StatusIcon status={status} />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function InterestIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -3616,7 +3656,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'auth' && (
           <div
-            className={`h-full min-h-0 w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
+            className={`h-full min-h-0 w-full max-w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-x-hidden overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
             style={nativeAuthScreenStyle}
           >
             {isNativeApp && (
@@ -3646,7 +3686,7 @@ export default function CardSwipersLanding() {
               </>
             )}
 
-            <div className={`w-full ${isNativeApp ? 'max-w-[500px]' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[34px] p-6' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
+            <div className={`w-full max-w-full ${isNativeApp ? 'max-w-[500px]' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[34px] p-6' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10 overflow-x-hidden`}>
               <div className="space-y-2 text-center">
                 <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
@@ -3690,7 +3730,7 @@ export default function CardSwipersLanding() {
                     value={authDisplayName}
                     onChange={(e) => setAuthDisplayName(e.target.value)}
                     placeholder="Display name"
-                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14 text-base'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40 touch-manipulation`}
                   />
                 )}
 
@@ -3704,7 +3744,7 @@ export default function CardSwipersLanding() {
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                     placeholder="Email"
-                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
+                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none touch-manipulation"
                   />
                 </label>
 
@@ -3718,7 +3758,7 @@ export default function CardSwipersLanding() {
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="Password"
-                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none"
+                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none touch-manipulation"
                   />
                   <button
                     type="button"
@@ -3750,7 +3790,7 @@ export default function CardSwipersLanding() {
                     value={authConfirmPassword}
                     onChange={(e) => setAuthConfirmPassword(e.target.value)}
                     placeholder="Confirm password"
-                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14 text-base'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40 touch-manipulation`}
                   />
                 )}
 
@@ -3777,7 +3817,7 @@ export default function CardSwipersLanding() {
                   type="submit"
                   disabled={isAuthSubmitting}
                   aria-busy={isAuthSubmitting}
-                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-lg'} px-6 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold transition-all`}
+                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-lg'} px-6 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold transition-all touch-manipulation`}
                 >
                   {isAuthSubmitting ? (authMode === 'create' ? 'Creating account...' : 'Logging in...') : authMode === 'create' ? 'Create Account' : 'Log In'}
                 </button>
@@ -4007,9 +4047,11 @@ export default function CardSwipersLanding() {
                         <span className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/20 uppercase">{userRecord.role || 'user'}</span>
                       </div>
                       <div className="col-span-2">
-                        <span className={`text-xs px-2 py-1 rounded-lg uppercase ${status === 'deactivated' ? 'bg-red-800/50 border border-red-300/30' : 'bg-emerald-800/40 border border-emerald-300/30'}`}>
-                          {status}
-                        </span>
+                        <StatusPill
+                          label={status}
+                          status={status}
+                          tone={status === 'deactivated' ? 'error' : 'success'}
+                        />
                       </div>
                       <div className="col-span-2 text-xs text-red-100">{createdDate}</div>
                       <div className="col-span-2 flex justify-end">
@@ -4040,13 +4082,13 @@ export default function CardSwipersLanding() {
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.10),transparent_34%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.28))] pointer-events-none" />
 
                     {swipeFeedback === 'like' && (
-                      <div className="absolute top-6 left-4 -rotate-12 border-3 border-emerald-400 text-emerald-400 font-black text-lg sm:text-2xl px-2.5 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
-                        Interested
+                      <div className="absolute top-6 left-4 z-20 -rotate-12 pointer-events-none">
+                        <StatusPill label="Interested" status="accepted" tone="success" />
                       </div>
                     )}
                     {swipeFeedback === 'pass' && (
-                      <div className="absolute top-6 right-4 rotate-12 border-3 border-[#E11D48] text-[#E11D48] font-black text-lg sm:text-2xl px-2.5 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
-                        Pass
+                      <div className="absolute top-6 right-4 z-20 rotate-12 pointer-events-none">
+                        <StatusPill label="Pass" status="declined" tone="error" />
                       </div>
                     )}
 
@@ -4055,17 +4097,17 @@ export default function CardSwipersLanding() {
                         <span className="bg-white/10 backdrop-blur-md text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 uppercase tracking-wider text-white">
                           {currentCard.brand}
                         </span>
-                        <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 uppercase tracking-wider">
-                          Active Listing
-                        </span>
+                        <StatusPill label="Active Listing" status="active" tone="success" />
                         {currentSellerRating?.count > 0 && (
-                          <span className="bg-amber-500/15 text-amber-100 text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300/30 tracking-wider">
-                            Seller Rating {currentSellerRating.average.toFixed(1)} ★ ({currentSellerRating.count})
-                          </span>
+                          <StatusPill
+                            label={`Seller Rating ${currentSellerRating.average.toFixed(1)} stars (${currentSellerRating.count})`}
+                            status="verified"
+                            tone="warning"
+                          />
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
-                        <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                        <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full border border-rose-200/60 uppercase tracking-wider shadow-sm">
                           {currentCard.condition}
                         </span>
                         <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 tracking-wider">
@@ -4141,7 +4183,7 @@ export default function CardSwipersLanding() {
                         <div className="space-y-2 min-w-0">
                           <h2 className="text-[1.18rem] sm:text-[1.8rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
                           <p className="text-sm text-white/70 font-medium">{currentCard.detailLine}</p>
-                          <p className="text-xs text-white/55">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
+                          <p className="text-xs text-white/75">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Listed at</p>
@@ -4172,7 +4214,7 @@ export default function CardSwipersLanding() {
                         <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/[0.04] border border-white/10 inline-flex items-center justify-center text-white/70"><PassIcon /></span>
                         <div>
                           <p className="font-semibold">Pass</p>
-                          <p className="text-xs text-white/55">Skip this listing</p>
+                          <p className="text-xs text-white/75">Skip this listing</p>
                         </div>
                       </div>
                     </button>
@@ -4227,7 +4269,7 @@ export default function CardSwipersLanding() {
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Collector Profile</p>
                       <h3 className="mt-2 text-xl sm:text-2xl font-bold">{currentCard.owner}</h3>
-                      <p className="text-sm text-white/55 mt-1">{currentCard.location}</p>
+                      <p className="text-sm text-white/75 mt-1">{currentCard.location}</p>
                     </div>
 
                     <div className="mt-5 grid grid-cols-2 gap-3">
@@ -4989,7 +5031,13 @@ export default function CardSwipersLanding() {
                             <p className="font-semibold">
                               {fromSelf ? 'You offered' : `${offer.fromUserName || 'Collector'} offered`} {formatMoney(offer.amount || 0)}
                             </p>
-                            <p className="text-[11px] text-white/70 mt-1">Status: {offer.status || 'pending'}</p>
+                            <div className="mt-2">
+                              <StatusPill
+                                label={`Status: ${offer.status || 'pending'}`}
+                                status={offer.status || 'pending'}
+                                tone={['accepted', 'completed'].includes(String(offer.status || '').toLowerCase()) ? 'success' : ['rejected', 'declined'].includes(String(offer.status || '').toLowerCase()) ? 'error' : 'warning'}
+                              />
+                            </div>
                             {isIncomingPending && (
                               <div className="flex gap-2 mt-2">
                                 <button
@@ -5129,7 +5177,7 @@ export default function CardSwipersLanding() {
                       {!notification.read && <span className="w-2 h-2 rounded-full bg-[#E50914]" />}
                     </div>
                     <p className="text-xs text-white/75 mt-1">{notification.message}</p>
-                    <p className="text-[11px] text-white/45 mt-2">
+                    <p className="text-[11px] text-white/70 mt-2">
                       {new Date(notification.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                     </p>
                   </button>
