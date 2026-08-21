@@ -232,6 +232,64 @@ function StatusPill({ label, status = 'pending', tone = 'neutral' }) {
   );
 }
 
+function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback, activeSide, onToggle, className = '' }) {
+  const [internalSide, setInternalSide] = useState('front');
+  const currentSide = activeSide || internalSide;
+  const canFlip = Boolean(backImageUrl && backImageUrl !== frontImageUrl);
+  const handleToggle = () => {
+    if (!canFlip) return;
+    const nextSide = currentSide === 'front' ? 'back' : 'front';
+    if (onToggle) {
+      onToggle(nextSide);
+    } else {
+      setInternalSide(nextSide);
+    }
+  };
+
+  return (
+    <div
+      className={`relative h-full w-full ${canFlip ? 'cursor-pointer' : ''} ${className}`}
+      style={{ perspective: '1000px' }}
+      onClick={(event) => {
+        event.stopPropagation();
+        handleToggle();
+      }}
+      role={canFlip ? 'button' : undefined}
+      tabIndex={canFlip ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (canFlip && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          handleToggle();
+        }
+      }}
+      aria-label={canFlip ? `Flip ${title || 'card'} to show the ${currentSide === 'front' ? 'back' : 'front'}` : undefined}
+    >
+      <div
+        className="relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d]"
+        style={{ transform: currentSide === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
+      >
+        <div className="absolute inset-0 flex items-center justify-center [backface-visibility:hidden]">
+          {frontImageUrl ? (
+            <img src={frontImageUrl} alt={`${title || 'Card'} front`} className="h-full w-full object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]" />
+          ) : (
+            <div className="text-[8rem] leading-none drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]">{fallback || '🃏'}</div>
+          )}
+        </div>
+        {canFlip && (
+          <div className="absolute inset-0 flex rotate-y-180 items-center justify-center [backface-visibility:hidden]" style={{ transform: 'rotateY(180deg)' }}>
+            <img src={backImageUrl} alt={`${title || 'Card'} back`} className="h-full w-full object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]" />
+          </div>
+        )}
+      </div>
+      {canFlip && (
+        <span className="absolute right-3 top-3 z-10 inline-flex items-center gap-1 rounded-full border border-[#FFD700]/60 bg-black/65 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#FFE66D] shadow-lg">
+          <span aria-hidden="true">↻</span> Tap to flip
+        </span>
+      )}
+    </div>
+  );
+}
+
 function InterestIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -743,10 +801,6 @@ export default function CardSwipersLanding() {
     currentCard?.imageBackUrl || currentCard?.imageUrl || ''
   ].filter(Boolean);
   const canToggleCurrentCardImage = currentCardImages.length > 1;
-  const activeCardImageUrl =
-    activeCardImageSide === 'back'
-      ? currentCard?.imageBackUrl || currentCard?.imageUrl || ''
-      : currentCard?.imageFrontUrl || currentCard?.imageUrl || '';
 
   const stabilizeNativeViewport = useCallback(() => {
     if (!isNativeApp || typeof window === 'undefined') return;
@@ -4117,7 +4171,14 @@ export default function CardSwipersLanding() {
                     </div>
 
                     <div className="relative z-10 flex-1 flex items-center justify-center py-2 md:py-8">
-                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[linear-gradient(180deg,rgba(13,18,28,0.98),rgba(8,11,18,0.98))] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.62)] relative overflow-hidden`}>
+                      <div
+                        className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[linear-gradient(180deg,rgba(13,18,28,0.98),rgba(8,11,18,0.98))] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.62)] relative overflow-hidden`}
+                        onClick={() => {
+                          if (canToggleCurrentCardImage) {
+                            setActiveCardImageSide((prev) => (prev === 'front' ? 'back' : 'front'));
+                          }
+                        }}
+                      >
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
                         <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
@@ -4139,20 +4200,24 @@ export default function CardSwipersLanding() {
                             });
                           }}
                         >
-                          {activeCardImageUrl ? (
-                            <img
-                              src={activeCardImageUrl}
-                              alt={`${currentCard.title} ${activeCardImageSide}`}
-                              className="max-h-[28vh] md:max-h-[340px] w-full max-w-[240px] md:max-w-[340px] object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]"
+                          <div className="relative h-[28vh] max-h-[340px] w-full max-w-[340px]">
+                            <CardFlipImage
+                              frontImageUrl={currentCard.imageFrontUrl || currentCard.imageUrl || ''}
+                              backImageUrl={currentCard.imageBackUrl || ''}
+                              title={currentCard.title}
+                              fallback={currentCard.imageEmoji}
+                              activeSide={activeCardImageSide}
+                              onToggle={setActiveCardImageSide}
                             />
-                          ) : (
-                            <div className="text-[11rem] leading-none drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]">{currentCard.imageEmoji}</div>
-                          )}
+                          </div>
                           {canToggleCurrentCardImage && (
                             <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-2 py-1">
                               <button
                                 type="button"
-                                onClick={() => setActiveCardImageSide('front')}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setActiveCardImageSide('front');
+                                }}
                                 className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ${
                                   activeCardImageSide === 'front' ? 'bg-white text-black' : 'text-white/80 hover:text-white'
                                 }`}
@@ -4161,7 +4226,10 @@ export default function CardSwipersLanding() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setActiveCardImageSide('back')}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setActiveCardImageSide('back');
+                                }}
                                 className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ${
                                   activeCardImageSide === 'back' ? 'bg-white text-black' : 'text-white/80 hover:text-white'
                                 }`}
@@ -5211,7 +5279,14 @@ export default function CardSwipersLanding() {
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[55vh] overflow-y-auto pr-1">
               <div className="bg-neutral-900 border-2 border-amber-500/40 rounded-xl p-3 flex flex-col justify-between space-y-4">
-                <span className="text-3xl pt-2">{viewingCollection.imageEmoji}</span>
+                <div className="h-32 w-full pt-2">
+                  <CardFlipImage
+                    frontImageUrl={viewingCollection.imageFrontUrl || viewingCollection.imageUrl || ''}
+                    backImageUrl={viewingCollection.imageBackUrl || ''}
+                    title={viewingCollection.title}
+                    fallback={viewingCollection.imageEmoji}
+                  />
+                </div>
                 <div>
                   <h4 className="text-xs font-bold text-white line-clamp-1">{viewingCollection.title}</h4>
                   <p className="text-[10px] text-neutral-400">{viewingCollection.brand}</p>
@@ -5220,7 +5295,14 @@ export default function CardSwipersLanding() {
 
               {(viewingCollection.collection || []).map((item) => (
                 <div key={item.id} className="bg-neutral-900 border border-neutral-700 rounded-xl p-3 flex flex-col justify-between space-y-4">
-                  <span className="text-3xl pt-2">{item.emoji}</span>
+                  <div className="h-32 w-full pt-2">
+                    <CardFlipImage
+                      frontImageUrl={item.imageFrontUrl || item.imageUrl || ''}
+                      backImageUrl={item.imageBackUrl || ''}
+                      title={item.title}
+                      fallback={item.emoji}
+                    />
+                  </div>
                   <div>
                     <h4 className="text-xs font-bold text-white line-clamp-1">{item.title}</h4>
                     <p className="text-[10px] text-neutral-400">Inventory item</p>
