@@ -35,6 +35,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { CameraPreview } from '@capacitor-community/camera-preview';
 import { auth, db, storage } from './firebase';
 import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
 import authHeroImage from './image (3).png';
@@ -51,7 +52,9 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
 const normalizeAuthEmail = (value) => value.trim().toLowerCase();
 const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
-const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+const STRIPE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
+  (typeof window !== 'undefined' ? window.__CARDSWIPERS_STRIPE_PUBLISHABLE_KEY__ || '' : '');
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const getSignInMethodMessage = (methods, flow) => {
@@ -195,6 +198,66 @@ function PassIcon() {
   );
 }
 
+function StatusIcon({ status }) {
+  const normalizedStatus = String(status || '').toLowerCase();
+  if (['active', 'completed', 'accepted', 'paid', 'success', 'verified'].includes(normalizedStatus)) {
+    return <span aria-hidden="true">✓</span>;
+  }
+  if (['deactivated', 'declined', 'rejected', 'failed', 'error'].includes(normalizedStatus)) {
+    return <span aria-hidden="true">!</span>;
+  }
+  return <span aria-hidden="true">◷</span>;
+}
+
+function StatusPill({ label, status = 'pending', tone = 'neutral' }) {
+  const toneClasses = {
+    success: 'border-emerald-300/60 bg-emerald-400/15 text-emerald-100',
+    warning: 'border-amber-300/60 bg-amber-400/15 text-amber-100',
+    error: 'border-rose-300/60 bg-rose-400/15 text-rose-100',
+    neutral: 'border-white/30 bg-white/10 text-white'
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold leading-none ${toneClasses[tone] || toneClasses.neutral}`}>
+      <StatusIcon status={status} />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback }) {
+  const [side, setSide] = useState('front');
+  const canFlip = Boolean(backImageUrl && backImageUrl !== frontImageUrl);
+  const toggle = () => canFlip && setSide((previous) => (previous === 'front' ? 'back' : 'front'));
+  return (
+    <div
+      className={`relative h-full w-full ${canFlip ? 'cursor-pointer' : ''}`}
+      style={{ perspective: '1000px' }}
+      onClick={toggle}
+      role={canFlip ? 'button' : undefined}
+      tabIndex={canFlip ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (canFlip && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          toggle();
+        }
+      }}
+      aria-label={canFlip ? `Flip ${title || 'card'} to show the ${side === 'front' ? 'back' : 'front'}` : undefined}
+    >
+      <div className="relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d]" style={{ transform: side === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
+        <div className="absolute inset-0 flex items-center justify-center [backface-visibility:hidden]">
+          {frontImageUrl ? <img src={frontImageUrl} alt={`${title || 'Card'} front`} className="h-full w-full object-contain" /> : <div className="text-6xl">{fallback || '🃏'}</div>}
+        </div>
+        {canFlip && (
+          <div className="absolute inset-0 flex items-center justify-center [backface-visibility:hidden]" style={{ transform: 'rotateY(180deg)' }}>
+            <img src={backImageUrl} alt={`${title || 'Card'} back`} className="h-full w-full object-contain" />
+          </div>
+        )}
+      </div>
+      {canFlip && <span className="absolute right-2 top-2 z-10 rounded-full border border-[#FFD700]/60 bg-black/65 px-2 py-1 text-[10px] font-semibold text-[#FFE66D]">↻ Tap to flip</span>}
+    </div>
+  );
+}
+
 function InterestIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -256,7 +319,9 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
           {purchaseSummary.cardTitle} · You will be charged {formatMoney(purchaseSummary.totalCharge)}.
         </p>
         <p className="text-xs text-[#6B7280] mt-1">
-          Item price {formatMoney(purchaseSummary.baseItemPrice)} + buyer platform fee {formatMoney(purchaseSummary.platformFee)}.
+          {purchaseSummary.feeOnly
+            ? `Trade Protection Fee ${formatMoney(purchaseSummary.baseItemPrice)}. No marketplace fee is added.`
+            : `Item price ${formatMoney(purchaseSummary.baseItemPrice)} + 5% marketplace fee ${formatMoney(purchaseSummary.percentageFee || 0)} + flat fee ${formatMoney(purchaseSummary.flatFee || 0)}.`}
         </p>
       </div>
 
@@ -368,11 +433,23 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
-const ENABLE_PAYMENT_PIPELINE = false;
+const ENABLE_PAYMENT_PIPELINE = true;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
+const DEAL_TYPES = [
+  { value: 'pure_trade', label: 'Trade Only' },
+  { value: 'hybrid_trade', label: 'Card + Cash' },
+  { value: 'cash_sale', label: 'Buy With Cash' }
+];
+const DEAL_TYPE_STYLES = {
+  pure_trade: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+  hybrid_trade: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  cash_sale: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+};
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
-const MARKETPLACE_FEE_RATE = 0.02;
+const MARKETPLACE_FEE_RATE = 0.05;
+const MARKETPLACE_FLAT_FEE = 0.99;
+const TRADE_PROTECTION_FEE = 2.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
 const ESCROW_API_BASE = '/api';
 const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community marketplace rules.';
@@ -425,17 +502,21 @@ const toDateValue = (value) => {
 
 const calculateMarketplaceSplit = (grossAmount) => {
   const gross = Number(grossAmount || 0);
-  const marketplaceFee = Number((gross * MARKETPLACE_FEE_RATE).toFixed(2));
+  const marketplaceFee = Number((gross * MARKETPLACE_FEE_RATE + MARKETPLACE_FLAT_FEE).toFixed(2));
   const sellerPayout = Number((gross - marketplaceFee).toFixed(2));
   return { gross, marketplaceFee, sellerPayout };
 };
 
 const calculateEscrowCharge = (baseItemPrice) => {
   const baseAmount = Number(baseItemPrice || 0);
-  const platformFee = Number((baseAmount * MARKETPLACE_FEE_RATE).toFixed(2));
+  const percentageFee = Number((baseAmount * MARKETPLACE_FEE_RATE).toFixed(2));
+  const flatFee = baseAmount > 0 ? MARKETPLACE_FLAT_FEE : 0;
+  const platformFee = Number((percentageFee + flatFee).toFixed(2));
   const totalCharge = Number((baseAmount + platformFee).toFixed(2));
   return {
     baseAmount,
+    percentageFee,
+    flatFee,
     platformFee,
     totalCharge
   };
@@ -670,6 +751,7 @@ export default function CardSwipersLanding() {
   const [activeChat, setActiveChat] = useState(null);
   const [chatOffers, setChatOffers] = useState([]);
   const [offerDraftAmount, setOfferDraftAmount] = useState('');
+  const [offerDealType, setOfferDealType] = useState('hybrid_trade');
   const [offerBusy, setOfferBusy] = useState(false);
 
   const [newCard, setNewCard] = useState({
@@ -715,6 +797,8 @@ export default function CardSwipersLanding() {
   const [reviewBusyByPurchaseId, setReviewBusyByPurchaseId] = useState({});
   const [showInterestModal, setShowInterestModal] = useState(false);
   const [pendingInterestType, setPendingInterestType] = useState(MARKETPLACE_ACTION_TYPES[0]);
+  const [pendingDealType, setPendingDealType] = useState('pure_trade');
+  const [pendingCashAmount, setPendingCashAmount] = useState('');
   const [interestBusy, setInterestBusy] = useState(false);
   const [interestError, setInterestError] = useState('');
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -919,10 +1003,6 @@ export default function CardSwipersLanding() {
     currentCard?.imageBackUrl || currentCard?.imageUrl || ''
   ].filter(Boolean);
   const canToggleCurrentCardImage = currentCardImages.length > 1;
-  const activeCardImageUrl =
-    activeCardImageSide === 'back'
-      ? currentCard?.imageBackUrl || currentCard?.imageUrl || ''
-      : currentCard?.imageFrontUrl || currentCard?.imageUrl || '';
 
   const addNotification = useCallback((payload) => {
     const notification = {
@@ -942,6 +1022,25 @@ export default function CardSwipersLanding() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!isNativeApp || currentTab !== 'post') {
+      if (isNativeApp) CameraPreview.stop().catch(() => {});
+      return undefined;
+    }
+
+    CameraPreview.start({
+      parent: 'camera-container',
+      position: 'rear',
+      toBack: true
+    }).catch((error) => {
+      console.error('Failed to start camera preview:', error);
+    });
+
+    return () => {
+      CameraPreview.stop().catch(() => {});
+    };
+  }, [currentTab, isNativeApp]);
 
   useEffect(() => {
     if (firebaseUser) return;
@@ -2251,24 +2350,27 @@ export default function CardSwipersLanding() {
     }
 
     setPendingInterestType(MARKETPLACE_ACTION_TYPES[0]);
+    setPendingDealType('pure_trade');
+    setPendingCashAmount('');
     setInterestError('');
     setShowInterestModal(true);
     setSwipeFeedback(null);
   };
 
   const handleInstantPurchase = async (card = currentCard, options = {}) => {
-    if (!card || !firebaseUser) return;
+    if (!card || !firebaseUser) return false;
     const shouldAdvanceDeck = Boolean(options?.advanceAfterPurchase);
-    setAuthError('Instant purchase is not available in this non-payment release. Use trade request.');
-    return;
+    const cashAmount = Number(options?.cashAmount || 0);
+    const feeOnly = Boolean(options?.feeOnly);
 
     if (!STRIPE_PUBLISHABLE_KEY || !stripePromise) {
-      setAuthError('Stripe publishable key is missing. Set VITE_STRIPE_PUBLISHABLE_KEY before using instant purchase.');
-      return;
+      setAuthInfo('Payment processing is in sandbox mode or configuration is pending. Your offer was not charged.');
+      return false;
     }
 
-    const grossAmount = parseDollarValue(card.buyNowPrice || card.tradeValue || card.value);
+    const grossAmount = feeOnly ? 0 : (cashAmount > 0 ? cashAmount : parseDollarValue(card.buyNowPrice || card.tradeValue || card.value));
     const { baseAmount, platformFee, totalCharge } = calculateEscrowCharge(grossAmount);
+    const chargeAmount = feeOnly ? TRADE_PROTECTION_FEE : totalCharge;
     const taxState = normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || card.sellerState || '');
     const orderId = buildEscrowOrderId();
     const purchaseRef = doc(db, 'purchaseIntents', orderId);
@@ -2285,17 +2387,20 @@ export default function CardSwipersLanding() {
       cardBrand: card.brand || '',
       listingPrice: baseAmount,
       marketplaceFeeRate: MARKETPLACE_FEE_RATE,
-      marketplaceFeeAmount: platformFee,
-      chargedTotalAmount: totalCharge,
+      marketplaceFeeAmount: feeOnly ? TRADE_PROTECTION_FEE : platformFee,
+      chargedTotalAmount: chargeAmount,
       sellerPayoutAmount: baseAmount,
       taxState,
       taxStatus: 'needs-stripe-tax',
       taxAmount: 0,
-      escrowAmount: baseAmount,
+      escrowAmount: feeOnly ? TRADE_PROTECTION_FEE : baseAmount,
       escrowStatus: 'payment_pending',
       status: 'requires_payment',
       paymentProvider: 'stripe',
-      saleMode: 'instant_purchase',
+      saleMode: options?.dealType || 'cash_sale',
+      dealType: options?.dealType || 'cash_sale',
+      feeOnly,
+      offerId: options?.offerId || null,
       listedAt: card.listedAt || null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
@@ -2310,6 +2415,8 @@ export default function CardSwipersLanding() {
         },
         body: JSON.stringify({
           itemPrice: baseAmount,
+          feeOnly,
+          protectionFee: feeOnly ? TRADE_PROTECTION_FEE : null,
           currency: 'usd',
           orderId,
           buyerId: firebaseUser.uid,
@@ -2335,10 +2442,10 @@ export default function CardSwipersLanding() {
         paymentIntentId: payload.paymentIntentId,
         paymentIntentClientSecret: payload.clientSecret,
         transferGroup: payload.transferGroup,
-        chargedTotalAmount: Number(payload.totalCharge || totalCharge),
-        marketplaceFeeAmount: Number(payload.platformFee || platformFee),
+        chargedTotalAmount: Number(payload.totalCharge || chargeAmount),
+        marketplaceFeeAmount: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
         sellerPayoutAmount: Number(payload.baseItemPrice || baseAmount),
-        escrowAmount: Number(payload.baseItemPrice || baseAmount),
+        escrowAmount: Number(payload.baseItemPrice || (feeOnly ? TRADE_PROTECTION_FEE : baseAmount)),
         status: 'payment_intent_created',
         escrowStatus: 'payment_intent_created',
         updatedAt: serverTimestamp()
@@ -2352,10 +2459,19 @@ export default function CardSwipersLanding() {
         cardId: card.id,
         cardTitle: card.title,
         baseItemPrice: Number(payload.baseItemPrice || baseAmount),
-        totalCharge: Number(payload.totalCharge || totalCharge),
-        platformFee: Number(payload.platformFee || platformFee),
-        advanceAfterPurchase: shouldAdvanceDeck
+        totalCharge: Number(payload.totalCharge || chargeAmount),
+        platformFee: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
+        percentageFee: feeOnly ? 0 : Number(payload.percentageFee || calculateEscrowCharge(grossAmount).percentageFee),
+        flatFee: feeOnly ? 0 : Number(payload.flatFee || calculateEscrowCharge(grossAmount).flatFee),
+        feeOnly,
+        advanceAfterPurchase: shouldAdvanceDeck,
+        offerId: options?.offerId || null,
+        dealType: options?.dealType || 'cash_sale',
+        protectionRole: options?.protectionRole || null,
+        buyerProtectionPaymentStatus: options?.buyerProtectionPaymentStatus || null,
+        sellerProtectionPaymentStatus: options?.sellerProtectionPaymentStatus || null
       });
+      return true;
     } catch (error) {
       console.error('Failed to initialize escrow payment:', error);
       await updateDoc(purchaseRef, {
@@ -2365,6 +2481,7 @@ export default function CardSwipersLanding() {
         updatedAt: serverTimestamp()
       });
       setAuthError(error.message || 'Unable to initialize Stripe payment.');
+      return false;
     }
   };
 
@@ -2375,12 +2492,42 @@ export default function CardSwipersLanding() {
       await updateDoc(doc(db, 'purchaseIntents', activePaymentSheet.purchaseId), {
         paymentIntentId: paymentIntent?.id || null,
         paymentIntentStatus: paymentIntent?.status || 'succeeded',
-        status: 'paid',
-        escrowStatus: 'held',
+        status: 'payment_held',
+        escrowStatus: 'payment_held',
         tosAcceptedAt: serverTimestamp(),
         paidAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      if (activePaymentSheet.offerId) {
+        const protectionField = activePaymentSheet.feeOnly
+          ? activePaymentSheet.protectionRole === 'seller' ? 'sellerProtectionPaymentStatus' : 'buyerProtectionPaymentStatus'
+          : 'paymentStatus';
+        const otherProtectionHeld = activePaymentSheet.feeOnly && (
+          activePaymentSheet.protectionRole === 'seller'
+            ? activePaymentSheet.buyerProtectionPaymentStatus === 'payment_held'
+            : activePaymentSheet.sellerProtectionPaymentStatus === 'payment_held'
+        );
+        await updateDoc(doc(db, 'offers', activePaymentSheet.offerId), {
+          [protectionField]: 'payment_held',
+          paymentStatus: activePaymentSheet.feeOnly && !otherProtectionHeld ? 'payment_pending' : 'payment_held',
+          paymentIntentId: paymentIntent?.id || null,
+          paidAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        if (activeChat?.id) {
+          const sellerUid = activeChat.ownerUserId || null;
+          await updateDoc(doc(db, 'matches', activeChat.id), {
+            lastMessage: activePaymentSheet.feeOnly && !otherProtectionHeld
+              ? 'Trade Protection payment received from one party. The other party must pay $2.99 to unlock protection.'
+              : activePaymentSheet.feeOnly
+                ? 'Both Trade Protection fees are paid. Tracked shipping and dispute protection are unlocked.'
+                : 'Cash payment is held in escrow. Seller may now ship the card.',
+            unreadBy: sellerUid ? [sellerUid] : [],
+            updatedAt: serverTimestamp()
+          });
+        }
+      }
 
       if (activePaymentSheet.advanceAfterPurchase) {
         const nextDeck = deck.filter((listing) => listing.id !== activePaymentSheet.cardId);
@@ -2395,6 +2542,43 @@ export default function CardSwipersLanding() {
       console.error('Failed to finalize escrow payment:', error);
       setPaymentSheetError('Payment succeeded, but we could not finish recording the order. Refresh your account history and verify the order status.');
     }
+  };
+
+  const handleRetryOfferPayment = async (offer) => {
+    if (!firebaseUser || !activeChat?.id || !offer?.id) return;
+    if (offer.buyerUid !== firebaseUser.uid) return;
+
+    const cashAmount = Number(offer.cashAmount || offer.amount || 0);
+    const dealType = offer.dealType || 'hybrid_trade';
+    const feeOnly = dealType === 'pure_trade';
+    const checkoutCard = {
+      id: offer.cardId || activeChat.cardId || null,
+      title: offer.cardTitle || activeChat.cardTitle || 'Card trade',
+      brand: offer.brand || activeChat.brand || '',
+      ownerUid: offer.sellerUid || activeChat.ownerUserId || null,
+      owner: offer.sellerName || activeChat.counterpartyName || 'Seller',
+      sellerConnectedAccountId: offer.sellerConnectedAccountId || activeChat.sellerConnectedAccountId || null,
+      connectedAccountId: offer.connectedAccountId || activeChat.connectedAccountId || null,
+      sellerState: offer.sellerState || activeChat.sellerState || '',
+      buyNowPrice: feeOnly ? 0 : cashAmount,
+      tradeValue: feeOnly ? 0 : cashAmount,
+      value: feeOnly ? 0 : cashAmount
+    };
+
+    const checkoutStarted = await handleInstantPurchase(checkoutCard, {
+      cashAmount,
+      offerId: offer.id,
+      dealType,
+      feeOnly,
+      protectionRole: offer.buyerUid === firebaseUser.uid ? 'buyer' : 'seller',
+      buyerProtectionPaymentStatus: offer.buyerProtectionPaymentStatus || null,
+      sellerProtectionPaymentStatus: offer.sellerProtectionPaymentStatus || null,
+      advanceAfterPurchase: false
+    });
+    await updateDoc(doc(db, 'offers', offer.id), {
+      paymentStatus: checkoutStarted ? 'checkout_open' : 'payment_configuration_pending',
+      updatedAt: serverTimestamp()
+    });
   };
 
   const handleSubmitTrackingForOrder = async (transaction) => {
@@ -2552,6 +2736,13 @@ export default function CardSwipersLanding() {
     setInterestError('');
     setInterestBusy(true);
 
+    const cashAmount = parseDollarValue(pendingCashAmount);
+    if (pendingDealType === 'hybrid_trade' && (!cashAmount || cashAmount <= 0)) {
+      setInterestError('Enter the cash difference for a hybrid trade.');
+      setInterestBusy(false);
+      return;
+    }
+
     // Optimistically filter deck and close modal immediately
     const nextDeck = deck.filter((card) => card.id !== currentCard.id);
     setDeck(nextDeck);
@@ -2559,7 +2750,7 @@ export default function CardSwipersLanding() {
     setSwipeFeedback('like');
 
     try {
-      if (pendingInterestType === INSTANT_PURCHASE_ACTION) {
+      if (pendingDealType === 'cash_sale' || pendingInterestType === INSTANT_PURCHASE_ACTION) {
         await withTimeout(handleInstantPurchase(currentCard), 12000, 'Instant purchase timed out');
         advanceDeck();
         return;
@@ -2575,6 +2766,8 @@ export default function CardSwipersLanding() {
         cardTitle: currentCard.title,
         brand: currentCard.brand || '',
         interestType: pendingInterestType,
+        dealType: pendingDealType,
+        cashAmount: pendingDealType === 'hybrid_trade' ? cashAmount : 0,
         status: 'pending',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -2831,9 +3024,6 @@ export default function CardSwipersLanding() {
       if (side === 'front') {
         setPostFrontImagePreview(preview);
         setPostFrontImageFile(file);
-        window.setTimeout(() => {
-          postBackImageInputRef.current?.click();
-        }, 180);
       } else {
         setPostBackImagePreview(preview);
         setPostBackImageFile(file);
@@ -3219,7 +3409,7 @@ export default function CardSwipersLanding() {
     if (!firebaseUser || !activeChat?.id || offerBusy) return;
 
     const amount = parseDollarValue(offerDraftAmount);
-    if (!amount || amount <= 0) {
+    if (offerDealType !== 'pure_trade' && (!amount || amount <= 0)) {
       setAuthError('Enter a valid offer amount.');
       return;
     }
@@ -3234,6 +3424,10 @@ export default function CardSwipersLanding() {
 
     const sellerUid = activeChat.ownerUserId || null;
     const buyerUid = activeChat.requesterUserId || null;
+    if (offerDealType === 'pure_trade' && amount > 0) {
+      setAuthError('Trade-only offers cannot include a cash amount. Choose Card + Cash instead.');
+      return;
+    }
 
     setOfferBusy(true);
     setAuthError('');
@@ -3248,13 +3442,17 @@ export default function CardSwipersLanding() {
         fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
         toUserId,
         amount,
+        dealType: offerDealType,
+        cashAmount: offerDealType === 'pure_trade' ? 0 : amount,
         currency: 'USD',
         status: 'pending',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
-      const summaryMessage = `Offer sent: ${formatMoney(amount)}`;
+      const summaryMessage = offerDealType === 'pure_trade'
+        ? 'Trade-only offer sent'
+        : `Hybrid offer sent: ${formatMoney(amount)} cash`;
       await updateDoc(doc(db, 'matches', activeChat.id), {
         lastMessage: summaryMessage,
         unreadBy: [toUserId],
@@ -3305,6 +3503,43 @@ export default function CardSwipersLanding() {
         updatedAt: serverTimestamp()
       });
 
+      const normalizedDealType = String(offer.dealType || '').toLowerCase();
+      const requiresProtectionCheckout = nextStatus === 'accepted' &&
+        ['pure_trade', 'hybrid_trade', 'cash_sale'].includes(normalizedDealType) &&
+        (normalizedDealType === 'pure_trade' || offer.buyerUid === firebaseUser.uid);
+      if (requiresProtectionCheckout) {
+        const checkoutCard = {
+          id: offer.cardId || activeChat.cardId || null,
+          title: offer.cardTitle || activeChat.cardTitle || 'Card trade',
+          brand: offer.brand || activeChat.brand || '',
+          ownerUid: offer.sellerUid || activeChat.ownerUserId || null,
+          owner: offer.sellerName || activeChat.counterpartyName || 'Seller',
+          sellerConnectedAccountId: offer.sellerConnectedAccountId || activeChat.sellerConnectedAccountId || null,
+          connectedAccountId: offer.connectedAccountId || activeChat.connectedAccountId || null,
+          sellerState: offer.sellerState || activeChat.sellerState || '',
+          buyNowPrice: normalizedDealType === 'pure_trade' ? 0 : offer.cashAmount || offer.amount || 0,
+          tradeValue: normalizedDealType === 'pure_trade' ? 0 : offer.cashAmount || offer.amount || 0,
+          value: normalizedDealType === 'pure_trade' ? 0 : offer.cashAmount || offer.amount || 0
+        };
+        const checkoutStarted = await handleInstantPurchase(checkoutCard, {
+          cashAmount: offer.cashAmount || offer.amount || 0,
+          offerId: offer.id,
+          dealType: normalizedDealType,
+          feeOnly: normalizedDealType === 'pure_trade',
+          protectionRole: offer.buyerUid === firebaseUser.uid ? 'buyer' : 'seller',
+          buyerProtectionPaymentStatus: offer.buyerProtectionPaymentStatus || null,
+          sellerProtectionPaymentStatus: offer.sellerProtectionPaymentStatus || null,
+          advanceAfterPurchase: false
+        });
+        await updateDoc(doc(db, 'offers', offer.id), {
+          paymentStatus: checkoutStarted ? 'checkout_open' : 'payment_configuration_pending',
+          updatedAt: serverTimestamp()
+        });
+        if (!checkoutStarted) return;
+        setAuthInfo('Offer accepted. Complete secure checkout to place the cash difference in escrow.');
+        return;
+      }
+
       const fromUserId = firebaseUser.uid;
       const participants = Array.isArray(activeChat.participants) ? activeChat.participants : [];
       const toUserId = participants.find((uid) => uid !== fromUserId) || offer.fromUserId;
@@ -3321,6 +3556,8 @@ export default function CardSwipersLanding() {
           fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
           toUserId,
           amount: counterAmount,
+          dealType: offer.dealType || 'hybrid_trade',
+          cashAmount: offer.dealType === 'pure_trade' ? 0 : counterAmount,
           currency: 'USD',
           status: 'pending',
           parentOfferId: offer.id,
@@ -4687,9 +4924,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
+        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
       >
-        <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full flex flex-col min-h-0`}>
+        <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full max-w-full flex flex-col min-h-0 overflow-x-hidden`}>
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -5254,9 +5491,7 @@ export default function CardSwipersLanding() {
                         <span className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/20 uppercase">{userRecord.role || 'user'}</span>
                       </div>
                       <div className="col-span-2">
-                        <span className={`text-xs px-2 py-1 rounded-lg uppercase ${status === 'deactivated' ? 'bg-red-800/50 border border-red-300/30' : 'bg-emerald-800/40 border border-emerald-300/30'}`}>
-                          {status}
-                        </span>
+                        <StatusPill label={status} status={status} tone={status === 'deactivated' ? 'error' : 'success'} />
                       </div>
                       <div className="col-span-2 text-xs text-red-100">{createdDate}</div>
                       <div className="col-span-2 flex justify-end">
@@ -5302,9 +5537,7 @@ export default function CardSwipersLanding() {
                         <span className="bg-white/10 backdrop-blur-md text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 uppercase tracking-wider text-white">
                           {currentCard.brand}
                         </span>
-                        <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 uppercase tracking-wider">
-                          Active Listing
-                        </span>
+                        <StatusPill label="Active Listing" status="active" tone="success" />
                         {currentCard.sellerVerified && (
                           <span className="bg-emerald-500/20 text-emerald-200 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-400/30 uppercase tracking-wider">
                             Verified Seller
@@ -5327,7 +5560,7 @@ export default function CardSwipersLanding() {
                     </div>
 
                     <div className="relative z-10 flex-1 flex items-center justify-center py-2 md:py-8">
-                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`}>
+                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`} onClick={() => canToggleCurrentCardImage && setActiveCardImageSide((prev) => (prev === 'front' ? 'back' : 'front'))}>
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
                         <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
@@ -5349,20 +5582,22 @@ export default function CardSwipersLanding() {
                             });
                           }}
                         >
-                          {activeCardImageUrl ? (
-                            <img
-                              src={activeCardImageUrl}
-                              alt={`${currentCard.title} ${activeCardImageSide}`}
-                              className="max-h-[28vh] md:max-h-[340px] w-full max-w-[240px] md:max-w-[340px] object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]"
+                          <div className="relative h-[28vh] max-h-[340px] w-full max-w-[340px]">
+                            <CardFlipImage
+                              frontImageUrl={currentCard.imageFrontUrl || currentCard.imageUrl || ''}
+                              backImageUrl={currentCard.imageBackUrl || ''}
+                              title={currentCard.title}
+                              fallback={currentCard.imageEmoji}
                             />
-                          ) : (
-                            <div className="text-[11rem] leading-none drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]">{currentCard.imageEmoji}</div>
-                          )}
+                          </div>
                           {canToggleCurrentCardImage && (
                             <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-2 py-1">
                               <button
                                 type="button"
-                                onClick={() => setActiveCardImageSide('front')}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setActiveCardImageSide('front');
+                                }}
                                 className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ${
                                   activeCardImageSide === 'front' ? 'bg-white text-black' : 'text-white/80 hover:text-white'
                                 }`}
@@ -5371,7 +5606,10 @@ export default function CardSwipersLanding() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setActiveCardImageSide('back')}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setActiveCardImageSide('back');
+                                }}
                                 className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ${
                                   activeCardImageSide === 'back' ? 'bg-white text-black' : 'text-white/80 hover:text-white'
                                 }`}
@@ -5538,7 +5776,9 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'post' && (
-          <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-2 space-y-3 overflow-y-auto overscroll-y-contain pr-1">
+          <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
+            {isNativeApp && <div id="camera-container" className="absolute inset-0 bg-transparent pointer-events-none" aria-hidden="true" />}
+            <div className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-32 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -5560,7 +5800,7 @@ export default function CardSwipersLanding() {
             </div>
 
             <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-4 md:gap-6 items-start flex-1 min-h-0">
-              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 overflow-y-auto">
+              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 [touch-action:pan-y]">
                 <input
                   ref={postFrontImageInputRef}
                   type="file"
@@ -5585,18 +5825,18 @@ export default function CardSwipersLanding() {
                       onClick={() => postFrontImageInputRef.current?.click()}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postFrontImagePreview ? (
                           <img
                             src={postFrontImagePreview}
                             alt="Front card preview"
-                            className="w-full h-[132px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[104px] sm:h-[148px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Front Photo</p>
-                            <p className="mt-1 text-[11px] text-white/55">Front required first</p>
+                            <p className="mt-1 text-[11px] text-white/55">Tap to choose from camera or library</p>
                           </div>
                         )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
@@ -5608,27 +5848,22 @@ export default function CardSwipersLanding() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (!postFrontImagePreview) {
-                          setPostImageError('Capture the front image first.');
-                          postFrontImageInputRef.current?.click();
-                          return;
-                        }
                         postBackImageInputRef.current?.click();
                       }}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postBackImagePreview ? (
                           <img
                             src={postBackImagePreview}
                             alt="Back card preview"
-                            className="w-full h-[132px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[104px] sm:h-[148px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Back Photo</p>
-                            <p className="mt-1 text-[11px] text-white/55">Capture right after front</p>
+                            <p className="mt-1 text-[11px] text-white/55">Tap to choose from camera or library</p>
                           </div>
                         )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
@@ -5951,6 +6186,7 @@ export default function CardSwipersLanding() {
                 </div>
               </aside>
             </div>
+          </div>
           </div>
         )}
 
@@ -6641,6 +6877,7 @@ export default function CardSwipersLanding() {
                       const trackingBusy = Boolean(trackingBusyByPurchaseId[transaction.orderId]);
                       const releaseBusy = Boolean(releaseBusyByPurchaseId[transaction.orderId]);
                       const disputeBusy = Boolean(disputeBusyByPurchaseId[transaction.orderId]);
+                      const paymentHeld = String(transaction.escrowStatus || transaction.status || '').toLowerCase() === 'payment_held';
                       return (
                         <div key={transaction.orderId} className="rounded-xl border border-red-400/20 bg-black/20 p-3 space-y-3">
                           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -6653,12 +6890,18 @@ export default function CardSwipersLanding() {
                                 Charge {formatMoney(transaction.chargedTotalAmount || transaction.listingPrice || 0)} · Held for {formatMoney(transaction.escrowAmount || transaction.sellerPayoutAmount || transaction.listingPrice || 0)}
                               </p>
                             </div>
-                            <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/20 bg-white/10">
+                            <span className={`px-2.5 py-1 rounded-full text-[11px] border ${paymentHeld ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'border-white/20 bg-white/10'}`}>
                               {transaction.isBuyer ? `Buyer view · Seller ${transaction.counterpartyName}` : `Seller view · Buyer ${transaction.counterpartyName}`}
                             </span>
                           </div>
 
-                          {transaction.isSeller && (
+                          {transaction.isSeller && !paymentHeld && (
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-400">
+                              Awaiting Buyer Payment
+                            </div>
+                          )}
+
+                          {transaction.isSeller && paymentHeld && (
                             <div className="grid gap-2 md:grid-cols-3">
                               <input
                                 type="text"
@@ -6716,7 +6959,7 @@ export default function CardSwipersLanding() {
                           )}
 
                           <div className="flex flex-wrap gap-2">
-                            {transaction.isSeller && (
+                            {transaction.isSeller && paymentHeld && (
                               <button
                                 type="button"
                                 disabled={trackingBusy}
@@ -6803,14 +7046,28 @@ export default function CardSwipersLanding() {
                 <div className="rounded-2xl border border-red-400/30 bg-red-950/35 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <p className="text-xs uppercase tracking-wider text-red-100 font-bold">Offer Negotiation</p>
-                    <p className="text-xs text-red-200">You can send offers above or below the listing price.</p>
+                    <p className="text-xs text-red-200">Select trade-only or a cash difference protected by escrow.</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {DEAL_TYPES.filter((deal) => deal.value !== 'cash_sale').map((deal) => (
+                      <button
+                        key={deal.value}
+                        type="button"
+                        onClick={() => setOfferDealType(deal.value)}
+                        className={`px-2 py-2 rounded-xl text-[11px] border ${offerDealType === deal.value ? 'bg-[#E50914] border-[#E50914]' : 'bg-white/5 border-white/15 hover:border-white/30'}`}
+                      >
+                        {deal.label}
+                      </button>
+                    ))}
                   </div>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Enter offer amount"
+                      inputMode="decimal"
+                      placeholder={offerDealType === 'pure_trade' ? 'No cash amount' : 'Cash difference'}
                       value={offerDraftAmount}
                       onChange={(event) => setOfferDraftAmount(event.target.value)}
+                      disabled={offerDealType === 'pure_trade'}
                       className="flex-grow p-2.5 bg-red-950 border border-red-400/30 rounded-xl text-xs focus:outline-none"
                     />
                     <button
@@ -6828,15 +7085,53 @@ export default function CardSwipersLanding() {
                       {chatOffers.map((offer) => {
                         const fromSelf = offer.fromUserId === firebaseUser?.uid;
                         const isIncomingPending = !fromSelf && String(offer.status || '').toLowerCase() === 'pending';
+                        const dealType = offer.dealType || 'pure_trade';
+                        const paymentHeld = offer.paymentStatus === 'payment_held';
+                        const cashPaymentPending = ['hybrid_trade', 'cash_sale'].includes(dealType) && !paymentHeld && String(offer.status || '').toLowerCase() === 'accepted';
+                        const pureTradeAccepted = dealType === 'pure_trade' && String(offer.status || '').toLowerCase() === 'accepted';
+                        const isBuyer = offer.buyerUid === firebaseUser?.uid;
+                        const currentProtectionPaid = isBuyer
+                          ? offer.buyerProtectionPaymentStatus === 'payment_held'
+                          : offer.sellerProtectionPaymentStatus === 'payment_held';
+                        const pureTradePaymentPending = pureTradeAccepted && !currentProtectionPaid;
                         return (
                           <div
                             key={offer.id}
                             className={`rounded-xl border px-3 py-2 text-xs ${fromSelf ? 'bg-[#E50914]/20 border-[#E50914]/40' : 'bg-black/25 border-white/15'}`}
                           >
-                            <p className="font-semibold">
-                              {fromSelf ? 'You offered' : `${offer.fromUserName || 'Collector'} offered`} {formatMoney(offer.amount || 0)}
-                            </p>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-semibold">
+                              {fromSelf ? 'You offered' : `${offer.fromUserName || 'Collector'} offered`} {offer.dealType === 'pure_trade' ? 'a card trade' : `${formatMoney(offer.cashAmount || offer.amount || 0)} cash`}
+                              </p>
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${DEAL_TYPE_STYLES[dealType] || DEAL_TYPE_STYLES.pure_trade}`}>
+                                {DEAL_TYPES.find((deal) => deal.value === dealType)?.label || 'Trade Only'}
+                              </span>
+                            </div>
                             <p className="text-[11px] text-white/70 mt-1">Status: {offer.status || 'pending'}</p>
+                            {(cashPaymentPending || pureTradePaymentPending) && (
+                              <div className={`mt-2 rounded-lg border px-2.5 py-2 ${fromSelf ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-500/30 bg-slate-500/10 text-slate-300'}`}>
+                                <p className="font-semibold">{pureTradePaymentPending ? 'Trade Protection Fee Required · $2.99' : 'Awaiting Buyer Payment'}</p>
+                                {((cashPaymentPending && isBuyer) || pureTradePaymentPending) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRetryOfferPayment(offer)}
+                                    className="mt-2 rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-bold text-black hover:bg-amber-400"
+                                  >
+                                    {pureTradePaymentPending ? 'Pay Trade Protection Fee' : 'Complete Escrow Payment'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {pureTradeAccepted && currentProtectionPaid && !paymentHeld && (
+                              <p className="mt-2 rounded-lg border border-slate-500/30 bg-slate-500/10 px-2.5 py-2 font-semibold text-slate-300">
+                                {isBuyer ? 'Your protection fee is paid. Awaiting the other party.' : 'Awaiting the other party’s Trade Protection Fee.'}
+                              </p>
+                            )}
+                            {paymentHeld && dealType !== 'pure_trade' && (
+                              <p className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 font-semibold text-emerald-400">
+                                Escrow Held · Seller may ship
+                              </p>
+                            )}
                             {isIncomingPending && (
                               <div className="flex gap-2 mt-2">
                                 <button
@@ -7010,7 +7305,14 @@ export default function CardSwipersLanding() {
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[55vh] overflow-y-auto pr-1">
               <div className="bg-neutral-900 border-2 border-amber-500/40 rounded-xl p-3 flex flex-col justify-between space-y-4">
-                <span className="text-3xl pt-2">{viewingCollection.imageEmoji}</span>
+                <div className="h-32 w-full pt-2">
+                  <CardFlipImage
+                    frontImageUrl={viewingCollection.imageFrontUrl || viewingCollection.imageUrl || ''}
+                    backImageUrl={viewingCollection.imageBackUrl || ''}
+                    title={viewingCollection.title}
+                    fallback={viewingCollection.imageEmoji}
+                  />
+                </div>
                 <div>
                   <h4 className="text-xs font-bold text-white line-clamp-1">{viewingCollection.title}</h4>
                   <p className="text-[10px] text-neutral-400">{viewingCollection.brand}</p>
@@ -7019,7 +7321,14 @@ export default function CardSwipersLanding() {
 
               {(viewingCollection.collection || []).map((item) => (
                 <div key={item.id} className="bg-neutral-900 border border-neutral-700 rounded-xl p-3 flex flex-col justify-between space-y-4">
-                  <span className="text-3xl pt-2">{item.emoji}</span>
+                  <div className="h-32 w-full pt-2">
+                    <CardFlipImage
+                      frontImageUrl={item.imageFrontUrl || item.imageUrl || ''}
+                      backImageUrl={item.imageBackUrl || ''}
+                      title={item.title}
+                      fallback={item.emoji}
+                    />
+                  </div>
                   <div>
                     <h4 className="text-xs font-bold text-white line-clamp-1">{item.title}</h4>
                     <p className="text-[10px] text-neutral-400">Inventory item</p>
@@ -7062,25 +7371,44 @@ export default function CardSwipersLanding() {
                 ? `Choose whether you want to negotiate or buy ${currentCard.title} at the listed price.`
                 : `Choose whether you want to negotiate for ${currentCard.title}.`}
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              {MARKETPLACE_ACTION_TYPES.map((type) => (
+            <div className="grid grid-cols-3 gap-2">
+              {DEAL_TYPES.map((deal) => (
                 <button
-                  key={type}
+                  key={deal.value}
                   type="button"
-                  onClick={() => setPendingInterestType(type)}
-                  className={`px-3 py-2 rounded-xl text-xs border ${pendingInterestType === type ? 'bg-[#E50914] border-[#E50914]' : 'bg-white/5 border-white/15 hover:border-white/30'}`}
+                  onClick={() => {
+                    setPendingDealType(deal.value);
+                    setPendingInterestType(deal.value === 'cash_sale' ? INSTANT_PURCHASE_ACTION : MARKETPLACE_ACTION_TYPES[0]);
+                  }}
+                  className={`px-2 py-2 rounded-xl text-[11px] border ${pendingDealType === deal.value ? DEAL_TYPE_STYLES[deal.value] : 'bg-white/5 border-white/15 hover:border-white/30'}`}
                 >
-                  {type}
+                  {deal.label}
                 </button>
               ))}
             </div>
+            {pendingDealType === 'hybrid_trade' && (
+              <label className="block text-xs text-white/70">
+                Cash difference
+                <div className="mt-1 flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+                  <span className="text-white/50">$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={pendingCashAmount}
+                    onChange={(event) => setPendingCashAmount(event.target.value)}
+                    placeholder="200"
+                    className="w-full bg-transparent text-sm text-white focus:outline-none"
+                  />
+                </div>
+              </label>
+            )}
             <button
               type="button"
               disabled={interestBusy}
               onClick={handleSendInterest}
               className="w-full py-3 rounded-xl bg-[#E50914] hover:bg-red-700 font-semibold text-sm disabled:opacity-60"
             >
-              {interestBusy ? 'Submitting...' : pendingInterestType === INSTANT_PURCHASE_ACTION ? 'Start Purchase' : 'Send Trade Request'}
+              {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
             </button>
             {interestError && <p className="text-xs text-red-300">{interestError}</p>}
           </div>
@@ -7638,6 +7966,12 @@ export default function CardSwipersLanding() {
               <EscrowPaymentForm
                 purchaseSummary={activePaymentSheet}
                 onCancel={() => {
+                  if (activePaymentSheet.offerId) {
+                    updateDoc(doc(db, 'offers', activePaymentSheet.offerId), {
+                      paymentStatus: 'payment_pending',
+                      updatedAt: serverTimestamp()
+                    }).catch((error) => console.error('Failed marking offer payment pending:', error));
+                  }
                   setActivePaymentSheet(null);
                   setPaymentSheetError('');
                 }}
