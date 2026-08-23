@@ -312,20 +312,20 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 text-white">
       <div>
-        <h3 className="text-lg font-bold text-[#111827]">Complete escrow payment</h3>
-        <p className="text-sm text-[#6B7280] mt-1">
+        <h3 className="text-lg font-bold text-white">Complete escrow payment</h3>
+        <p className="text-sm text-white/75 mt-1">
           {purchaseSummary.cardTitle} · You will be charged {formatMoney(purchaseSummary.totalCharge)}.
         </p>
-        <p className="text-xs text-[#6B7280] mt-1">
+        <p className="text-xs text-white/70 mt-1">
           {purchaseSummary.feeOnly
             ? `Trade Protection Fee ${formatMoney(purchaseSummary.baseItemPrice)}. No marketplace fee is added.`
             : `Item price ${formatMoney(purchaseSummary.baseItemPrice)} + 5% marketplace fee ${formatMoney(purchaseSummary.percentageFee || 0)} + flat fee ${formatMoney(purchaseSummary.flatFee || 0)}.`}
         </p>
       </div>
 
-      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
+      <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
         <PaymentElement />
       </div>
 
@@ -333,14 +333,14 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
         <button
           type="submit"
           disabled={!stripe || !elements || isSubmitting}
-          className="flex-1 h-11 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold disabled:opacity-60"
+          className="min-h-11 flex-1 rounded-2xl bg-[#FFD700] text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70 font-semibold disabled:opacity-60"
         >
           {isSubmitting ? 'Processing...' : `Pay ${formatMoney(purchaseSummary.totalCharge)}`}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="h-11 px-4 rounded-2xl border border-[#D4D8DE] text-[#111827] font-semibold"
+          className="min-h-11 px-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] text-white font-semibold hover:bg-[#161B22] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
         >
           Cancel
         </button>
@@ -865,6 +865,8 @@ export default function CardSwipersLanding() {
   const [chatReportsError, setChatReportsError] = useState('');
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const confirmResolverRef = useRef(null);
   const [flagCardId, setFlagCardId] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [verificationForm, setVerificationForm] = useState({
@@ -4525,14 +4527,21 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const requestConfirmation = (title, message, confirmLabel = 'Confirm') => new Promise((resolve) => {
+    confirmResolverRef.current = resolve;
+    setConfirmDialog({ title, message, confirmLabel });
+  });
+
   const handleToggleUserStatus = async (userRecord) => {
     if (!firebaseUser || userRecord.uid === firebaseUser.uid) return;
 
     const nextStatus = userRecord.status === 'deactivated' ? 'active' : 'deactivated';
-    const confirmed = window.confirm(
+    const confirmed = await requestConfirmation(
+      nextStatus === 'deactivated' ? 'Block user' : 'Unblock user',
       nextStatus === 'deactivated'
-        ? `Block ${userRecord.email || userRecord.uid}? They will be blocked from access.`
-        : `Unblock ${userRecord.email || userRecord.uid}?`
+        ? `${userRecord.email || userRecord.uid} will be blocked from access.`
+        : `Restore access for ${userRecord.email || userRecord.uid}?`,
+      nextStatus === 'deactivated' ? 'Block User' : 'Unblock User'
     );
     if (!confirmed) return;
 
@@ -4573,7 +4582,11 @@ export default function CardSwipersLanding() {
       return;
     }
 
-    const confirmed = window.confirm(`Block ${report.reportedUserName || report.reportedUserId} from platform access?`);
+    const confirmed = await requestConfirmation(
+      'Block reported user',
+      `Block ${report.reportedUserName || report.reportedUserId} from platform access?`,
+      'Block User'
+    );
     if (!confirmed) return;
 
     setAdminActionUserId(report.reportedUserId);
@@ -4618,15 +4631,15 @@ export default function CardSwipersLanding() {
       setShowFlagModal(false);
       setFlagReason('');
       setFlagCardId(null);
-      alert('Card flagged for review. Thank you for helping keep CardSwipers safe.');
+      setAuthInfo('Card flagged for review. Thank you for helping keep CardSwipers safe.');
     } catch (error) {
       console.error('Failed to flag card:', error);
-      alert('Failed to flag card. Please try again.');
+      setAuthError('Failed to flag card. Please try again.');
     }
   };
 
   const handleDeleteFlaggedCard = async (flagId, cardId) => {
-    const confirmed = window.confirm('Delete this flagged card report?');
+    const confirmed = await requestConfirmation('Delete flagged card', 'Delete this flagged card report and its listing?', 'Delete Card');
     if (!confirmed) return;
 
     try {
@@ -4640,7 +4653,7 @@ export default function CardSwipersLanding() {
   };
 
   const handleDeleteFlagRecord = async (flagId) => {
-    const confirmed = window.confirm('Clear this flag report (card will remain)?');
+    const confirmed = await requestConfirmation('Clear flag report', 'Clear this flag report while keeping the card?', 'Clear Flag');
     if (!confirmed) return;
 
     try {
@@ -5566,9 +5579,7 @@ export default function CardSwipersLanding() {
                         </span>
                         <StatusPill label="Active Listing" status="active" tone="success" />
                         {currentCard.sellerVerified && (
-                          <span className="bg-emerald-500/20 text-emerald-200 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-400/30 uppercase tracking-wider">
-                            Verified Seller
-                          </span>
+                          <StatusPill label="Verified Seller" status="verified" tone="success" />
                         )}
                         {currentSellerRating?.count > 0 && (
                           <span className="bg-amber-500/15 text-amber-100 text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300/30 tracking-wider">
@@ -5577,7 +5588,7 @@ export default function CardSwipersLanding() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
-                        <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                        <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full border border-rose-200/60 uppercase tracking-wider shadow-sm">
                           {currentCard.condition}
                         </span>
                         <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 tracking-wider">
@@ -5658,12 +5669,12 @@ export default function CardSwipersLanding() {
                         <div className="space-y-2 min-w-0">
                           <h2 className="text-[1.18rem] sm:text-[1.8rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
                           <p className="text-sm text-white/70 font-medium">{currentCard.detailLine}</p>
-                          <p className="text-xs text-white/55">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
+                          <p className="text-xs text-white/75">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Listed at</p>
                           <p className="text-lg sm:text-2xl font-bold text-white">{currentCard.tradeValue}</p>
-                          <p className="text-[11px] text-white/50 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>
+                          <p className="text-[11px] text-white/75 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>
                         </div>
                       </div>
 
@@ -5678,15 +5689,15 @@ export default function CardSwipersLanding() {
                         <p className="text-sm text-white/65">Seeking: {currentCard.lookingFor}</p>
                       </div>
 
-                      <div className="rounded-2xl border border-amber-400/25 bg-amber-500/[0.06] px-3 py-3 md:px-4 md:py-4">
+                      <div className="rounded-2xl border border-[#30363D] bg-[#161B22] px-3 py-3 md:px-4 md:py-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Recent Market Sales</p>
+                            <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Recent Market Sales</p>
                             <p className="mt-1 text-xs text-white/75">
                               {currentCard.playerName || currentCard.player || currentCard.title} · {currentCard.grade || currentCard.detailLine || 'Grade not provided'}
                             </p>
                           </div>
-                          <p className="text-sm font-bold text-amber-100">
+                          <p className="text-sm font-bold text-[#FFE66D]">
                             {(() => {
                               const estimate = parseDollarValue(currentCard.recentComps || currentCard.avgMarketValue || currentCard.value || currentCard.tradeValue || 0);
                               return estimate > 0 ? `${formatMoney(estimate * 0.9)} - ${formatMoney(estimate * 1.1)}` : 'No sales range yet';
@@ -5719,7 +5730,7 @@ export default function CardSwipersLanding() {
                         <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/[0.04] border border-white/10 inline-flex items-center justify-center text-white/70"><PassIcon /></span>
                         <div>
                           <p className="font-semibold">Pass</p>
-                          <p className="text-xs text-white/55">Skip this listing</p>
+                          <p className="text-xs text-white/75">Skip this listing</p>
                         </div>
                       </div>
                     </button>
@@ -6802,7 +6813,7 @@ export default function CardSwipersLanding() {
                 type="button"
                 onClick={handleStartIdentityVerification}
                 disabled={verificationSessionBusy}
-                className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-black hover:bg-amber-300 disabled:opacity-60"
+                className="min-h-11 rounded-xl border border-[#FFD700]/70 bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70 disabled:opacity-60"
               >
                 {verificationSessionBusy ? 'Opening verification...' : 'Verify Account with Stripe Identity'}
               </button>
@@ -7479,7 +7490,7 @@ export default function CardSwipersLanding() {
                     value={pendingCashAmount}
                     onChange={(event) => setPendingCashAmount(event.target.value)}
                     placeholder="200"
-                    className="w-full bg-transparent text-sm text-white focus:outline-none"
+                      className="w-full bg-transparent text-base text-white focus:outline-none"
                   />
                 </div>
               </label>
@@ -7488,7 +7499,7 @@ export default function CardSwipersLanding() {
               type="button"
               disabled={interestBusy}
               onClick={handleSendInterest}
-              className="w-full py-3 rounded-xl bg-[#E50914] hover:bg-red-700 font-semibold text-sm disabled:opacity-60"
+              className="min-h-11 w-full rounded-xl bg-[#FFD700] text-[#0B0E14] hover:bg-[#FFE66D] font-semibold text-sm disabled:opacity-60"
             >
               {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
             </button>
@@ -8011,12 +8022,47 @@ export default function CardSwipersLanding() {
       )}
 
       {ENABLE_PAYMENT_PIPELINE && activePaymentSheet && stripePromise && (
-        <div className="fixed inset-0 bg-black/70 z-[68] flex items-end sm:items-center justify-center p-4">
-          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto bg-white text-[#111827] rounded-[28px] p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-[68] flex items-end justify-center overflow-y-auto bg-black/80 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:items-center">
+          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-[28px] border border-[#30363D] bg-[#0B0E14] p-5 pb-8 text-white shadow-2xl space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-bold">Secure escrow checkout</h2>
-                <p className="text-sm text-[#6B7280]">Payment is held until shipment and release.</p>
+                <p className="text-sm text-white/75">Payment is held until shipment and release.</p>
+            {confirmDialog && (
+              <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+                <div className="w-full max-w-md space-y-5 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+                  <div>
+                    <h2 id="confirm-dialog-title" className="text-lg font-bold">{confirmDialog.title}</h2>
+                    <p className="mt-2 text-sm text-white/75">{confirmDialog.message}</p>
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        confirmResolverRef.current?.(false);
+                        confirmResolverRef.current = null;
+                        setConfirmDialog(null);
+                      }}
+                      className="min-h-11 rounded-xl border border-[#30363D] bg-[#161B22] px-4 text-sm font-semibold text-white hover:bg-[#20262D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        confirmResolverRef.current?.(true);
+                        confirmResolverRef.current = null;
+                        setConfirmDialog(null);
+                      }}
+                      className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-semibold text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                    >
+                      {confirmDialog.confirmLabel}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
               </div>
               <button
                 type="button"
@@ -8024,14 +8070,14 @@ export default function CardSwipersLanding() {
                   setActivePaymentSheet(null);
                   setPaymentSheetError('');
                 }}
-                className="text-sm font-semibold text-[#6B7280] hover:text-[#111827]"
+                className="min-h-11 min-w-11 rounded-full text-sm font-semibold text-white/75 hover:bg-[#161B22] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
               >
                 Close
               </button>
             </div>
 
             {paymentSheetError && (
-              <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-xl border border-rose-300/60 bg-rose-400/15 px-3 py-2 text-sm text-rose-100">
                 {paymentSheetError}
               </div>
             )}
@@ -8041,7 +8087,14 @@ export default function CardSwipersLanding() {
               options={{
                 clientSecret: activePaymentSheet.clientSecret,
                 appearance: {
-                  theme: 'stripe'
+                  theme: 'night',
+                  variables: {
+                    colorPrimary: '#FFD700',
+                    colorBackground: '#161B22',
+                    colorText: '#FFFFFF',
+                    colorDanger: '#FDA4AF',
+                    borderRadius: '12px'
+                  }
                 }
               }}
             >
