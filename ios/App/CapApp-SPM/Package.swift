@@ -12,9 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.4.1"),
-        .package(name: "CapacitorCommunityCameraPreview", path: "..\..\..\node_modules\@capacitor-community\camera-preview"),
-        .package(name: "CapacitorCamera", path: "..\..\..\node_modules\@capacitor\camera"),
-        .package(name: "CapacitorHaptics", path: "..\..\..\node_modules\@capacitor\haptics")
+        .package(name: "CapacitorCamera", path: "..\..\..\node_modules\@capacitor\camera")
     ],
     targets: [
         .target(
@@ -22,9 +20,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
-                .product(name: "CapacitorCommunityCameraPreview", package: "CapacitorCommunityCameraPreview"),
-                .product(name: "CapacitorCamera", package: "CapacitorCamera"),
-                .product(name: "CapacitorHaptics", package: "CapacitorHaptics")
+                .product(name: "CapacitorCamera", package: "CapacitorCamera")
             ]
         )
     ]

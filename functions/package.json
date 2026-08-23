@@ -7,7 +7,7 @@
     "node": "20"
   },
   "scripts": {
-    "lint": "node -c index.js && node -c searchService.js && node -c rateLimiter.js"
+    "lint": "node -c index.js"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

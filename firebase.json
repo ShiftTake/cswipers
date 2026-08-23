@@ -13,43 +13,80 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
-        "source": "/api/listings/create",
-        "function": {
-          "functionId": "createListing",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/listings/search",
-        "function": {
-          "functionId": "searchListings",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/listings/delete",
-        "function": {
-          "functionId": "deleteListing",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/orders/checkout",
-        "function": {
-          "functionId": "createOrderCheckout",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/webhooks/stripe",
-        "function": {
-          "functionId": "stripeWebhook",
-          "region": "us-central1"
-        }
+        "source": "/terms",
+        "destination": "/terms.html"
       },
       {
         "source": "/admin",
         "destination": "/admin.html"
+      },
+      {
+        "source": "/adminmanagement",
+        "destination": "/adminmanagement.html"
+      },
+      {
+        "source": "/create-payment-intent",
+        "function": "createPaymentIntent"
+      },
+      {
+        "source": "/api/create-payment-intent",
+        "function": "createPaymentIntent"
+      },
+      {
+        "source": "/api/orders/create-payment-intent",
+        "function": "createOrderPaymentIntent"
+      },
+      {
+        "source": "/api/verification/create-session",
+        "function": "createVerificationSession"
+      },
+      {
+        "source": "/api/clubs/allocate-credits",
+        "function": "allocateClubCredits"
+      },
+      {
+        "source": "/api/clubs/register-trade-night",
+        "function": "registerTradeNight"
+      },
+      {
+        "source": "/release-seller-funds",
+        "function": "releaseSellerFunds"
+      },
+      {
+        "source": "/api/release-seller-funds",
+        "function": "releaseSellerFunds"
+      },
+      {
+        "source": "/api/orders/accept-delivery",
+        "function": "acceptDelivery"
+      },
+      {
+        "source": "/api/orders/open-dispute",
+        "function": "openDispute"
+      },
+      {
+        "source": "/api/submit-tracking",
+        "function": "submitTracking"
+      },
+      {
+        "source": "/api/orders/submit-tracking",
+        "function": "submitTracking"
+      },
+      {
+        "source": "/api/webhooks/shipping",
+        "function": "shippingWebhook"
+      },
+      {
+        "source": "/api/webhooks/stripe",
+        "function": "stripeEscrowWebhook"
+      },
+      {
+        "source": "/api/admin/disputes",
+        "function": "getAdminDisputes"
+      },
+      {
+        "source": "/api/admin/resolve-dispute",
+        "function": "resolveAdminDispute"
       },
       {
         "source": "**",

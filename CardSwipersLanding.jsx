@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
 import {
   createUserWithEmailAndPassword,
-  deleteUser,
   fetchSignInMethodsForEmail,
   GoogleAuthProvider,
-  OAuthProvider,
   getRedirectResult,
   onAuthStateChanged,
   sendPasswordResetEmail,
@@ -17,6 +17,7 @@ import {
 import {
   addDoc,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDocFromCache,
@@ -33,10 +34,12 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { CameraPreview } from '@capacitor-community/camera-preview';
 import { auth, db, storage } from './firebase';
-import CardScannerModal from './CardScannerModal';
+import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
 import authHeroImage from './image (3).png';
-import authBackdropImage from './ChatGPT Image Jun 26, 2026 at 02_28_26 PM (1).png';
+import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 
@@ -49,30 +52,16 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
 const normalizeAuthEmail = (value) => value.trim().toLowerCase();
 const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
-const FREE_SWIPES_PER_WEEK = 30;
-const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
-const APPLE_REDIRECT_PENDING_KEY = 'cardswipers_apple_redirect_pending';
-
-const getIsoWeekKey = (value = new Date()) => {
-  const utcDate = new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
-  const day = utcDate.getUTCDay() || 7;
-  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((utcDate - yearStart) / 86400000) + 1) / 7);
-  return `${utcDate.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-};
+const STRIPE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
+  (typeof window !== 'undefined' ? window.__CARDSWIPERS_STRIPE_PUBLISHABLE_KEY__ || '' : '');
+const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const getSignInMethodMessage = (methods, flow) => {
   if (methods.includes('google.com')) {
     return flow === 'create'
       ? 'That email is already connected to Google sign-in. Log in with Google instead.'
       : 'That account uses Google sign-in. Tap Continue with Google instead of using a password.';
-  }
-
-  if (methods.includes('apple.com')) {
-    return flow === 'create'
-      ? 'That email is already connected to Apple sign-in. Log in with Apple instead.'
-      : 'That account uses Apple sign-in. Tap Continue with Apple instead of using a password.';
   }
 
   if (methods.includes('password')) {
@@ -93,7 +82,7 @@ const getAuthErrorMessage = (error, flow = 'login') => {
     return 'That email is already registered. Try Log In, or use Forgot Password to reset access.';
   }
   if (code.includes('account-exists-with-different-credential')) {
-    return 'An account already exists with a different sign-in method. Try the matching Google or Apple sign-in option.';
+    return 'An account already exists with a different sign-in method. Try Continue with Google.';
   }
   if (code.includes('invalid-email') || code.includes('missing-email')) {
     return 'Enter a valid email address.';
@@ -128,7 +117,6 @@ const getAuthErrorMessage = (error, flow = 'login') => {
   }
 
   if (flow === 'google') return 'Google sign-in failed. Please try again.';
-  if (flow === 'apple') return 'Apple sign-in failed. Please try again.';
   if (flow === 'reset') return 'Could not send reset link. Please try again.';
   if (flow === 'create') return 'Could not create account. Please check your details and try again.';
   return 'Could not log in. Please try again.';
@@ -175,6 +163,24 @@ function InboxIcon() {
   );
 }
 
+function CardClubsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M6.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM17.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+      <path d="M2.5 20c0-2.5 2-4.5 4.5-4.5h0c2.5 0 4.5 2 4.5 4.5M10 20c0-2.8 2.2-5 5-5h0c2.8 0 5 2.2 5 5" />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+      <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h2l1.2-1.4h4.6L15.5 6h2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
+      <circle cx="12" cy="12.5" r="3.25" />
+    </svg>
+  );
+}
+
 function ShieldIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
@@ -194,27 +200,13 @@ function PassIcon() {
 
 function StatusIcon({ status }) {
   const normalizedStatus = String(status || '').toLowerCase();
-  if (['verified', 'active', 'completed', 'accepted', 'paid', 'success'].includes(normalizedStatus)) {
-    return (
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5" aria-hidden="true">
-        <path d="m4.5 10.2 3.2 3.1 7.8-7.1" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
+  if (['active', 'completed', 'accepted', 'paid', 'success', 'verified'].includes(normalizedStatus)) {
+    return <span aria-hidden="true">✓</span>;
   }
-  if (['rejected', 'declined', 'failed', 'deactivated', 'error', 'cancelled'].includes(normalizedStatus)) {
-    return (
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5" aria-hidden="true">
-        <path d="M10 3.5 17 16H3z" strokeLinejoin="round" />
-        <path d="M10 7.5v4M10 14h.01" strokeLinecap="round" />
-      </svg>
-    );
+  if (['deactivated', 'declined', 'rejected', 'failed', 'error'].includes(normalizedStatus)) {
+    return <span aria-hidden="true">!</span>;
   }
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5" aria-hidden="true">
-      <circle cx="10" cy="10" r="6.5" />
-      <path d="M10 6.8v3.6l2.2 1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <span aria-hidden="true">◷</span>;
 }
 
 function StatusPill({ label, status = 'pending', tone = 'neutral' }) {
@@ -232,60 +224,36 @@ function StatusPill({ label, status = 'pending', tone = 'neutral' }) {
   );
 }
 
-function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback, activeSide, onToggle, className = '' }) {
-  const [internalSide, setInternalSide] = useState('front');
-  const currentSide = activeSide || internalSide;
+function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback }) {
+  const [side, setSide] = useState('front');
   const canFlip = Boolean(backImageUrl && backImageUrl !== frontImageUrl);
-  const handleToggle = () => {
-    if (!canFlip) return;
-    const nextSide = currentSide === 'front' ? 'back' : 'front';
-    if (onToggle) {
-      onToggle(nextSide);
-    } else {
-      setInternalSide(nextSide);
-    }
-  };
-
+  const toggle = () => canFlip && setSide((previous) => (previous === 'front' ? 'back' : 'front'));
   return (
     <div
-      className={`relative h-full w-full ${canFlip ? 'cursor-pointer' : ''} ${className}`}
+      className={`relative h-full w-full ${canFlip ? 'cursor-pointer' : ''}`}
       style={{ perspective: '1000px' }}
-      onClick={(event) => {
-        event.stopPropagation();
-        handleToggle();
-      }}
+      onClick={toggle}
       role={canFlip ? 'button' : undefined}
       tabIndex={canFlip ? 0 : undefined}
       onKeyDown={(event) => {
         if (canFlip && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault();
-          handleToggle();
+          toggle();
         }
       }}
-      aria-label={canFlip ? `Flip ${title || 'card'} to show the ${currentSide === 'front' ? 'back' : 'front'}` : undefined}
+      aria-label={canFlip ? `Flip ${title || 'card'} to show the ${side === 'front' ? 'back' : 'front'}` : undefined}
     >
-      <div
-        className="relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d]"
-        style={{ transform: currentSide === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
-      >
+      <div className="relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d]" style={{ transform: side === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
         <div className="absolute inset-0 flex items-center justify-center [backface-visibility:hidden]">
-          {frontImageUrl ? (
-            <img src={frontImageUrl} alt={`${title || 'Card'} front`} className="h-full w-full object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]" />
-          ) : (
-            <div className="text-[8rem] leading-none drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]">{fallback || '🃏'}</div>
-          )}
+          {frontImageUrl ? <img src={frontImageUrl} alt={`${title || 'Card'} front`} className="h-full w-full object-contain" /> : <div className="text-6xl">{fallback || '🃏'}</div>}
         </div>
         {canFlip && (
-          <div className="absolute inset-0 flex rotate-y-180 items-center justify-center [backface-visibility:hidden]" style={{ transform: 'rotateY(180deg)' }}>
-            <img src={backImageUrl} alt={`${title || 'Card'} back`} className="h-full w-full object-contain drop-shadow-[0_14px_32px_rgba(0,0,0,0.55)]" />
+          <div className="absolute inset-0 flex items-center justify-center [backface-visibility:hidden]" style={{ transform: 'rotateY(180deg)' }}>
+            <img src={backImageUrl} alt={`${title || 'Card'} back`} className="h-full w-full object-contain" />
           </div>
         )}
       </div>
-      {canFlip && (
-        <span className="absolute right-3 top-3 z-10 inline-flex items-center gap-1 rounded-full border border-[#FFD700]/60 bg-black/65 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#FFE66D] shadow-lg">
-          <span aria-hidden="true">↻</span> Tap to flip
-        </span>
-      )}
+      {canFlip && <span className="absolute right-2 top-2 z-10 rounded-full border border-[#FFD700]/60 bg-black/65 px-2 py-1 text-[10px] font-semibold text-[#FFE66D]">↻ Tap to flip</span>}
     </div>
   );
 }
@@ -313,6 +281,71 @@ function BellIcon() {
       <path d="M15 17H9m10-1c-1.2-1.1-2-2.7-2-4.4V10a5 5 0 1 0-10 0v1.6c0 1.7-.8 3.3-2 4.4" />
       <path d="M10.5 20a1.5 1.5 0 0 0 3 0" />
     </svg>
+  );
+}
+
+function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!stripe || !elements || isSubmitting) return;
+
+    setIsSubmitting(true);
+    onError('');
+
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      redirect: 'if_required'
+    });
+
+    setIsSubmitting(false);
+
+    if (error) {
+      onError(error.message || 'Stripe payment confirmation failed.');
+      return;
+    }
+
+    onSuccess(paymentIntent);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <h3 className="text-lg font-bold text-[#111827]">Complete escrow payment</h3>
+        <p className="text-sm text-[#6B7280] mt-1">
+          {purchaseSummary.cardTitle} · You will be charged {formatMoney(purchaseSummary.totalCharge)}.
+        </p>
+        <p className="text-xs text-[#6B7280] mt-1">
+          {purchaseSummary.feeOnly
+            ? `Trade Protection Fee ${formatMoney(purchaseSummary.baseItemPrice)}. No marketplace fee is added.`
+            : `Item price ${formatMoney(purchaseSummary.baseItemPrice)} + 5% marketplace fee ${formatMoney(purchaseSummary.percentageFee || 0)} + flat fee ${formatMoney(purchaseSummary.flatFee || 0)}.`}
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
+        <PaymentElement />
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={!stripe || !elements || isSubmitting}
+          className="flex-1 h-11 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold disabled:opacity-60"
+        >
+          {isSubmitting ? 'Processing...' : `Pay ${formatMoney(purchaseSummary.totalCharge)}`}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-11 px-4 rounded-2xl border border-[#D4D8DE] text-[#111827] font-semibold"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -400,12 +433,47 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
-const ENABLE_PAYMENT_PIPELINE = false;
+const ENABLE_PAYMENT_PIPELINE = true;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
-const MARKETPLACE_FEE_RATE = 0.02;
-const VERIFIED_BUYER_SUBSCRIPTION_PRICE = 19.99;
+const DEAL_TYPES = [
+  { value: 'pure_trade', label: 'Trade Only' },
+  { value: 'hybrid_trade', label: 'Card + Cash' },
+  { value: 'cash_sale', label: 'Buy With Cash' }
+];
+const DEAL_TYPE_STYLES = {
+  pure_trade: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+  hybrid_trade: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  cash_sale: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+};
+const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
+const MARKETPLACE_FEE_RATE = 0.05;
+const MARKETPLACE_FLAT_FEE = 0.99;
+const TRADE_PROTECTION_FEE = 2.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
+const ESCROW_API_BASE = '/api';
+const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community marketplace rules.';
+
+const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
+const CLUB_LOGO_PRESETS = [
+  { id: 'club', symbol: '♣', className: 'from-emerald-800 via-green-700 to-emerald-950' },
+  { id: 'diamond', symbol: '♦', className: 'from-blue-900 via-blue-700 to-slate-950' },
+  { id: 'heart', symbol: '♥', className: 'from-red-950 via-red-700 to-orange-950' },
+  { id: 'spade', symbol: '♠', className: 'from-slate-800 via-zinc-600 to-black' },
+  { id: 'jack', symbol: 'J', className: 'from-fuchsia-950 via-purple-800 to-slate-950' },
+  { id: 'queen', symbol: 'Q', className: 'from-cyan-950 via-slate-700 to-slate-950' },
+  { id: 'king', symbol: 'K', className: 'from-amber-950 via-amber-700 to-stone-950' }
+];
+const normalizeClubRole = (role) => {
+  const normalized = String(role || 'member').toLowerCase();
+  if (normalized === 'owner' || normalized === 'agent') return normalized;
+  return 'member';
+};
+const getClubAccessMode = (clubData = {}) => {
+  const accessMode = String(clubData.accessMode || clubData.visibility || 'private').toLowerCase();
+  return accessMode === 'public' || accessMode === 'auto-join' ? 'public' : 'private';
+};
 
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
 
@@ -434,17 +502,21 @@ const toDateValue = (value) => {
 
 const calculateMarketplaceSplit = (grossAmount) => {
   const gross = Number(grossAmount || 0);
-  const marketplaceFee = Number((gross * MARKETPLACE_FEE_RATE).toFixed(2));
+  const marketplaceFee = Number((gross * MARKETPLACE_FEE_RATE + MARKETPLACE_FLAT_FEE).toFixed(2));
   const sellerPayout = Number((gross - marketplaceFee).toFixed(2));
   return { gross, marketplaceFee, sellerPayout };
 };
 
 const calculateEscrowCharge = (baseItemPrice) => {
   const baseAmount = Number(baseItemPrice || 0);
-  const platformFee = Number((baseAmount * MARKETPLACE_FEE_RATE).toFixed(2));
+  const percentageFee = Number((baseAmount * MARKETPLACE_FEE_RATE).toFixed(2));
+  const flatFee = baseAmount > 0 ? MARKETPLACE_FLAT_FEE : 0;
+  const platformFee = Number((percentageFee + flatFee).toFixed(2));
   const totalCharge = Number((baseAmount + platformFee).toFixed(2));
   return {
     baseAmount,
+    percentageFee,
+    flatFee,
     platformFee,
     totalCharge
   };
@@ -536,6 +608,63 @@ const compressImageFile = async (file) => {
   return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
 };
 
+const extractTextLinesFromMlKitResult = (result) => {
+  const collected = [];
+
+  if (typeof result?.text === 'string') {
+    collected.push(...result.text.split(/\r?\n/));
+  }
+
+  if (typeof result?.recognizedText === 'string') {
+    collected.push(...result.recognizedText.split(/\r?\n/));
+  }
+
+  const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
+  blocks.forEach((block) => {
+    if (typeof block?.text === 'string') {
+      collected.push(block.text);
+    }
+    const lines = Array.isArray(block?.lines) ? block.lines : [];
+    lines.forEach((line) => {
+      if (typeof line?.text === 'string') {
+        collected.push(line.text);
+      }
+    });
+  });
+
+  return summarizeOcrLines(Array.from(new Set(collected)));
+};
+
+const runMlKitTextRecognition = async (imagePath) => {
+  const mlkitModule = await import('@capacitor-mlkit/text-recognition');
+  const plugin = mlkitModule?.TextRecognition || mlkitModule?.default || mlkitModule;
+  const methods = [plugin?.recognize, plugin?.recognizeText, plugin?.processImage].filter(
+    (candidate) => typeof candidate === 'function'
+  );
+
+  if (!methods.length) {
+    throw new Error('Text recognition plugin is unavailable. Install and sync @capacitor-mlkit/text-recognition.');
+  }
+
+  const payloads = [{ path: imagePath }, { imagePath }, { filePath: imagePath }];
+  let lastError = null;
+
+  for (const method of methods) {
+    for (const payload of payloads) {
+      try {
+        const result = await method.call(plugin, payload);
+        if (result) {
+          return result;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  throw lastError || new Error('Text recognition failed to return a result.');
+};
+
 const scoreCardForUser = (card, profile, likedCards = [], successfulMatches = []) => {
   let score = 0;
   const interests = (profile?.interests || []).map(normalizeTag);
@@ -598,26 +727,18 @@ export default function CardSwipersLanding() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [showStartupSplash, setShowStartupSplash] = useState(isNativeApp);
   const [nativeViewportHeight, setNativeViewportHeight] = useState(null);
+  const [showStartupSplash, setShowStartupSplash] = useState(isNativeApp);
   const [authError, setAuthError] = useState('');
   const [authInfo, setAuthInfo] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
-  const [isAppleRedirecting, setIsAppleRedirecting] = useState(false);
+  const [hasAcceptedEscrowTerms, setHasAcceptedEscrowTerms] = useState(false);
   const [hasAcceptedVerificationTerms, setHasAcceptedVerificationTerms] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [showProfileSettings, setShowProfileSettings] = useState(false);
-  const [profileLocationDraft, setProfileLocationDraft] = useState('');
-  const [profileBioDraft, setProfileBioDraft] = useState('');
-  const [profileSettingsBusy, setProfileSettingsBusy] = useState(false);
-  const [profileSettingsError, setProfileSettingsError] = useState('');
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeBusy, setUpgradeBusy] = useState(false);
-  const [swipeLimitNotice, setSwipeLimitNotice] = useState('');
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
@@ -630,18 +751,21 @@ export default function CardSwipersLanding() {
   const [activeChat, setActiveChat] = useState(null);
   const [chatOffers, setChatOffers] = useState([]);
   const [offerDraftAmount, setOfferDraftAmount] = useState('');
+  const [offerDealType, setOfferDealType] = useState('hybrid_trade');
   const [offerBusy, setOfferBusy] = useState(false);
 
   const [newCard, setNewCard] = useState({
     title: '',
     brand: 'Topps',
+    cardNumber: '',
+    setNumber: '',
     gradingCompany: 'Raw (Ungraded)',
     rawCondition: 'Near Mint - Mint',
     grade: '10 Gem Mint',
     estimatedValue: '',
     buyNowPrice: '',
     sellerState: '',
-    saleMode: 'trade_only',
+    saleMode: 'trade_and_sale',
     lookingFor: ''
   });
   const [postImageError, setPostImageError] = useState('');
@@ -651,11 +775,11 @@ export default function CardSwipersLanding() {
   const [postBackImageFile, setPostBackImageFile] = useState(null);
   const [postFrontImagePreview, setPostFrontImagePreview] = useState('');
   const [postBackImagePreview, setPostBackImagePreview] = useState('');
-  const [showCardScanner, setShowCardScanner] = useState(false);
-  const closeCardScanner = useCallback(() => setShowCardScanner(false), []);
+  const [scannerBusy, setScannerBusy] = useState(false);
+  const [scannerInfo, setScannerInfo] = useState('');
+  const [scannerDetectedLines, setScannerDetectedLines] = useState([]);
   const postFrontImageInputRef = useRef(null);
   const postBackImageInputRef = useRef(null);
-  const hasAutoPromptedPostCaptureRef = useRef(false);
   const [activeCardImageSide, setActiveCardImageSide] = useState('front');
   const cardImageTouchStartXRef = useRef(0);
   const [chatDraft, setChatDraft] = useState('');
@@ -673,9 +797,18 @@ export default function CardSwipersLanding() {
   const [reviewBusyByPurchaseId, setReviewBusyByPurchaseId] = useState({});
   const [showInterestModal, setShowInterestModal] = useState(false);
   const [pendingInterestType, setPendingInterestType] = useState(MARKETPLACE_ACTION_TYPES[0]);
+  const [pendingDealType, setPendingDealType] = useState('pure_trade');
+  const [pendingCashAmount, setPendingCashAmount] = useState('');
   const [interestBusy, setInterestBusy] = useState(false);
   const [interestError, setInterestError] = useState('');
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [activePaymentSheet, setActivePaymentSheet] = useState(null);
+  const [paymentSheetError, setPaymentSheetError] = useState('');
+  const [trackingDrafts, setTrackingDrafts] = useState({});
+  const [trackingBusyByPurchaseId, setTrackingBusyByPurchaseId] = useState({});
+  const [releaseBusyByPurchaseId, setReleaseBusyByPurchaseId] = useState({});
+  const [disputeDrafts, setDisputeDrafts] = useState({});
+  const [disputeBusyByPurchaseId, setDisputeBusyByPurchaseId] = useState({});
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingIntroVisible, setOnboardingIntroVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
@@ -686,6 +819,39 @@ export default function CardSwipersLanding() {
     priceRange: [250, 1000],
     priorities: []
   });
+  const [clubs, setClubs] = useState([]);
+  const [clubSearchQuery, setClubSearchQuery] = useState('');
+  const [clubJoinCode, setClubJoinCode] = useState('');
+  const [clubDraftName, setClubDraftName] = useState('');
+  const [clubDraftDescription, setClubDraftDescription] = useState('');
+  const [clubDraftLogoId, setClubDraftLogoId] = useState('');
+  const [clubDraftLogoFile, setClubDraftLogoFile] = useState(null);
+  const [clubDraftLogoPreview, setClubDraftLogoPreview] = useState('');
+  const [clubDraftError, setClubDraftError] = useState('');
+  const clubLogoInputRef = useRef(null);
+  const [clubCreateBusy, setClubCreateBusy] = useState(false);
+  const [clubJoinBusy, setClubJoinBusy] = useState(false);
+  const [clubActionBusyId, setClubActionBusyId] = useState('');
+  const [clubInfo, setClubInfo] = useState('');
+  const [clubError, setClubError] = useState('');
+  const [moderatedClubIds, setModeratedClubIds] = useState([]);
+  const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const [selectedClubMembers, setSelectedClubMembers] = useState([]);
+  const [selectedClubEvents, setSelectedClubEvents] = useState([]);
+  const [selectedClubPosts, setSelectedClubPosts] = useState([]);
+  const [selectedClubReports, setSelectedClubReports] = useState([]);
+  const [selectedClubBanRecord, setSelectedClubBanRecord] = useState(null);
+  const [clubPostDraft, setClubPostDraft] = useState({
+    title: '',
+    askingPrice: '',
+    description: '',
+    imageUrl: ''
+  });
+  const [clubPostBusy, setClubPostBusy] = useState(false);
+  const [clubEventBusyId, setClubEventBusyId] = useState('');
+  const [clubReportBusy, setClubReportBusy] = useState(false);
+  const [chatReportBusy, setChatReportBusy] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersError, setAdminUsersError] = useState('');
@@ -694,6 +860,9 @@ export default function CardSwipersLanding() {
   const [flaggedCards, setFlaggedCards] = useState([]);
   const [flaggedCardsLoading, setFlaggedCardsLoading] = useState(false);
   const [flaggedCardsError, setFlaggedCardsError] = useState('');
+  const [chatReports, setChatReports] = useState([]);
+  const [chatReportsLoading, setChatReportsLoading] = useState(false);
+  const [chatReportsError, setChatReportsError] = useState('');
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
   const [flagCardId, setFlagCardId] = useState(null);
@@ -703,13 +872,14 @@ export default function CardSwipersLanding() {
     birthDate: '',
     phone: '',
     email: '',
-    verificationTypes: ['buyer', 'seller'],
+    verificationTypes: ['seller'],
     notes: ''
   });
   const [verificationDocFile, setVerificationDocFile] = useState(null);
   const [verificationBusy, setVerificationBusy] = useState(false);
   const [verificationError, setVerificationError] = useState('');
   const [verificationInfo, setVerificationInfo] = useState('');
+  const [verificationSessionBusy, setVerificationSessionBusy] = useState(false);
   const verificationDocInputRef = useRef(null);
   const splashStartTimeRef = useRef(Date.now());
   const hasHydratedPendingInterests = useRef(false);
@@ -717,6 +887,8 @@ export default function CardSwipersLanding() {
   const pendingInterestIdsRef = useRef(new Set());
   const matchIdsRef = useRef(new Set());
   const unreadMatchIdsRef = useRef(new Set());
+  const clubReportIdsRef = useRef(new Set());
+  const clubReportsHydratedRef = useRef(false);
   const currentCard = personalizedDeck[cardIndex] || null;
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
@@ -724,6 +896,19 @@ export default function CardSwipersLanding() {
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
+  const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
+  const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
+  const selectedClubRole = selectedClubMembership?.role || '';
+  const canManageClubMembers = selectedClubRole === 'owner';
+  const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
+  const isSelectedClubBanned = Boolean(selectedClubBanRecord);
+  const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
+  const filteredClubs = clubs.filter((club) => {
+    const searchTerm = clubSearchQuery.trim().toLowerCase();
+    if (!searchTerm) return true;
+    const haystack = `${club.name || ''} ${club.description || ''} ${club.code || ''}`.toLowerCase();
+    return haystack.includes(searchTerm);
+  });
   const ratingStatsByUser = reviews.reduce((accumulator, review) => {
     const reviewedUid = review.reviewedUid;
     if (!reviewedUid) return accumulator;
@@ -750,12 +935,10 @@ export default function CardSwipersLanding() {
   const currentSellerRating = currentCard?.ownerUid ? ratingStatsByUser[currentCard.ownerUid]?.seller : null;
   const currentUserBuyerRating = firebaseUser?.uid ? ratingStatsByUser[firebaseUser.uid]?.buyer : null;
   const currentUserSellerRating = firebaseUser?.uid ? ratingStatsByUser[firebaseUser.uid]?.seller : null;
-  const buyerVerificationStatus = String(
-    currentUserProfile?.buyerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
-  ).toLowerCase();
   const sellerVerificationStatus = String(
     currentUserProfile?.sellerVerificationStatus || currentUserProfile?.verificationStatus || 'unverified'
   ).toLowerCase();
+  const hasSellerPaymentAccess = sellerVerificationStatus === 'verified' || sellerVerificationStatus === 'pending';
   const existingReviewKeys = new Set(
     reviews.map((review) => `${review.purchaseId || ''}:${review.reviewerUid || ''}`)
   );
@@ -779,6 +962,26 @@ export default function CardSwipersLanding() {
       };
     })
     .filter((record) => Boolean(record.counterpartyUid));
+  const escrowTransactions = userPurchaseIntents
+    .filter((record) => String(record.paymentProvider || '').toLowerCase() === 'stripe')
+    .map((record) => {
+      const isBuyer = record.buyerUid === firebaseUser?.uid;
+      const sellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === record.sellerUid || entry.uid === record.sellerUid) || {};
+      const connectedAccountId = getConnectedAccountIdFromRecord(record, {}, sellerVerificationRecord);
+      return {
+        ...record,
+        orderId: record.orderId || record.id,
+        isBuyer,
+        isSeller: record.sellerUid === firebaseUser?.uid,
+        connectedAccountId,
+        counterpartyName: isBuyer ? (record.sellerName || 'Seller') : (record.buyerName || 'Buyer')
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = toDateValue(left.updatedAt || left.createdAt)?.getTime?.() || 0;
+      const rightTime = toDateValue(right.updatedAt || right.createdAt)?.getTime?.() || 0;
+      return rightTime - leftTime;
+    });
   const postProgressChecks = [
     Boolean(postFrontImagePreview),
     Boolean(postBackImagePreview),
@@ -802,19 +1005,6 @@ export default function CardSwipersLanding() {
   ].filter(Boolean);
   const canToggleCurrentCardImage = currentCardImages.length > 1;
 
-  const stabilizeNativeViewport = useCallback(() => {
-    if (!isNativeApp || typeof window === 'undefined') return;
-
-    const parsedViewportHeight = Number(window.visualViewport?.height || 0);
-    const parsedInnerHeight = Number(window.innerHeight || 0);
-    const parsedDocumentHeight = Number(document?.documentElement?.clientHeight || 0);
-    const measuredHeight = Math.round(Math.max(parsedViewportHeight, parsedInnerHeight, parsedDocumentHeight));
-
-    if (measuredHeight > 0) {
-      setNativeViewportHeight((previousHeight) => (previousHeight === measuredHeight ? previousHeight : measuredHeight));
-    }
-  }, [isNativeApp]);
-
   const addNotification = useCallback((payload) => {
     const notification = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -835,55 +1025,59 @@ export default function CardSwipersLanding() {
   }, []);
 
   useEffect(() => {
-    if (!isNativeApp || typeof window === 'undefined') return;
-
-    const refreshViewport = () => {
-      window.requestAnimationFrame(() => {
-        stabilizeNativeViewport();
-      });
-      window.setTimeout(() => {
-        stabilizeNativeViewport();
-      }, 120);
-    };
-
-    refreshViewport();
-
-    const visualViewport = window.visualViewport;
-    window.addEventListener('resize', refreshViewport);
-    window.addEventListener('orientationchange', refreshViewport);
-    window.addEventListener('focusin', refreshViewport);
-    window.addEventListener('focusout', refreshViewport);
-    window.addEventListener('pageshow', refreshViewport);
-    document.addEventListener('visibilitychange', refreshViewport);
-    if (visualViewport) {
-      visualViewport.addEventListener('resize', refreshViewport);
-      visualViewport.addEventListener('scroll', refreshViewport);
+    if (!isNativeApp || currentTab !== 'post') {
+      if (isNativeApp) CameraPreview.stop().catch(() => {});
+      return undefined;
     }
+
+    CameraPreview.start({
+      parent: 'camera-container',
+      position: 'rear',
+      toBack: true
+    }).catch((error) => {
+      console.error('Failed to start camera preview:', error);
+    });
 
     return () => {
-      window.removeEventListener('resize', refreshViewport);
-      window.removeEventListener('orientationchange', refreshViewport);
-      window.removeEventListener('focusin', refreshViewport);
-      window.removeEventListener('focusout', refreshViewport);
-      window.removeEventListener('pageshow', refreshViewport);
-      document.removeEventListener('visibilitychange', refreshViewport);
-      if (visualViewport) {
-        visualViewport.removeEventListener('resize', refreshViewport);
-        visualViewport.removeEventListener('scroll', refreshViewport);
-      }
+      CameraPreview.stop().catch(() => {});
     };
-  }, [isNativeApp, stabilizeNativeViewport]);
-
-  useEffect(() => {
-    if (isNativeApp) {
-      stabilizeNativeViewport();
-    }
-  }, [isNativeApp, currentTab, isAuthenticated, stabilizeNativeViewport]);
+  }, [currentTab, isNativeApp]);
 
   useEffect(() => {
     if (firebaseUser) return;
     setNotifications([]);
     setShowNotificationsPanel(false);
+    setClubs([]);
+    setClubSearchQuery('');
+    setClubJoinCode('');
+    setClubDraftName('');
+    setClubDraftDescription('');
+    setClubCreateBusy(false);
+    setClubJoinBusy(false);
+    setClubActionBusyId('');
+    setClubInfo('');
+    setClubError('');
+    setModeratedClubIds([]);
+    setClubModerationBadgeCount(0);
+    setSelectedClubId('');
+    setSelectedClubMembers([]);
+    setSelectedClubPosts([]);
+    setSelectedClubReports([]);
+    setSelectedClubBanRecord(null);
+    setClubPostDraft({
+      title: '',
+      askingPrice: '',
+      description: '',
+      imageUrl: ''
+    });
+    setClubPostBusy(false);
+    setClubReportBusy(false);
+    setChatReportBusy(false);
+    setChatReports([]);
+    setChatReportsLoading(false);
+    setChatReportsError('');
+    clubReportIdsRef.current = new Set();
+    clubReportsHydratedRef.current = false;
     setChatOffers([]);
     setOfferDraftAmount('');
     setOfferBusy(false);
@@ -1010,26 +1204,21 @@ export default function CardSwipersLanding() {
 
       const hasPendingGoogleRedirect =
         typeof window !== 'undefined' && window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === '1';
-      const hasPendingAppleRedirect =
-        typeof window !== 'undefined' && window.sessionStorage.getItem(APPLE_REDIRECT_PENDING_KEY) === '1';
-      const pendingProvider = hasPendingAppleRedirect ? 'apple' : hasPendingGoogleRedirect ? 'google' : null;
 
-      if (!pendingProvider) return;
+      if (!hasPendingGoogleRedirect) return;
 
       try {
         const result = await getRedirectResult(auth);
         if (!isMounted || !result?.user) return;
-        setAuthInfo(`${pendingProvider === 'apple' ? 'Apple' : 'Google'} sign-in completed.`);
+        setAuthInfo('Google sign-in completed.');
       } catch (error) {
         if (!isMounted) return;
-        setAuthError(getAuthErrorMessage(error, pendingProvider));
+        setAuthError(getAuthErrorMessage(error, 'google'));
       } finally {
         if (typeof window !== 'undefined') {
           window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
-          window.sessionStorage.removeItem(APPLE_REDIRECT_PENDING_KEY);
         }
         setIsGoogleRedirecting(false);
-        setIsAppleRedirecting(false);
       }
     };
 
@@ -1074,6 +1263,74 @@ export default function CardSwipersLanding() {
   }, [authLoading, isNativeApp]);
 
   useEffect(() => {
+    if (!isNativeApp || typeof window === 'undefined') return;
+
+    let rafId = 0;
+    let timeoutId = 0;
+
+    const applyViewportHeight = () => {
+      const visualViewportHeight = Number(window.visualViewport?.height || 0);
+      const innerHeight = Number(window.innerHeight || 0);
+      const measuredHeight = Math.round(Math.max(visualViewportHeight, innerHeight));
+      if (measuredHeight > 0) {
+        setNativeViewportHeight(measuredHeight);
+      }
+    };
+
+    const scheduleViewportSync = (delay = 0) => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        rafId = window.requestAnimationFrame(applyViewportHeight);
+      }, delay);
+    };
+
+    applyViewportHeight();
+    scheduleViewportSync(80);
+    scheduleViewportSync(260);
+
+    const resizeHandler = () => scheduleViewportSync(0);
+    window.addEventListener('resize', resizeHandler);
+    window.addEventListener('orientationchange', resizeHandler);
+    window.visualViewport?.addEventListener('resize', resizeHandler);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (timeoutId) clearTimeout(timeoutId);
+      window.removeEventListener('resize', resizeHandler);
+      window.removeEventListener('orientationchange', resizeHandler);
+      window.visualViewport?.removeEventListener('resize', resizeHandler);
+    };
+  }, [isNativeApp, currentTab, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isNativeApp || typeof window === 'undefined') return;
+    if (currentTab === 'auth') return;
+
+    let frameId = 0;
+    const resyncViewport = () => {
+      const visualViewportHeight = Number(window.visualViewport?.height || 0);
+      const innerHeight = Number(window.innerHeight || 0);
+      const measuredHeight = Math.round(Math.max(visualViewportHeight, innerHeight));
+      if (measuredHeight > 0) {
+        setNativeViewportHeight(measuredHeight);
+      }
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+
+    resyncViewport();
+    window.setTimeout(resyncViewport, 80);
+    window.setTimeout(resyncViewport, 260);
+    frameId = window.requestAnimationFrame(resyncViewport);
+
+    return () => {
+      if (frameId) cancelAnimationFrame(frameId);
+    };
+  }, [isNativeApp, currentTab, isAuthenticated]);
+
+  useEffect(() => {
     let isMounted = true;
     let profileUnsubscribe = () => {};
 
@@ -1115,21 +1372,13 @@ export default function CardSwipersLanding() {
           birthDate: '',
           phone: '',
           verificationStatus: 'unverified',
-          buyerVerificationStatus: 'unverified',
           sellerVerificationStatus: 'unverified',
-          is_verified: false,
           status: 'active',
           role: declaredAdmin ? 'admin' : 'user',
           tos_accepted: false,
           tos_accepted_at: null,
           tos_version_accepted: null,
           settings: {},
-          location: '',
-          bio: '',
-          swipeQuota: {
-            weekKey: getIsoWeekKey(),
-            used: 0
-          },
           binderId: firebaseUser.uid,
           createdAt: serverTimestamp(),
           lastLoginAt: serverTimestamp(),
@@ -1146,13 +1395,7 @@ export default function CardSwipersLanding() {
               interests: [],
               intent: 'trading',
               priceRange: [250, 1000],
-              priorities: [],
-              location: '',
-              bio: '',
-              swipeQuota: {
-                weekKey: getIsoWeekKey(),
-                used: 0
-              }
+              priorities: []
             });
           } else {
             throw error;
@@ -1168,7 +1411,6 @@ export default function CardSwipersLanding() {
           birthDate: profile.birthDate || '',
           phone: profile.phone || '',
           verificationStatus: profile.verificationStatus || 'unverified',
-          buyerVerificationStatus: profile.buyerVerificationStatus || profile.verificationStatus || 'unverified',
           sellerVerificationStatus: profile.sellerVerificationStatus || profile.verificationStatus || 'unverified',
           status: profile.status || 'active',
           role: profile.role || 'user',
@@ -1176,9 +1418,6 @@ export default function CardSwipersLanding() {
           tos_accepted_at: profile.tos_accepted_at || null,
           tos_version_accepted: profile.tos_version_accepted || null,
           settings: profile.settings || {},
-          location: profile.location || '',
-          bio: profile.bio || '',
-          swipeQuota: profile.swipeQuota || { weekKey: getIsoWeekKey(), used: 0 },
           binderId: profile.binderId || firebaseUser.uid,
           createdAt: profile.createdAt,
           lastLoginAt: profile.lastLoginAt,
@@ -1339,6 +1578,34 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     if (!isAdmin || currentTab !== 'admin') {
+      setChatReports([]);
+      setChatReportsLoading(false);
+      setChatReportsError('');
+      return;
+    }
+
+    setChatReportsLoading(true);
+    setChatReportsError('');
+    const reportsQuery = query(collection(db, 'chatReports'), orderBy('createdAt', 'desc'), limit(500));
+
+    const unsubscribe = onSnapshot(
+      reportsQuery,
+      (snapshot) => {
+        setChatReports(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+        setChatReportsLoading(false);
+      },
+      (error) => {
+        console.error('Failed loading chat reports for admin:', error);
+        setChatReportsError('Unable to load chat reports. Check Firestore rules and try again.');
+        setChatReportsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAdmin, currentTab]);
+
+  useEffect(() => {
+    if (!isAdmin || currentTab !== 'admin') {
       setPurchaseIntents([]);
       setPremiumSubscriptions([]);
       setSellerVerifications([]);
@@ -1425,6 +1692,214 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     if (!firebaseUser) {
+      setClubs([]);
+      return;
+    }
+
+    const clubsQuery = query(collection(db, 'clubs'), orderBy('createdAt', 'desc'), limit(150));
+    const unsubscribe = onSnapshot(
+      clubsQuery,
+      (snapshot) => {
+        const loadedClubs = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setClubs(loadedClubs);
+      },
+      (error) => {
+        console.error('Failed loading clubs:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setModeratedClubIds([]);
+      return;
+    }
+
+    const membershipQuery = query(collectionGroup(db, 'members'), where('uid', '==', firebaseUser.uid));
+    const unsubscribe = onSnapshot(
+      membershipQuery,
+      (snapshot) => {
+        const moderated = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data() || {};
+            const clubId = docSnap.ref.parent.parent?.id || '';
+            return { clubId, role: data.role || '' };
+          })
+          .filter((entry) => entry.clubId && isClubModeratorRole(entry.role))
+          .map((entry) => entry.clubId);
+
+        setModeratedClubIds(Array.from(new Set(moderated)));
+      },
+      (error) => {
+        console.error('Failed loading club moderation memberships:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser || moderatedClubIds.length === 0) {
+      setClubModerationBadgeCount(0);
+      return;
+    }
+
+    const reportCountsByClub = {};
+    const unsubscribers = moderatedClubIds.map((clubId) => {
+      const openReportsQuery = query(
+        collection(db, 'clubs', clubId, 'reports'),
+        where('status', '==', 'open'),
+        limit(200)
+      );
+
+      return onSnapshot(
+        openReportsQuery,
+        (snapshot) => {
+          reportCountsByClub[clubId] = snapshot.size;
+          const nextCount = Object.values(reportCountsByClub).reduce((sum, value) => sum + Number(value || 0), 0);
+          setClubModerationBadgeCount(nextCount);
+        },
+        (error) => {
+          console.error(`Failed loading open reports for club ${clubId}:`, error);
+        }
+      );
+    });
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [firebaseUser, moderatedClubIds]);
+
+  useEffect(() => {
+    if (!clubs.length) {
+      setSelectedClubId('');
+      return;
+    }
+
+    if (!selectedClubId || !clubs.some((club) => club.id === selectedClubId)) {
+      setSelectedClubId(clubs[0].id);
+    }
+  }, [clubs, selectedClubId]);
+
+  useEffect(() => {
+    if (!selectedClubId) {
+      setSelectedClubMembers([]);
+      setSelectedClubEvents([]);
+      setSelectedClubPosts([]);
+      setSelectedClubReports([]);
+      setSelectedClubBanRecord(null);
+      clubReportIdsRef.current = new Set();
+      clubReportsHydratedRef.current = false;
+      return;
+    }
+
+    const membersRef = collection(doc(db, 'clubs', selectedClubId), 'members');
+    const eventsRef = collection(doc(db, 'clubs', selectedClubId), 'events');
+    const postsRef = collection(doc(db, 'clubs', selectedClubId), 'posts');
+    const reportsRef = collection(doc(db, 'clubs', selectedClubId), 'reports');
+
+    const unsubMembers = onSnapshot(
+      membersRef,
+      (snapshot) => {
+        const loadedMembers = snapshot.docs
+          .map((docSnap) => ({ uid: docSnap.id, ...docSnap.data() }))
+          .sort((a, b) => {
+            const rank = { owner: 0, agent: 1, member: 2 };
+            return (rank[a.role] ?? 3) - (rank[b.role] ?? 3);
+          });
+        setSelectedClubMembers(loadedMembers);
+      },
+      (error) => {
+        console.error('Failed loading club members:', error);
+      }
+    );
+
+    const unsubPosts = onSnapshot(
+      query(postsRef, orderBy('createdAt', 'desc'), limit(200)),
+      (snapshot) => {
+        setSelectedClubPosts(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        console.error('Failed loading club posts:', error);
+      }
+    );
+
+    const unsubEvents = onSnapshot(
+      query(eventsRef, orderBy('scheduledFor', 'asc'), limit(20)),
+      (snapshot) => {
+        setSelectedClubEvents(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        console.error('Failed loading club events:', error);
+      }
+    );
+
+    const unsubReports = onSnapshot(
+      query(reportsRef, orderBy('createdAt', 'desc'), limit(200)),
+      (snapshot) => {
+        setSelectedClubReports(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+      },
+      (error) => {
+        console.error('Failed loading club reports:', error);
+      }
+    );
+
+    let unsubBan = () => {};
+    if (firebaseUser?.uid) {
+      unsubBan = onSnapshot(
+        doc(db, 'clubs', selectedClubId, 'bans', firebaseUser.uid),
+        (snapshot) => {
+          setSelectedClubBanRecord(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+        },
+        (error) => {
+          console.error('Failed loading club ban status:', error);
+        }
+      );
+    }
+
+    return () => {
+      unsubMembers();
+      unsubEvents();
+      unsubPosts();
+      unsubReports();
+      unsubBan();
+    };
+  }, [selectedClubId, firebaseUser]);
+
+  useEffect(() => {
+    if (!selectedClubId || !canModerateClubPosts) {
+      clubReportIdsRef.current = new Set();
+      clubReportsHydratedRef.current = false;
+      return;
+    }
+
+    const openReports = selectedClubReports.filter((report) => report.status === 'open');
+    const currentIds = new Set(openReports.map((report) => report.id));
+
+    if (!clubReportsHydratedRef.current) {
+      clubReportsHydratedRef.current = true;
+      clubReportIdsRef.current = currentIds;
+      return;
+    }
+
+    openReports.forEach((report) => {
+      if (!clubReportIdsRef.current.has(report.id)) {
+        addNotification({
+          type: 'club-report',
+          title: 'New Club Report',
+          message: `${selectedClub?.name || 'Club'} has a new moderation report.`,
+          actionTab: 'onboarding'
+        });
+      }
+    });
+
+    clubReportIdsRef.current = currentIds;
+  }, [selectedClubId, selectedClubReports, canModerateClubPosts, selectedClub, addNotification]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
       setReviews([]);
       return;
     }
@@ -1455,7 +1930,7 @@ export default function CardSwipersLanding() {
       setCurrentTab('auth');
       return;
     }
-    setCurrentTab(hasAdminAccess ? 'admin' : 'swipe');
+    setCurrentTab(hasAdminAccess ? 'admin' : 'onboarding');
   }, [isAdminPath, isAuthenticated, hasAdminAccess]);
 
   useEffect(() => {
@@ -1484,10 +1959,10 @@ export default function CardSwipersLanding() {
     if (authLoading || !isAuthenticated) return;
     if (currentTab === 'auth' || currentTab === 'landing') {
       if (isAdminPath) {
-        setCurrentTab(hasAdminAccess ? 'admin' : 'swipe');
+        setCurrentTab(hasAdminAccess ? 'admin' : 'onboarding');
         return;
       }
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
     }
   }, [authLoading, isAuthenticated, currentTab, isAdminPath, hasAdminAccess]);
 
@@ -1551,7 +2026,7 @@ export default function CardSwipersLanding() {
                   listedAt: data.listedAt || data.createdAt || null,
                   listedAtLabel: formatListingDate(data.listedAt || data.createdAt || null),
                   buyNowPrice: data.buyNowPrice || data.tradeValue || data.value || '$0',
-                  saleMode: data.saleMode || 'trade_only',
+                  saleMode: data.saleMode || 'trade_and_sale',
                   sellerState: normalizeStateCode(data.sellerState || ''),
                   sellerVerificationStatus: data.sellerVerificationStatus || 'unverified',
                   sellerVerified: Boolean(data.sellerVerified || data.sellerVerificationStatus === 'verified'),
@@ -1607,7 +2082,7 @@ export default function CardSwipersLanding() {
       setOnboardingBusy(false);
       setOnboardingError('');
       setShowOnboarding(true);
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
     } else {
       setShowOnboarding(false);
     }
@@ -1849,39 +2324,6 @@ export default function CardSwipersLanding() {
   const handleSwipe = async (direction) => {
     if (!currentCard || !firebaseUser) return;
 
-    if (!hasActiveSubscription && freeSwipesRemaining <= 0) {
-      setSwipeLimitNotice('You reached your 30 free swipes this week. Upgrade to keep swiping now.');
-      setShowUpgradeModal(true);
-      return;
-    }
-
-    if (!hasActiveSubscription) {
-      const weekKey = getIsoWeekKey();
-      const currentQuota = currentUserProfile?.swipeQuota || {};
-      const usedThisWeek = currentQuota.weekKey === weekKey ? Number(currentQuota.used || 0) : 0;
-      const nextUsed = usedThisWeek + 1;
-
-      setCurrentUserProfile((prev) => ({
-        ...(prev || {}),
-        swipeQuota: {
-          weekKey,
-          used: nextUsed
-        }
-      }));
-
-      try {
-        await updateDoc(doc(db, 'users', firebaseUser.uid), {
-          swipeQuota: {
-            weekKey,
-            used: nextUsed
-          },
-          updatedAt: serverTimestamp()
-        });
-      } catch (error) {
-        console.error('Failed to persist swipe quota usage:', error);
-      }
-    }
-
     setSwipeFeedback(direction);
 
     if (direction === 'pass') {
@@ -1909,15 +2351,398 @@ export default function CardSwipersLanding() {
     }
 
     setPendingInterestType(MARKETPLACE_ACTION_TYPES[0]);
+    setPendingDealType('pure_trade');
+    setPendingCashAmount('');
     setInterestError('');
     setShowInterestModal(true);
     setSwipeFeedback(null);
+  };
+
+  const handleInstantPurchase = async (card = currentCard, options = {}) => {
+    if (!card || !firebaseUser) return false;
+    const shouldAdvanceDeck = Boolean(options?.advanceAfterPurchase);
+    const cashAmount = Number(options?.cashAmount || 0);
+    const feeOnly = Boolean(options?.feeOnly);
+
+    if (!STRIPE_PUBLISHABLE_KEY || !stripePromise) {
+      setAuthInfo('Payment processing is in sandbox mode or configuration is pending. Your offer was not charged.');
+      return false;
+    }
+
+    const grossAmount = feeOnly ? 0 : (cashAmount > 0 ? cashAmount : parseDollarValue(card.buyNowPrice || card.tradeValue || card.value));
+    const { baseAmount, platformFee, totalCharge } = calculateEscrowCharge(grossAmount);
+    const chargeAmount = feeOnly ? TRADE_PROTECTION_FEE : totalCharge;
+    const taxState = normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || card.sellerState || '');
+    const orderId = buildEscrowOrderId();
+    const purchaseRef = doc(db, 'purchaseIntents', orderId);
+
+    await setDoc(purchaseRef, {
+      orderId,
+      buyerUid: firebaseUser.uid,
+      buyerName: firebaseUser.displayName || firebaseUser.email || 'Buyer',
+      sellerUid: card.ownerUid || null,
+      sellerName: card.owner || 'Collector',
+      sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || null,
+      cardId: card.id,
+      cardTitle: card.title,
+      cardBrand: card.brand || '',
+      listingPrice: baseAmount,
+      marketplaceFeeRate: MARKETPLACE_FEE_RATE,
+      marketplaceFeeAmount: feeOnly ? TRADE_PROTECTION_FEE : platformFee,
+      chargedTotalAmount: chargeAmount,
+      sellerPayoutAmount: baseAmount,
+      taxState,
+      taxStatus: 'needs-stripe-tax',
+      taxAmount: 0,
+      escrowAmount: feeOnly ? TRADE_PROTECTION_FEE : baseAmount,
+      escrowStatus: 'payment_pending',
+      status: 'requires_payment',
+      paymentProvider: 'stripe',
+      saleMode: options?.dealType || 'cash_sale',
+      dealType: options?.dealType || 'cash_sale',
+      feeOnly,
+      offerId: options?.offerId || null,
+      listedAt: card.listedAt || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/create-payment-intent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({
+          itemPrice: baseAmount,
+          feeOnly,
+          protectionFee: feeOnly ? TRADE_PROTECTION_FEE : null,
+          currency: 'usd',
+          orderId,
+          buyerId: firebaseUser.uid,
+          sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || '',
+          sellerUserId: card.ownerUid || null,
+          sellerName: card.owner || 'Collector',
+          cardId: card.id,
+          cardTitle: card.title,
+          cardBrand: card.brand || '',
+          buyerShippingAddress: {
+            postal_code: currentUserProfile?.shippingZip || currentUserProfile?.postalCode || '',
+            state: currentUserProfile?.state || currentUserProfile?.shippingState || ''
+          }
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to initialize Stripe payment.');
+      }
+
+      await updateDoc(purchaseRef, {
+        paymentIntentId: payload.paymentIntentId,
+        paymentIntentClientSecret: payload.clientSecret,
+        transferGroup: payload.transferGroup,
+        chargedTotalAmount: Number(payload.totalCharge || chargeAmount),
+        marketplaceFeeAmount: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
+        sellerPayoutAmount: Number(payload.baseItemPrice || baseAmount),
+        escrowAmount: Number(payload.baseItemPrice || (feeOnly ? TRADE_PROTECTION_FEE : baseAmount)),
+        status: 'payment_intent_created',
+        escrowStatus: 'payment_intent_created',
+        updatedAt: serverTimestamp()
+      });
+
+      setPaymentSheetError('');
+      setActivePaymentSheet({
+        orderId,
+        purchaseId: orderId,
+        clientSecret: payload.clientSecret,
+        cardId: card.id,
+        cardTitle: card.title,
+        baseItemPrice: Number(payload.baseItemPrice || baseAmount),
+        totalCharge: Number(payload.totalCharge || chargeAmount),
+        platformFee: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
+        percentageFee: feeOnly ? 0 : Number(payload.percentageFee || calculateEscrowCharge(grossAmount).percentageFee),
+        flatFee: feeOnly ? 0 : Number(payload.flatFee || calculateEscrowCharge(grossAmount).flatFee),
+        feeOnly,
+        advanceAfterPurchase: shouldAdvanceDeck,
+        offerId: options?.offerId || null,
+        dealType: options?.dealType || 'cash_sale',
+        protectionRole: options?.protectionRole || null,
+        buyerProtectionPaymentStatus: options?.buyerProtectionPaymentStatus || null,
+        sellerProtectionPaymentStatus: options?.sellerProtectionPaymentStatus || null
+      });
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize escrow payment:', error);
+      await updateDoc(purchaseRef, {
+        status: 'payment_intent_failed',
+        escrowStatus: 'payment_intent_failed',
+        paymentError: error.message || 'Unable to initialize Stripe payment.',
+        updatedAt: serverTimestamp()
+      });
+      setAuthError(error.message || 'Unable to initialize Stripe payment.');
+      return false;
+    }
+  };
+
+  const handleEscrowPaymentSuccess = async (paymentIntent) => {
+    if (!activePaymentSheet?.purchaseId) return;
+
+    try {
+      await updateDoc(doc(db, 'purchaseIntents', activePaymentSheet.purchaseId), {
+        paymentIntentId: paymentIntent?.id || null,
+        paymentIntentStatus: paymentIntent?.status || 'succeeded',
+        status: 'payment_held',
+        escrowStatus: 'payment_held',
+        tosAcceptedAt: serverTimestamp(),
+        paidAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      if (activePaymentSheet.offerId) {
+        const protectionField = activePaymentSheet.feeOnly
+          ? activePaymentSheet.protectionRole === 'seller' ? 'sellerProtectionPaymentStatus' : 'buyerProtectionPaymentStatus'
+          : 'paymentStatus';
+        const otherProtectionHeld = activePaymentSheet.feeOnly && (
+          activePaymentSheet.protectionRole === 'seller'
+            ? activePaymentSheet.buyerProtectionPaymentStatus === 'payment_held'
+            : activePaymentSheet.sellerProtectionPaymentStatus === 'payment_held'
+        );
+        await updateDoc(doc(db, 'offers', activePaymentSheet.offerId), {
+          [protectionField]: 'payment_held',
+          paymentStatus: activePaymentSheet.feeOnly && !otherProtectionHeld ? 'payment_pending' : 'payment_held',
+          paymentIntentId: paymentIntent?.id || null,
+          paidAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        if (activeChat?.id) {
+          const sellerUid = activeChat.ownerUserId || null;
+          await updateDoc(doc(db, 'matches', activeChat.id), {
+            lastMessage: activePaymentSheet.feeOnly && !otherProtectionHeld
+              ? 'Trade Protection payment received from one party. The other party must pay $2.99 to unlock protection.'
+              : activePaymentSheet.feeOnly
+                ? 'Both Trade Protection fees are paid. Tracked shipping and dispute protection are unlocked.'
+                : 'Cash payment is held in escrow. Seller may now ship the card.',
+            unreadBy: sellerUid ? [sellerUid] : [],
+            updatedAt: serverTimestamp()
+          });
+        }
+      }
+
+      if (activePaymentSheet.advanceAfterPurchase) {
+        const nextDeck = deck.filter((listing) => listing.id !== activePaymentSheet.cardId);
+        setDeck(nextDeck);
+        setSwipeFeedback('like');
+        advanceDeck();
+      }
+
+      setAuthInfo(`Escrow payment captured for ${activePaymentSheet.cardTitle}. Funds will remain held until shipment and release.`);
+      setActivePaymentSheet(null);
+    } catch (error) {
+      console.error('Failed to finalize escrow payment:', error);
+      setPaymentSheetError('Payment succeeded, but we could not finish recording the order. Refresh your account history and verify the order status.');
+    }
+  };
+
+  const handleRetryOfferPayment = async (offer) => {
+    if (!firebaseUser || !activeChat?.id || !offer?.id) return;
+    if (offer.buyerUid !== firebaseUser.uid) return;
+
+    const cashAmount = Number(offer.cashAmount || offer.amount || 0);
+    const dealType = offer.dealType || 'hybrid_trade';
+    const feeOnly = dealType === 'pure_trade';
+    const checkoutCard = {
+      id: offer.cardId || activeChat.cardId || null,
+      title: offer.cardTitle || activeChat.cardTitle || 'Card trade',
+      brand: offer.brand || activeChat.brand || '',
+      ownerUid: offer.sellerUid || activeChat.ownerUserId || null,
+      owner: offer.sellerName || activeChat.counterpartyName || 'Seller',
+      sellerConnectedAccountId: offer.sellerConnectedAccountId || activeChat.sellerConnectedAccountId || null,
+      connectedAccountId: offer.connectedAccountId || activeChat.connectedAccountId || null,
+      sellerState: offer.sellerState || activeChat.sellerState || '',
+      buyNowPrice: feeOnly ? 0 : cashAmount,
+      tradeValue: feeOnly ? 0 : cashAmount,
+      value: feeOnly ? 0 : cashAmount
+    };
+
+    const checkoutStarted = await handleInstantPurchase(checkoutCard, {
+      cashAmount,
+      offerId: offer.id,
+      dealType,
+      feeOnly,
+      protectionRole: offer.buyerUid === firebaseUser.uid ? 'buyer' : 'seller',
+      buyerProtectionPaymentStatus: offer.buyerProtectionPaymentStatus || null,
+      sellerProtectionPaymentStatus: offer.sellerProtectionPaymentStatus || null,
+      advanceAfterPurchase: false
+    });
+    await updateDoc(doc(db, 'offers', offer.id), {
+      paymentStatus: checkoutStarted ? 'checkout_open' : 'payment_configuration_pending',
+      updatedAt: serverTimestamp()
+    });
+  };
+
+  const handleSubmitTrackingForOrder = async (transaction) => {
+    if (!transaction?.orderId || !transaction?.isSeller) return;
+
+    const draft = trackingDrafts[transaction.orderId] || {};
+    const carrier = String(draft.carrier || '').trim();
+    const trackingNumber = String(draft.trackingNumber || '').trim();
+    const trackingUrl = String(draft.trackingUrl || '').trim();
+
+    if (!carrier || !trackingNumber) {
+      setVerificationError('Carrier and tracking number are required before submitting tracking.');
+      return;
+    }
+
+    setTrackingBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
+    setVerificationError('');
+    setVerificationInfo('');
+
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/submit-tracking`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({
+          orderId: transaction.orderId,
+          carrier,
+          trackingNumber,
+          trackingUrl
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to submit tracking details.');
+      }
+
+      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
+        shippingCarrier: carrier,
+        trackingNumber,
+        trackingUrl: trackingUrl || null,
+        shipmentStatus: 'tracking_submitted',
+        escrowStatus: 'shipped',
+        updatedAt: serverTimestamp()
+      });
+
+      setVerificationInfo(`Tracking submitted for ${transaction.cardTitle || 'this order'}. The buyer can now release the held funds.`);
+    } catch (error) {
+      console.error('Failed to submit tracking:', error);
+      setVerificationError(error.message || 'Unable to submit tracking details.');
+    } finally {
+      setTrackingBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
+    }
+  };
+
+  const handleReleaseSellerFundsEarly = async (transaction) => {
+    if (!transaction?.orderId || !transaction?.isBuyer) return;
+
+    const sellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === transaction.sellerUid || entry.uid === transaction.sellerUid) || {};
+    const connectedAccountId = getConnectedAccountIdFromRecord(transaction, {}, sellerVerificationRecord);
+
+    if (!connectedAccountId) {
+      setAuthError('Seller has not linked a Stripe connected account yet, so funds cannot be released.');
+      return;
+    }
+
+    setReleaseBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
+    setAuthError('');
+
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/accept-delivery`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({
+          orderId: transaction.orderId
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to release seller funds.');
+      }
+
+      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
+        sellerConnectedAccountId: connectedAccountId,
+        sellerTransferId: payload.transferId || null,
+        status: 'released',
+        escrowStatus: 'released',
+        fundsReleasedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setAuthInfo(`Released ${formatMoney(transaction.escrowAmount || transaction.listingPrice || 0)} to ${transaction.sellerName || 'the seller'}.`);
+    } catch (error) {
+      console.error('Failed to release seller funds:', error);
+      setAuthError(error.message || 'Unable to release seller funds.');
+    } finally {
+      setReleaseBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
+    }
+  };
+
+  const handleOpenOrderDispute = async (transaction) => {
+    if (!transaction?.orderId || !transaction?.isBuyer) return;
+
+    const disputeReason = String(disputeDrafts[transaction.orderId] || '').trim();
+    if (!disputeReason) {
+      setAuthError('Enter a dispute reason before opening a dispute.');
+      return;
+    }
+
+    setDisputeBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: true }));
+    setAuthError('');
+
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/open-dispute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({
+          orderId: transaction.orderId,
+          disputeReason
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to open dispute.');
+      }
+
+      await updateDoc(doc(db, 'purchaseIntents', transaction.orderId), {
+        status: 'disputed',
+        escrowStatus: 'disputed',
+        disputeReason,
+        updatedAt: serverTimestamp()
+      });
+
+      setAuthInfo(`Dispute opened for ${transaction.cardTitle || 'this order'}. CardSwipers admin will review the shipment and transaction history.`);
+    } catch (error) {
+      console.error('Failed to open dispute:', error);
+      setAuthError(error.message || 'Unable to open dispute.');
+    } finally {
+      setDisputeBusyByPurchaseId((prev) => ({ ...prev, [transaction.orderId]: false }));
+    }
   };
 
   const handleSendInterest = async () => {
     if (!currentCard || !firebaseUser || interestBusy) return;
     setInterestError('');
     setInterestBusy(true);
+
+    const cashAmount = parseDollarValue(pendingCashAmount);
+    if (pendingDealType === 'hybrid_trade' && (!cashAmount || cashAmount <= 0)) {
+      setInterestError('Enter the cash difference for a hybrid trade.');
+      setInterestBusy(false);
+      return;
+    }
 
     // Optimistically filter deck and close modal immediately
     const nextDeck = deck.filter((card) => card.id !== currentCard.id);
@@ -1926,6 +2751,12 @@ export default function CardSwipersLanding() {
     setSwipeFeedback('like');
 
     try {
+      if (pendingDealType === 'cash_sale' || pendingInterestType === INSTANT_PURCHASE_ACTION) {
+        await withTimeout(handleInstantPurchase(currentCard), 12000, 'Instant purchase timed out');
+        advanceDeck();
+        return;
+      }
+
       await withTimeout(
         addDoc(collection(db, 'interests'), {
         fromUserId: firebaseUser.uid,
@@ -1936,6 +2767,8 @@ export default function CardSwipersLanding() {
         cardTitle: currentCard.title,
         brand: currentCard.brand || '',
         interestType: pendingInterestType,
+        dealType: pendingDealType,
+        cashAmount: pendingDealType === 'hybrid_trade' ? cashAmount : 0,
         status: 'pending',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -2011,6 +2844,10 @@ export default function CardSwipersLanding() {
   const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.title || isPostingCard) return;
+    if (newCard.saleMode !== 'trade_only' && !hasSellerPaymentAccess) {
+      setPostImageError('Seller verification is required before posting Buy Now listings. Submit verification below and continue trading while pending.');
+      return;
+    }
     if (!postFrontImageFile || !postBackImageFile) {
       setPostImageError('Please add both front and back photos before publishing.');
       return;
@@ -2020,7 +2857,6 @@ export default function CardSwipersLanding() {
     setIsPostingCard(true);
 
     let createdId = null;
-    let createdListingId = null;
     let frontImageUrl = '';
     let backImageUrl = '';
     let didPersist = false;
@@ -2044,62 +2880,40 @@ export default function CardSwipersLanding() {
       frontImageUrl = await uploadCardImage(postFrontImageFile, 'front');
       backImageUrl = await uploadCardImage(postBackImageFile, 'back');
 
-      const response = await withTimeout(
-        fetch('/api/listings/create', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${await firebaseUser.getIdToken()}`
-          },
-          body: JSON.stringify({
-            master_card: {
-              set_name: newCard.brand || 'Unknown set',
-              card_number: newCard.cardNumber || newCard.title,
-              rarity: newCard.rarity || 'unknown',
-              release_year: Number(newCard.releaseYear) || new Date().getFullYear(),
-              canonical_image_url: frontImageUrl
-            },
-            condition: conditionLabel,
-            grade_psa: isRawCard ? null : newCard.grade,
-            price: Number(String(newCard.estimatedValue || '0').replace(/[^0-9.]/g, '')) || 0,
-            status: 'active',
-            legacy_card: {
-              name: newCard.title,
-              title: newCard.title,
-              brand: newCard.brand,
-              category: newCard.brand,
-              condition: conditionLabel,
-              gradingCompany: newCard.gradingCompany,
-              grade: isRawCard ? '' : newCard.grade,
-              rawCondition: isRawCard ? newCard.rawCondition : '',
-              lookingFor: newCard.lookingFor,
-              ownerName: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
-              tradeValue: newCard.estimatedValue || '$0',
-              value: newCard.estimatedValue || '$0',
-              seekingTags: (newCard.lookingFor || '').split(',').map((value) => value.trim()).filter(Boolean),
-              buyNowPrice: newCard.estimatedValue || '$0',
-              saleMode: 'trade_only',
-              sellerConnectedAccountId: currentSellerConnectedAccountId || null,
-              connectedAccountId: currentSellerConnectedAccountId || null,
-              sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
-              sellerVerified: sellerVerificationProfileStatus === 'verified',
-              sellerVerificationStatus: sellerVerificationProfileStatus,
-              verifiedSellerBadge: sellerVerificationProfileStatus === 'verified',
-              imageFrontUrl: frontImageUrl,
-              imageBackUrl: backImageUrl,
-              imageUrl: frontImageUrl
-            }
-          })
+      const docRef = await withTimeout(
+        addDoc(collection(db, 'cards'), {
+        name: newCard.title,
+        brand: newCard.brand,
+        category: newCard.brand,
+        condition: conditionLabel,
+        gradingCompany: newCard.gradingCompany,
+        grade: isRawCard ? '' : newCard.grade,
+        rawCondition: isRawCard ? newCard.rawCondition : '',
+        lookingFor: newCard.lookingFor,
+        ownerUid: firebaseUser?.uid || null,
+        ownerName: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
+        tradeValue: newCard.estimatedValue || '$0',
+        value: newCard.estimatedValue || '$0',
+        seekingTags: (newCard.lookingFor || '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
+        saleMode: newCard.saleMode || 'trade_and_sale',
+        sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
+        sellerVerified: sellerVerificationProfileStatus === 'verified',
+        sellerVerificationStatus: sellerVerificationProfileStatus,
+        verifiedSellerBadge: sellerVerificationProfileStatus === 'verified',
+        listedAt: serverTimestamp(),
+        imageFrontUrl: frontImageUrl,
+        imageBackUrl: backImageUrl,
+        imageUrl: frontImageUrl,
+        createdAt: serverTimestamp()
         }),
         12000,
         'Card publish timed out'
       );
-      const responseBody = await response.json().catch(() => ({}));
-      if (!response.ok || !responseBody.legacy_card_id) {
-        throw new Error(responseBody.error || 'Card publish failed.');
-      }
-      createdId = responseBody.legacy_card_id;
-      createdListingId = responseBody.listing_id;
+      createdId = docRef.id;
       didPersist = true;
     } catch (error) {
       console.error('Failed to persist posted card:', error);
@@ -2118,7 +2932,6 @@ export default function CardSwipersLanding() {
 
     const newPostedCard = {
       id: createdId,
-      listingId: createdListingId,
       title: newCard.title,
       name: newCard.title,
       brand: newCard.brand,
@@ -2132,10 +2945,8 @@ export default function CardSwipersLanding() {
       tradeValue: newCard.estimatedValue || '$0',
       avgMarketValue: newCard.estimatedValue || '$0',
       recentComps: newCard.estimatedValue || '$0',
-      buyNowPrice: newCard.estimatedValue || '$0',
-      saleMode: 'trade_only',
-      sellerConnectedAccountId: currentSellerConnectedAccountId || null,
-      connectedAccountId: currentSellerConnectedAccountId || null,
+      buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
+      saleMode: newCard.saleMode || 'trade_and_sale',
       sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
       sellerVerified: sellerVerificationProfileStatus === 'verified',
       sellerVerificationStatus: sellerVerificationProfileStatus,
@@ -2175,13 +2986,15 @@ export default function CardSwipersLanding() {
     setNewCard({
       title: '',
       brand: 'Topps',
+      cardNumber: '',
+      setNumber: '',
       gradingCompany: 'Raw (Ungraded)',
       rawCondition: 'Near Mint - Mint',
       grade: '10 Gem Mint',
       estimatedValue: '',
       buyNowPrice: '',
       sellerState: '',
-      saleMode: 'trade_only',
+      saleMode: 'trade_and_sale',
       lookingFor: ''
     });
     setPostComposerStep(1);
@@ -2192,25 +3005,7 @@ export default function CardSwipersLanding() {
     setCurrentTab('swipe');
   };
 
-  useEffect(() => {
-    if (currentTab !== 'post') {
-      hasAutoPromptedPostCaptureRef.current = false;
-      return;
-    }
-    if (hasAutoPromptedPostCaptureRef.current) return;
-    if (postFrontImagePreview || postBackImagePreview) return;
-
-    hasAutoPromptedPostCaptureRef.current = true;
-    const timeoutId = window.setTimeout(() => {
-      setShowCardScanner(true);
-    }, 80);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [currentTab, postFrontImagePreview, postBackImagePreview]);
-
-  const handlePostImageChange = (side, e, options = {}) => {
+  const handlePostImageChange = (side, e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -2230,40 +3025,90 @@ export default function CardSwipersLanding() {
       if (side === 'front') {
         setPostFrontImagePreview(preview);
         setPostFrontImageFile(file);
-
-        if (!options.skipAutoBack && !postBackImagePreview) {
-          window.requestAnimationFrame(() => {
-            postBackImageInputRef.current?.click();
-          });
-        } else {
-          setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
-        }
       } else {
         setPostBackImagePreview(preview);
         setPostBackImageFile(file);
-
-        if (postFrontImagePreview || postFrontImageFile) {
-          setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
-        }
+        setPostComposerStep(2);
       }
       setPostImageError('');
     };
     reader.readAsDataURL(file);
 
-    if (isNativeApp && typeof window !== 'undefined') {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          stabilizeNativeViewport();
-        });
-      });
-    }
-
+    e.target.value = '';
   };
 
-  const handleScannerImagesCaptured = (frontFile, backFile) => {
-    handlePostImageChange('front', { target: { files: [frontFile] } }, { skipAutoBack: true });
-    handlePostImageChange('back', { target: { files: [backFile] } }, { skipAutoBack: true });
-    setPostComposerStep((prev) => (prev < 2 ? 2 : prev));
+  const handleScanCardWithOcr = async () => {
+    if (scannerBusy) return;
+
+    setScannerBusy(true);
+    setScannerInfo('Opening camera...');
+    setPostImageError('');
+
+    try {
+      const photo = await Camera.getPhoto({
+        quality: 95,
+        allowEditing: false,
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Camera,
+        correctOrientation: true,
+        width: 2200
+      });
+
+      const recognitionPath = photo?.path || photo?.webPath;
+      if (!recognitionPath) {
+        throw new Error('No image was captured for OCR.');
+      }
+
+      if (photo?.webPath) {
+        setPostFrontImagePreview(photo.webPath);
+        const blob = await fetch(photo.webPath).then((response) => response.blob());
+        const imageFile = new File([blob], `scan-front-${Date.now()}.jpg`, {
+          type: blob.type || 'image/jpeg'
+        });
+        setPostFrontImageFile(imageFile);
+      }
+
+      setScannerInfo('Running on-device OCR...');
+      const ocrResult = await runMlKitTextRecognition(recognitionPath);
+      const lines = extractTextLinesFromMlKitResult(ocrResult);
+      const parsed = parseCardText(lines);
+      setScannerDetectedLines(lines.slice(0, 8));
+
+      if (!parsed.cardName && !parsed.cardNumber) {
+        setScannerInfo('OCR completed, but no confident card title/number was detected. Try better lighting.');
+        return;
+      }
+
+      setScannerInfo('Looking up card metadata...');
+      let metadata = null;
+      try {
+        metadata = await fetchCardMetadata(parsed, lines);
+      } catch {
+        metadata = null;
+      }
+
+      setNewCard((prev) => ({
+        ...prev,
+        title: metadata?.title || parsed.cardName || prev.title,
+        brand: metadata?.brand || prev.brand,
+        estimatedValue: metadata?.estimatedValue || prev.estimatedValue,
+        cardNumber: metadata?.cardNumber || parsed.cardNumber || prev.cardNumber,
+        setNumber: metadata?.setNumber || parsed.setNumber || prev.setNumber
+      }));
+
+      setPostComposerStep(2);
+      setScannerInfo(
+        metadata
+          ? 'Scan complete. Fields were auto-filled from OCR + card database.'
+          : 'Scan complete. Fields were auto-filled from OCR.'
+      );
+    } catch (error) {
+      console.error('Card scan failed:', error);
+      setPostImageError(error?.message || 'Card scan failed. Please try again.');
+      setScannerInfo('Scanner failed. Check camera permissions and try again.');
+    } finally {
+      setScannerBusy(false);
+    }
   };
 
   const toggleLookingForOption = (option) => {
@@ -2283,17 +3128,13 @@ export default function CardSwipersLanding() {
     });
   };
 
-  const toggleVerificationType = (type) => {
-    setVerificationForm((prev) => {
-      const currentTypes = Array.isArray(prev.verificationTypes) ? prev.verificationTypes : [];
-      const nextTypes = currentTypes.includes(type)
-        ? currentTypes.filter((entry) => entry !== type)
-        : [...currentTypes, type];
-      return {
-        ...prev,
-        verificationTypes: nextTypes
-      };
-    });
+  const handleQuickCaptureFromDock = () => {
+    setActiveChat(null);
+    setPostComposerStep(1);
+    navigateToTab('post');
+    window.setTimeout(() => {
+      postFrontImageInputRef.current?.click();
+    }, 80);
   };
 
   const handleVerificationDocumentChange = (event) => {
@@ -2384,20 +3225,14 @@ export default function CardSwipersLanding() {
     const birthDate = String(verificationForm.birthDate || '').trim();
     const phone = String(verificationForm.phone || '').trim();
     const email = String(verificationForm.email || firebaseUser.email || '').trim().toLowerCase();
-    const verificationTypes = Array.isArray(verificationForm.verificationTypes)
-      ? verificationForm.verificationTypes
-      : [];
+    const verificationTypes = ['seller'];
 
     if (!legalName || !birthDate || !phone || !email) {
       setVerificationError('Legal name, birth date, phone, and email are all required.');
       return;
     }
-    if (verificationTypes.length === 0) {
-      setVerificationError('Select buyer and/or seller verification.');
-      return;
-    }
     if (!hasAcceptedVerificationTerms) {
-      setVerificationError('You must accept the marketplace policy before submitting verification.');
+      setVerificationError('You must accept the marketplace terms before submitting verification.');
       return;
     }
     if (!verificationDocFile) {
@@ -2428,8 +3263,8 @@ export default function CardSwipersLanding() {
           birthDate,
           phone,
           status: 'pending',
-          buyerStatus: verificationTypes.includes('buyer') ? 'pending' : 'not_requested',
-          sellerStatus: verificationTypes.includes('seller') ? 'pending' : 'not_requested',
+          buyerStatus: 'not_requested',
+          sellerStatus: 'pending',
           verificationTypes,
           verificationDocumentUrl,
           verificationDocumentPath: docPath,
@@ -2452,12 +3287,22 @@ export default function CardSwipersLanding() {
         verificationSubmittedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
-      if (verificationTypes.includes('buyer')) {
-        nextUserPayload.buyerVerificationStatus = 'pending';
-      }
-      if (verificationTypes.includes('seller')) {
-        nextUserPayload.sellerVerificationStatus = 'pending';
-      }
+      nextUserPayload.sellerVerificationStatus = 'pending';
+      await setDoc(
+        doc(db, 'subscriptions', `verified_seller_${firebaseUser.uid}`),
+        {
+          userId: firebaseUser.uid,
+          email,
+          planType: 'verified_seller',
+          planName: 'Verified Seller',
+          amount: VERIFIED_SELLER_SUBSCRIPTION_PRICE,
+          billingInterval: 'monthly',
+          status: 'pending_verification',
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        },
+        { merge: true }
+      );
 
       await withTimeout(updateDoc(doc(db, 'users', firebaseUser.uid), nextUserPayload), 10000, 'Profile update timed out');
 
@@ -2482,6 +3327,32 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const handleStartIdentityVerification = async () => {
+    if (!firebaseUser || verificationSessionBusy) return;
+
+    setVerificationSessionBusy(true);
+    setVerificationError('');
+    try {
+      const response = await fetch('/api/verification/create-session', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error || 'Stripe Identity did not return a hosted verification link.');
+      }
+      window.open(payload.url, '_blank', 'noopener,noreferrer');
+      setVerificationInfo('Stripe Identity opened in a new window. Complete the document check, then return here.');
+    } catch (error) {
+      console.error('Failed to start Stripe Identity verification:', error);
+      setVerificationError(error.message || 'Unable to start identity verification.');
+    } finally {
+      setVerificationSessionBusy(false);
+    }
+  };
+
   const handleAdminReviewVerification = async (record, decision) => {
     if (!firebaseUser || !record?.id || !record?.userId) return;
 
@@ -2489,23 +3360,16 @@ export default function CardSwipersLanding() {
     if (normalizedDecision !== 'verified' && normalizedDecision !== 'rejected') return;
 
     const requestedTypes = Array.isArray(record.verificationTypes) ? record.verificationTypes : [];
-    const nextBuyerStatus =
-      requestedTypes.includes('buyer')
-        ? normalizedDecision
-        : (record.buyerStatus || 'not_requested');
     const nextSellerStatus =
       requestedTypes.includes('seller')
         ? normalizedDecision
         : (record.sellerStatus || 'not_requested');
-    const overallStatus =
-      nextBuyerStatus === 'verified' || nextSellerStatus === 'verified'
-        ? 'verified'
-        : normalizedDecision;
+    const overallStatus = nextSellerStatus === 'verified' ? 'verified' : normalizedDecision;
 
     try {
       await updateDoc(doc(db, 'sellerVerifications', record.id), {
         status: normalizedDecision,
-        buyerStatus: nextBuyerStatus,
+        buyerStatus: 'not_requested',
         sellerStatus: nextSellerStatus,
         reviewedBy: firebaseUser.uid,
         reviewerEmail: firebaseUser.email || '',
@@ -2515,7 +3379,6 @@ export default function CardSwipersLanding() {
 
       await updateDoc(doc(db, 'users', record.userId), {
         verificationStatus: overallStatus,
-        buyerVerificationStatus: nextBuyerStatus,
         sellerVerificationStatus: nextSellerStatus,
         verificationReviewedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -2573,7 +3436,7 @@ export default function CardSwipersLanding() {
     if (!firebaseUser || !activeChat?.id || offerBusy) return;
 
     const amount = parseDollarValue(offerDraftAmount);
-    if (!amount || amount <= 0) {
+    if (offerDealType !== 'pure_trade' && (!amount || amount <= 0)) {
       setAuthError('Enter a valid offer amount.');
       return;
     }
@@ -2588,6 +3451,10 @@ export default function CardSwipersLanding() {
 
     const sellerUid = activeChat.ownerUserId || null;
     const buyerUid = activeChat.requesterUserId || null;
+    if (offerDealType === 'pure_trade' && amount > 0) {
+      setAuthError('Trade-only offers cannot include a cash amount. Choose Card + Cash instead.');
+      return;
+    }
 
     setOfferBusy(true);
     setAuthError('');
@@ -2602,13 +3469,17 @@ export default function CardSwipersLanding() {
         fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
         toUserId,
         amount,
+        dealType: offerDealType,
+        cashAmount: offerDealType === 'pure_trade' ? 0 : amount,
         currency: 'USD',
         status: 'pending',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
-      const summaryMessage = `Offer sent: ${formatMoney(amount)}`;
+      const summaryMessage = offerDealType === 'pure_trade'
+        ? 'Trade-only offer sent'
+        : `Hybrid offer sent: ${formatMoney(amount)} cash`;
       await updateDoc(doc(db, 'matches', activeChat.id), {
         lastMessage: summaryMessage,
         unreadBy: [toUserId],
@@ -2659,6 +3530,43 @@ export default function CardSwipersLanding() {
         updatedAt: serverTimestamp()
       });
 
+      const normalizedDealType = String(offer.dealType || '').toLowerCase();
+      const requiresProtectionCheckout = nextStatus === 'accepted' &&
+        ['pure_trade', 'hybrid_trade', 'cash_sale'].includes(normalizedDealType) &&
+        (normalizedDealType === 'pure_trade' || offer.buyerUid === firebaseUser.uid);
+      if (requiresProtectionCheckout) {
+        const checkoutCard = {
+          id: offer.cardId || activeChat.cardId || null,
+          title: offer.cardTitle || activeChat.cardTitle || 'Card trade',
+          brand: offer.brand || activeChat.brand || '',
+          ownerUid: offer.sellerUid || activeChat.ownerUserId || null,
+          owner: offer.sellerName || activeChat.counterpartyName || 'Seller',
+          sellerConnectedAccountId: offer.sellerConnectedAccountId || activeChat.sellerConnectedAccountId || null,
+          connectedAccountId: offer.connectedAccountId || activeChat.connectedAccountId || null,
+          sellerState: offer.sellerState || activeChat.sellerState || '',
+          buyNowPrice: normalizedDealType === 'pure_trade' ? 0 : offer.cashAmount || offer.amount || 0,
+          tradeValue: normalizedDealType === 'pure_trade' ? 0 : offer.cashAmount || offer.amount || 0,
+          value: normalizedDealType === 'pure_trade' ? 0 : offer.cashAmount || offer.amount || 0
+        };
+        const checkoutStarted = await handleInstantPurchase(checkoutCard, {
+          cashAmount: offer.cashAmount || offer.amount || 0,
+          offerId: offer.id,
+          dealType: normalizedDealType,
+          feeOnly: normalizedDealType === 'pure_trade',
+          protectionRole: offer.buyerUid === firebaseUser.uid ? 'buyer' : 'seller',
+          buyerProtectionPaymentStatus: offer.buyerProtectionPaymentStatus || null,
+          sellerProtectionPaymentStatus: offer.sellerProtectionPaymentStatus || null,
+          advanceAfterPurchase: false
+        });
+        await updateDoc(doc(db, 'offers', offer.id), {
+          paymentStatus: checkoutStarted ? 'checkout_open' : 'payment_configuration_pending',
+          updatedAt: serverTimestamp()
+        });
+        if (!checkoutStarted) return;
+        setAuthInfo('Offer accepted. Complete secure checkout to place the cash difference in escrow.');
+        return;
+      }
+
       const fromUserId = firebaseUser.uid;
       const participants = Array.isArray(activeChat.participants) ? activeChat.participants : [];
       const toUserId = participants.find((uid) => uid !== fromUserId) || offer.fromUserId;
@@ -2675,6 +3583,8 @@ export default function CardSwipersLanding() {
           fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
           toUserId,
           amount: counterAmount,
+          dealType: offer.dealType || 'hybrid_trade',
+          cashAmount: offer.dealType === 'pure_trade' ? 0 : counterAmount,
           currency: 'USD',
           status: 'pending',
           parentOfferId: offer.id,
@@ -2754,6 +3664,11 @@ export default function CardSwipersLanding() {
       return;
     }
 
+    if (authMode === 'create' && !hasAcceptedEscrowTerms) {
+      setAuthError('You must agree to the Terms of Service before creating an account.');
+      return;
+    }
+
     setAuthEmail(normalizedEmail);
     setIsAuthSubmitting(true);
 
@@ -2788,7 +3703,6 @@ export default function CardSwipersLanding() {
               email: normalizedEmail,
               displayName,
               legalName: displayName,
-              is_verified: false,
               tos_accepted: true,
               tos_accepted_at: serverTimestamp(),
               tos_version_accepted: 'v1.1',
@@ -2816,7 +3730,7 @@ export default function CardSwipersLanding() {
           'Signing in timed out'
         );
       }
-      setCurrentTab('swipe');
+        setCurrentTab('onboarding');
     } catch (error) {
       setAuthError(getAuthErrorMessage(error, authMode === 'create' ? 'create' : 'login'));
     } finally {
@@ -2841,36 +3755,10 @@ export default function CardSwipersLanding() {
       }
 
       await signInWithPopup(auth, provider);
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
     } catch (error) {
       setIsGoogleRedirecting(false);
       setAuthError(getAuthErrorMessage(error, 'google'));
-    }
-  };
-
-  const handleAppleAuth = async () => {
-    setAuthError('');
-    setAuthInfo('');
-    try {
-      const provider = new OAuthProvider('apple.com');
-      provider.addScope('email');
-      provider.addScope('name');
-
-      if (isNativeApp) {
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.setItem(APPLE_REDIRECT_PENDING_KEY, '1');
-        }
-        setIsAppleRedirecting(true);
-        setAuthInfo('Opening Apple sign-in in your browser...');
-        await signInWithRedirect(auth, provider);
-        return;
-      }
-
-      await signInWithPopup(auth, provider);
-      setCurrentTab('swipe');
-    } catch (error) {
-      setIsAppleRedirecting(false);
-      setAuthError(getAuthErrorMessage(error, 'apple'));
     }
   };
 
@@ -2880,7 +3768,7 @@ export default function CardSwipersLanding() {
       return;
     }
     if (nextTab === 'admin' && !canAccessAdmin) {
-      setCurrentTab('swipe');
+      setCurrentTab('onboarding');
       return;
     }
     setCurrentTab(nextTab);
@@ -2901,6 +3789,654 @@ export default function CardSwipersLanding() {
 
   const handleMarkAllNotificationsRead = () => {
     setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+  };
+
+  const resetClubDraft = () => {
+    if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
+    setClubDraftName('');
+    setClubDraftDescription('');
+    setClubDraftLogoId('');
+    setClubDraftLogoFile(null);
+    setClubDraftLogoPreview('');
+    setClubDraftError('');
+  };
+
+  const openCreateClub = () => {
+    resetClubDraft();
+    setClubError('');
+    setClubInfo('');
+    setCurrentTab('create-club');
+  };
+
+  const handleClubLogoFileChange = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setClubDraftError('Choose an image file for the club logo.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setClubDraftError('Club logos must be 5 MB or smaller.');
+      return;
+    }
+
+    const image = new Image();
+    const previewUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      if (image.width !== 640 || image.height !== 640) {
+        URL.revokeObjectURL(previewUrl);
+        setClubDraftError('Custom club logos must be exactly 640 x 640 pixels.');
+        return;
+      }
+      if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
+      setClubDraftLogoFile(file);
+      setClubDraftLogoPreview(previewUrl);
+      setClubDraftLogoId('custom');
+      setClubDraftError('');
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(previewUrl);
+      setClubDraftError('That image could not be read. Choose another file.');
+    };
+    image.src = previewUrl;
+  };
+
+  const handleCreateClub = async () => {
+    if (!firebaseUser || clubCreateBusy) return;
+    const ownerName = currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector';
+    const clubName = clubDraftName.trim();
+    if (clubName.length < 3 || clubName.length > 20) {
+      setClubDraftError('Club names must be between 3 and 20 characters.');
+      return;
+    }
+    if (!clubDraftLogoId) {
+      setClubDraftError('Choose a club logo before confirming.');
+      return;
+    }
+
+    setClubCreateBusy(true);
+    setClubError('');
+    setClubDraftError('');
+    setClubInfo('');
+
+    try {
+      let logoUrl = '';
+      if (clubDraftLogoId === 'custom' && clubDraftLogoFile) {
+        const safeFileName = clubDraftLogoFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const logoRef = ref(storage, `club-logos/${firebaseUser.uid}/${Date.now()}-${safeFileName}`);
+        await withTimeout(uploadBytes(logoRef, clubDraftLogoFile), 15000, 'Club logo upload timed out');
+        logoUrl = await withTimeout(getDownloadURL(logoRef), 12000, 'Club logo URL fetch timed out');
+      }
+
+      let clubCode = buildClubCode();
+      for (let attempts = 0; attempts < 5; attempts += 1) {
+        const existing = await getDocs(query(collection(db, 'clubs'), where('code', '==', clubCode), limit(1)));
+        if (existing.empty) break;
+        clubCode = buildClubCode();
+      }
+
+      const clubRef = await addDoc(collection(db, 'clubs'), {
+        name: clubName,
+        description: clubDraftDescription.trim() || 'Club built for card trade nights and member credit management.',
+        code: clubCode,
+        logoType: clubDraftLogoId === 'custom' ? 'custom' : 'preset',
+        logoPresetId: clubDraftLogoId === 'custom' ? null : clubDraftLogoId,
+        logoUrl,
+        accessMode: 'private',
+        creditHierarchy: 'owner→agent→member',
+        ownerUid: firebaseUser.uid,
+        ownerEmail: firebaseUser.email || '',
+        ownerName,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        memberCount: 1,
+        activeTables: 0,
+        totalEscrow: 0,
+        creditLedger: {
+          ownerUid: firebaseUser.uid,
+          ownerBalance: 'infinite',
+          agentQuotas: {},
+          memberBalances: {
+            [firebaseUser.uid]: {
+              role: 'owner',
+              credits: 'infinite',
+              creditLimit: 'infinite',
+              escrowHeld: 0,
+              status: 'active'
+            }
+          },
+          escrowVault: 0
+        },
+        defaultEventConfig: {
+          buyInCredits: 50,
+          guaranteedPool: 1000,
+          registrationWindowMinutes: 30,
+          roundMinutes: 10,
+          capLimit: 64,
+          status: 'upcoming'
+        }
+      });
+
+      await setDoc(doc(clubRef, 'members', firebaseUser.uid), {
+        uid: firebaseUser.uid,
+        displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        email: firebaseUser.email || '',
+        role: 'owner',
+        joinedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        credits: 'infinite',
+        creditLimit: 'infinite',
+        escrowHeld: 0,
+        status: 'active'
+      }, { merge: true });
+
+      setSelectedClubId(clubRef.id);
+      setClubInfo('Club created. Owner-led credit hierarchy is active and agents can be assigned for trade nights.');
+      resetClubDraft();
+      setCurrentTab('onboarding');
+    } catch (error) {
+      console.error('Failed creating club:', error);
+      setClubDraftError('Could not create club right now. Please try again.');
+    } finally {
+      setClubCreateBusy(false);
+    }
+  };
+
+  const handleJoinClubByCode = async () => {
+    if (!firebaseUser || clubJoinBusy) return;
+    const normalizedCode = clubJoinCode.trim().toUpperCase();
+    if (!normalizedCode) {
+      setClubError('Enter a club code to join.');
+      return;
+    }
+
+    setClubJoinBusy(true);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      const clubSnapshot = await getDocs(query(collection(db, 'clubs'), where('code', '==', normalizedCode), limit(1)));
+      if (clubSnapshot.empty) {
+        setClubError('No club found for that code.');
+        return;
+      }
+
+      const clubDoc = clubSnapshot.docs[0];
+      const clubData = clubDoc.data();
+      const clubAccessMode = getClubAccessMode(clubData);
+      const banSnapshot = await getDoc(doc(clubDoc.ref, 'bans', firebaseUser.uid));
+      if (banSnapshot.exists()) {
+        setClubError('You have been blocked from this club by its moderators.');
+        return;
+      }
+
+      const memberProfile = {
+        uid: firebaseUser.uid,
+        displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        email: firebaseUser.email || '',
+        role: 'member',
+        joinedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        credits: 0,
+        creditLimit: 0,
+        escrowHeld: 0,
+        status: 'active'
+      };
+
+      if (clubAccessMode === 'public') {
+        await setDoc(doc(clubDoc.ref, 'members', firebaseUser.uid), memberProfile, { merge: true });
+
+        setSelectedClubId(clubDoc.id);
+        setClubJoinCode('');
+        setClubInfo(`Joined ${clubData?.name || 'club'}. Credits are tied to the club ledger and trade-night escrow rules.`);
+        return;
+      }
+
+      await addDoc(collection(db, 'clubs', clubDoc.id, 'joinRequests'), {
+        userId: firebaseUser.uid,
+        userName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        role: 'member',
+        status: 'pending',
+        requestedAt: serverTimestamp(),
+        creditRequest: 0,
+        requestType: 'member-join'
+      });
+
+      setSelectedClubId(clubDoc.id);
+      setClubJoinCode('');
+      setClubInfo(`Private club request sent to ${clubData?.name || 'the club owner'}. Awaiting approval.`);
+    } catch (error) {
+      console.error('Failed joining club:', error);
+      setClubError('Unable to join that club right now.');
+    } finally {
+      setClubJoinBusy(false);
+    }
+  };
+
+  const handleCreateTradeNight = async () => {
+    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubEventBusyId) return;
+
+    setClubEventBusyId('create');
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      const config = selectedClub?.defaultEventConfig || {};
+      const buyInCredits = Math.max(1, Number(config.buyInCredits || 50));
+      const capLimit = Math.max(2, Number(config.capLimit || 64));
+      const guaranteedPool = Math.max(0, Number(config.guaranteedPool || 0));
+      const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      await addDoc(collection(db, 'clubs', selectedClubId, 'events'), {
+        title: 'Trade Night',
+        status: 'registration',
+        format: 'mtt-trade-night',
+        buyInCredits,
+        guaranteedPool,
+        capLimit,
+        currentRegistrations: 0,
+        escrowTotal: 0,
+        roundMinutes: Math.max(1, Number(config.roundMinutes || 10)),
+        scheduledFor,
+        createdByUid: firebaseUser.uid,
+        createdByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Trade night opened for registration. Buy-ins will be held in club escrow.');
+    } catch (error) {
+      console.error('Failed creating trade night:', error);
+      setClubError('Could not create the trade night.');
+    } finally {
+      setClubEventBusyId('');
+    }
+  };
+
+  const handleRegisterForTradeNight = async (event) => {
+    if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
+    if (!selectedClubMembership || isSelectedClubBanned) {
+      setClubError('Join the club before registering for a trade night.');
+      return;
+    }
+
+    setClubEventBusyId(`register-${event.id}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      const response = await fetch('/api/clubs/register-trade-night', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Registration could not be completed.');
+      }
+      setClubInfo(`Registered for ${event.title || 'Trade Night'}. ${payload.buyInCredits} credits are held in escrow.`);
+    } catch (error) {
+      console.error('Failed registering for trade night:', error);
+      setClubError(error.message || 'Could not register for this trade night.');
+    } finally {
+      setClubEventBusyId('');
+    }
+  };
+
+  const handleReportChatUser = async () => {
+    if (!firebaseUser || !activeChat?.id || chatReportBusy) return;
+
+    const reasonInput = window.prompt(`Report @${activeChat.counterpartyName || 'this user'} for:`, 'Harassment, scam attempt, or abusive behavior');
+    const reason = String(reasonInput || '').trim();
+    if (!reason) return;
+
+    setChatReportBusy(true);
+    setAuthError('');
+    try {
+      await addDoc(collection(db, 'chatReports'), {
+        status: 'open',
+        contextType: 'direct-match',
+        matchId: activeChat.id,
+        reportedUserId: activeChat.counterpartyUserId || null,
+        reportedUserName: activeChat.counterpartyName || activeChat.user || 'Collector',
+        reportedByUid: firebaseUser.uid,
+        reportedByEmail: firebaseUser.email || '',
+        reportedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        reason,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setAuthInfo('Report submitted to CardSwipers admin for review.');
+    } catch (error) {
+      console.error('Failed to report chat user:', error);
+      setAuthError('Could not submit your report right now. Please try again.');
+    } finally {
+      setChatReportBusy(false);
+    }
+  };
+
+  const handleReportClubMember = async (member) => {
+    if (!firebaseUser || !selectedClubId || !member?.uid || clubReportBusy) return;
+    if (!selectedClubMembership) {
+      setClubError('Join this club before submitting reports.');
+      return;
+    }
+
+    const reasonInput = window.prompt(`Report ${member.displayName || member.email || member.uid} for:`, 'Spam, abuse, or policy violation');
+    const reason = String(reasonInput || '').trim();
+    if (!reason) return;
+
+    setClubReportBusy(true);
+    setClubError('');
+    setClubInfo('');
+    try {
+      await addDoc(collection(db, 'clubs', selectedClubId, 'reports'), {
+        status: 'open',
+        reportType: 'member',
+        clubId: selectedClubId,
+        clubName: selectedClub?.name || '',
+        reportedByUid: firebaseUser.uid,
+        reportedByEmail: firebaseUser.email || '',
+        reportedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        targetUid: member.uid,
+        targetName: member.displayName || member.email || member.uid,
+        targetRole: member.role || 'member',
+        reason,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Report submitted. Club owner and agents can now review it.');
+    } catch (error) {
+      console.error('Failed reporting club member:', error);
+      setClubError('Could not submit club report right now.');
+    } finally {
+      setClubReportBusy(false);
+    }
+  };
+
+  const handleReportClubPost = async (post) => {
+    if (!firebaseUser || !selectedClubId || !post?.id || clubReportBusy) return;
+    if (!selectedClubMembership) {
+      setClubError('Join this club before submitting reports.');
+      return;
+    }
+
+    const reasonInput = window.prompt(`Report post "${post.title || 'Untitled Card'}" for:`, 'Fake listing, abusive content, or scam attempt');
+    const reason = String(reasonInput || '').trim();
+    if (!reason) return;
+
+    setClubReportBusy(true);
+    setClubError('');
+    setClubInfo('');
+    try {
+      await addDoc(collection(db, 'clubs', selectedClubId, 'reports'), {
+        status: 'open',
+        reportType: 'post',
+        clubId: selectedClubId,
+        clubName: selectedClub?.name || '',
+        reportedByUid: firebaseUser.uid,
+        reportedByEmail: firebaseUser.email || '',
+        reportedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        targetUid: post.createdByUid || null,
+        targetName: post.createdByName || 'Unknown',
+        targetPostId: post.id,
+        targetPostTitle: post.title || '',
+        reason,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Post report submitted for moderator review.');
+    } catch (error) {
+      console.error('Failed reporting club post:', error);
+      setClubError('Could not submit post report right now.');
+    } finally {
+      setClubReportBusy(false);
+    }
+  };
+
+  const handleUpdateClubMemberRole = async (memberUid, role) => {
+    if (!firebaseUser || !selectedClubId || !canManageClubMembers) return;
+    if (memberUid === firebaseUser.uid) return;
+    setClubActionBusyId(`role-${memberUid}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await setDoc(doc(db, 'clubs', selectedClubId, 'members', memberUid), {
+        role,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setClubInfo('Member role updated.');
+    } catch (error) {
+      console.error('Failed updating club role:', error);
+      setClubError('Could not update that member role.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleAllocateClubCredits = async (member) => {
+    if (!firebaseUser || !selectedClubId || !member?.uid || !canModerateClubPosts) return;
+    const creditsInput = window.prompt(`Credits to assign to ${member.displayName || member.email || 'this member'}:`, '50');
+    const credits = Math.floor(Number(creditsInput));
+    if (!Number.isFinite(credits) || credits <= 0) return;
+
+    setClubActionBusyId(`credits-${member.uid}`);
+    setClubError('');
+    setClubInfo('');
+    try {
+      const response = await fetch('/api/clubs/allocate-credits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({ clubId: selectedClubId, memberId: member.uid, credits })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Credit allocation failed.');
+      setClubInfo(`${credits} credits assigned to ${member.displayName || member.email || 'member'}.`);
+    } catch (error) {
+      console.error('Failed allocating club credits:', error);
+      setClubError(error.message || 'Could not allocate credits.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleRemoveClubMember = async (member) => {
+    if (!firebaseUser || !selectedClubId || !member?.uid) return false;
+    if (member.role === 'owner') return false;
+    if (!canModerateClubPosts) return false;
+
+    setClubActionBusyId(`remove-${member.uid}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'members', member.uid));
+      setClubInfo('Member removed from this club.');
+      return true;
+    } catch (error) {
+      console.error('Failed removing club member:', error);
+      setClubError('Could not remove that member.');
+      return false;
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleBanClubMember = async (member, reason = '') => {
+    if (!firebaseUser || !selectedClubId || !member?.uid) return false;
+    if (!canModerateClubPosts || member.role === 'owner' || member.uid === selectedClub?.ownerUid) return false;
+
+    const banReason = String(reason || '').trim() || 'Club moderation action';
+    setClubActionBusyId(`ban-${member.uid}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await setDoc(doc(db, 'clubs', selectedClubId, 'bans', member.uid), {
+        uid: member.uid,
+        displayName: member.displayName || member.email || member.uid,
+        email: member.email || '',
+        reason: banReason,
+        bannedByUid: firebaseUser.uid,
+        bannedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'members', member.uid));
+      setClubInfo('Member has been blocked and removed from this club.');
+      return true;
+    } catch (error) {
+      console.error('Failed banning club member:', error);
+      setClubError('Could not block that member right now.');
+      return false;
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleResolveClubReport = async (report, status = 'resolved', action = 'dismissed') => {
+    if (!firebaseUser || !selectedClubId || !report?.id || !canModerateClubPosts) return;
+    setClubActionBusyId(`report-${report.id}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await updateDoc(doc(db, 'clubs', selectedClubId, 'reports', report.id), {
+        status,
+        moderationAction: action,
+        moderatedByUid: firebaseUser.uid,
+        moderatedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
+        moderatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Report has been updated.');
+    } catch (error) {
+      console.error('Failed updating club report:', error);
+      setClubError('Could not update that report.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleModerationActionFromReport = async (report, action) => {
+    if (!report || !canModerateClubPosts) return;
+
+    if (action === 'dismiss') {
+      await handleResolveClubReport(report, 'dismissed', 'dismissed');
+      return;
+    }
+
+    if (action === 'remove-member' && report.targetUid) {
+      const member = selectedClubMembers.find((entry) => entry.uid === report.targetUid);
+      if (member) {
+        const removed = await handleRemoveClubMember(member);
+        if (!removed) return;
+      }
+      await handleResolveClubReport(report, 'resolved', 'member_removed');
+      return;
+    }
+
+    if (action === 'ban-member' && report.targetUid) {
+      const member = selectedClubMembers.find((entry) => entry.uid === report.targetUid) || {
+        uid: report.targetUid,
+        displayName: report.targetName || report.targetUid,
+        email: '',
+        role: report.targetRole || 'member'
+      };
+      const banned = await handleBanClubMember(member, report.reason || 'Banned from report review');
+      if (!banned) return;
+      await handleResolveClubReport(report, 'resolved', 'member_banned');
+      return;
+    }
+
+    if (action === 'delete-post' && report.targetPostId) {
+      const targetPost = selectedClubPosts.find((entry) => entry.id === report.targetPostId) || {
+        id: report.targetPostId,
+        createdByUid: report.targetUid || null
+      };
+      const deleted = await handleDeleteClubPost(targetPost);
+      if (!deleted) return;
+      await handleResolveClubReport(report, 'resolved', 'post_deleted');
+    }
+  };
+
+  const handlePublishClubPost = async () => {
+    if (!firebaseUser || !selectedClubId || clubPostBusy) return;
+    if (isSelectedClubBanned) {
+      setClubError('You are blocked from posting in this club.');
+      return;
+    }
+    if (!selectedClubMembership) {
+      setClubError('Join this club before posting.');
+      return;
+    }
+
+    const title = clubPostDraft.title.trim();
+    const askingPrice = clubPostDraft.askingPrice.trim();
+    if (!title || !askingPrice) {
+      setClubError('Add a card title and asking price before posting.');
+      return;
+    }
+
+    setClubPostBusy(true);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await addDoc(collection(db, 'clubs', selectedClubId, 'posts'), {
+        title,
+        askingPrice,
+        description: clubPostDraft.description.trim(),
+        imageUrl: clubPostDraft.imageUrl.trim(),
+        createdByUid: firebaseUser.uid,
+        createdByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        createdByRole: selectedClubRole || 'member',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setClubPostDraft({
+        title: '',
+        askingPrice: '',
+        description: '',
+        imageUrl: ''
+      });
+      setClubInfo('Card posted to this club feed.');
+    } catch (error) {
+      console.error('Failed publishing club post:', error);
+      setClubError('Could not publish this card post.');
+    } finally {
+      setClubPostBusy(false);
+    }
+  };
+
+  const handleDeleteClubPost = async (post) => {
+    if (!firebaseUser || !selectedClubId || !post?.id) return false;
+    const canDelete = canModerateClubPosts || post.createdByUid === firebaseUser.uid;
+    if (!canDelete) return false;
+
+    setClubActionBusyId(`post-${post.id}`);
+    setClubError('');
+    setClubInfo('');
+
+    try {
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'posts', post.id));
+      setClubInfo('Post removed from club feed.');
+      return true;
+    } catch (error) {
+      console.error('Failed deleting club post:', error);
+      setClubError('Could not remove that post.');
+      return false;
+    } finally {
+      setClubActionBusyId('');
+    }
   };
 
   const toggleOnboardingValue = (field, value, maxItems = Infinity) => {
@@ -2989,106 +4525,6 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const openProfileSettings = () => {
-    setProfileLocationDraft(String(currentUserProfile?.location || currentUserProfile?.state || currentUserProfile?.shippingState || ''));
-    setProfileBioDraft(String(currentUserProfile?.bio || ''));
-    setProfileSettingsError('');
-    setShowProfileSettings(true);
-    setAccountMenuOpen(false);
-  };
-
-  const handleSaveProfileSettings = async () => {
-    if (!firebaseUser || profileSettingsBusy) return;
-
-    setProfileSettingsBusy(true);
-    setProfileSettingsError('');
-
-    const nextLocation = String(profileLocationDraft || '').trim();
-    const nextBio = String(profileBioDraft || '').trim();
-
-    try {
-      await updateDoc(doc(db, 'users', firebaseUser.uid), {
-        location: nextLocation,
-        bio: nextBio,
-        updatedAt: serverTimestamp()
-      });
-      setCurrentUserProfile((prev) => ({
-        ...(prev || {}),
-        location: nextLocation,
-        bio: nextBio
-      }));
-      setShowProfileSettings(false);
-    } catch (error) {
-      console.error('Failed to save profile settings:', error);
-      setProfileSettingsError('Unable to save profile settings right now. Please try again.');
-    } finally {
-      setProfileSettingsBusy(false);
-    }
-  };
-
-  const handleDeleteAccount = async () => {
-    if (!firebaseUser || profileSettingsBusy) return;
-    const confirmed = window.confirm('Delete account? This will sign you out and deactivate your profile.');
-    if (!confirmed) return;
-
-    setProfileSettingsBusy(true);
-    setProfileSettingsError('');
-
-    try {
-      await deleteUser(firebaseUser);
-
-      await updateDoc(doc(db, 'users', firebaseUser.uid), {
-        status: 'deactivated',
-        deactivatedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      await signOut(auth);
-      setShowProfileSettings(false);
-      setAccountMenuOpen(false);
-      setCurrentTab(isNativeApp ? 'auth' : 'landing');
-    } catch (error) {
-      console.error('Failed to delete account:', error);
-      const authMessage = String(error?.code || '').includes('requires-recent-login')
-        ? 'Please reauthenticate before deleting your account.'
-        : 'Unable to delete account right now. Please try again.';
-      setProfileSettingsError(authMessage);
-    } finally {
-      setProfileSettingsBusy(false);
-    }
-  };
-
-  const handleRequestUpgrade = async () => {
-    if (!firebaseUser || upgradeBusy) return;
-    setUpgradeBusy(true);
-    setSwipeLimitNotice('');
-
-    try {
-      await setDoc(
-        doc(db, 'subscriptions', `upgrade_request_${firebaseUser.uid}`),
-        {
-          userId: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          planType: 'swipe_unlimited',
-          planName: 'Unlimited Swipes Monthly',
-          amount: VERIFIED_BUYER_SUBSCRIPTION_PRICE,
-          billingInterval: 'monthly',
-          status: 'upgrade_requested',
-          source: 'non_payment_pipeline',
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp()
-        },
-        { merge: true }
-      );
-      setSwipeLimitNotice('Upgrade request saved. A purchase flow can be completed from your account setup.');
-    } catch (error) {
-      console.error('Failed to create upgrade request:', error);
-      setSwipeLimitNotice('Unable to start upgrade right now. Please try again.');
-    } finally {
-      setUpgradeBusy(false);
-    }
-  };
-
   const handleToggleUserStatus = async (userRecord) => {
     if (!firebaseUser || userRecord.uid === firebaseUser.uid) return;
 
@@ -3111,6 +4547,53 @@ export default function CardSwipersLanding() {
     } catch (error) {
       console.error('Failed to update user status:', error);
       setAdminUsersError('Failed to update account status. Please try again.');
+    } finally {
+      setAdminActionUserId(null);
+    }
+  };
+
+  const handleResolveChatReport = async (reportId) => {
+    if (!reportId) return;
+    try {
+      await updateDoc(doc(db, 'chatReports', reportId), {
+        status: 'resolved',
+        resolvedAt: serverTimestamp(),
+        resolvedBy: firebaseUser?.uid || null,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed resolving chat report:', error);
+      setChatReportsError('Failed to resolve chat report.');
+    }
+  };
+
+  const handleBlockUserFromChatReport = async (report) => {
+    if (!report?.reportedUserId) {
+      setChatReportsError('Cannot block this report target because no user id was attached.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Block ${report.reportedUserName || report.reportedUserId} from platform access?`);
+    if (!confirmed) return;
+
+    setAdminActionUserId(report.reportedUserId);
+    try {
+      await updateDoc(doc(db, 'users', report.reportedUserId), {
+        status: 'deactivated',
+        blockedAt: serverTimestamp(),
+        blockedBy: firebaseUser?.uid || null,
+        updatedAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, 'chatReports', report.id), {
+        status: 'actioned',
+        moderationAction: 'user_blocked',
+        resolvedAt: serverTimestamp(),
+        resolvedBy: firebaseUser?.uid || null,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed blocking user from chat report:', error);
+      setChatReportsError('Failed to block reported user.');
     } finally {
       setAdminActionUserId(null);
     }
@@ -3188,42 +4671,11 @@ export default function CardSwipersLanding() {
 
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
-  const isCoreAppScreen = !isLandingScreen && !isAuthScreen;
-  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen;
+  const isCreateClubScreen = currentTab === 'create-club';
+  const isCoreAppScreen = !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
+  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
-  const coreScreenBottomInset = isNativeApp
-    ? 'calc(env(safe-area-inset-bottom) + 6.75rem)'
-    : '6.25rem';
-  const nativeAuthScreenStyle = isNativeApp
-    ? {
-        paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)'
-      }
-    : undefined;
-  const currentSellerVerificationRecord = sellerVerifications.find((entry) => entry.userId === firebaseUser?.uid || entry.uid === firebaseUser?.uid) || {};
-  const currentSellerConnectedAccountId = getConnectedAccountIdFromRecord({}, currentUserProfile || {}, currentSellerVerificationRecord);
-  const coreScreenTitles = {
-    swipe: 'Discover',
-    post: 'Post Card',
-    collection: 'Binder',
-    messages: 'Inbox',
-    onboarding: 'My Interests',
-    admin: 'Admin'
-  };
-  const coreScreenTitle = coreScreenTitles[currentTab] || 'CardSwipers';
   const canAccessAdmin = hasAdminAccess && !isNativeApp;
-  const currentWeekKey = getIsoWeekKey();
-  const weeklySwipeUsage =
-    currentUserProfile?.swipeQuota?.weekKey === currentWeekKey
-      ? Number(currentUserProfile?.swipeQuota?.used || 0)
-      : 0;
-  const activeSubscription = premiumSubscriptions.find(
-    (subscription) =>
-      subscription.userId === firebaseUser?.uid &&
-      ['active', 'trialing'].includes(String(subscription.status || '').toLowerCase())
-  );
-  const hasActiveSubscription = Boolean(activeSubscription);
-  const freeSwipesRemaining = Math.max(0, FREE_SWIPES_PER_WEEK - weeklySwipeUsage);
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
   const deactivatedUsers = adminUsers.filter((user) => user.status === 'deactivated').length;
@@ -3271,10 +4723,7 @@ export default function CardSwipersLanding() {
   const premiumMRR = premiumSubscriptions.reduce((total, subscription) => {
     const status = String(subscription.status || '').toLowerCase();
     if (status && status !== 'active') return total;
-    const planType = String(subscription.planType || '').toLowerCase();
-    const defaultAmount = planType.includes('buyer')
-      ? VERIFIED_BUYER_SUBSCRIPTION_PRICE
-      : VERIFIED_SELLER_SUBSCRIPTION_PRICE;
+    const defaultAmount = VERIFIED_SELLER_SUBSCRIPTION_PRICE;
     return total + parseDollarValue(subscription.amount || defaultAmount);
   }, 0);
 
@@ -3297,12 +4746,11 @@ export default function CardSwipersLanding() {
   }, {});
   return (
     <div
-      className={`text-white font-sans flex flex-col relative h-[100dvh] min-h-[100dvh] w-full max-w-full overflow-x-hidden overflow-hidden ${isLandingScreen || isAuthScreen ? 'bg-gradient-to-b from-[#0F1117] via-[#12151D] to-[#0F1117]' : 'bg-[#0B0F19]'}`}
+      className="text-white font-sans flex flex-col relative min-h-[100dvh] bg-black"
       style={
-        isNativeApp
+        isNativeApp && nativeViewportHeight
           ? {
-              minHeight: nativeViewportHeight ? `${nativeViewportHeight}px` : '100svh',
-              height: nativeViewportHeight ? `${nativeViewportHeight}px` : '100svh'
+              minHeight: `${nativeViewportHeight}px`
             }
           : undefined
       }
@@ -3356,28 +4804,21 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
-      {isCoreAppScreen && isAuthenticated && (
-        <>
-          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_12%_10%,rgba(245,197,66,0.08),transparent_24%),radial-gradient(circle_at_88%_14%,rgba(225,29,72,0.12),transparent_28%),radial-gradient(circle_at_50%_100%,rgba(59,130,246,0.08),transparent_30%)]" />
-          <div className="absolute inset-0 pointer-events-none opacity-[0.18] bg-[linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.045)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(circle_at_center,black,transparent_82%)]" />
-        </>
-      )}
-
-      {(isAuthenticated || (isLandingScreen && !isNativeApp)) && (
+      {!isCreateClubScreen && (isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header
-        className={`${isLandingScreen || isAuthScreen ? 'bg-black/75 border-white/10' : 'bg-[#0D1320]/88 border-white/10'} backdrop-blur-2xl border-b sticky top-0 z-50 shadow-[0_12px_40px_rgba(0,0,0,0.18)]`}
-        style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
+        className="bg-black/95 border-white/10 backdrop-blur-md border-b sticky top-0 z-50"
+        style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: '0.35rem' } : undefined}
       >
-        <div className={`max-w-6xl mx-auto w-full ${isCoreAppScreen && isAuthenticated ? 'px-5 py-3 flex items-center justify-between' : 'px-4 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-end'}`}>
+        <div className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 ${isNativeCoreApp ? 'py-2 min-h-[64px]' : 'py-2.5 sm:py-4'}`}>
 
-          {isCoreAppScreen && isAuthenticated && (
-            <h1
-              className="text-[22px] leading-tight font-semibold text-white tracking-[-0.02em]"
-              style={{ fontFamily: "'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
-            >
-              {coreScreenTitle}
-            </h1>
-          )}
+          <button
+            type="button"
+            onClick={() => navigateToTab(isAuthenticated ? 'swipe' : 'landing')}
+            className={`flex items-center shrink-0 ${isNativeCoreApp ? 'gap-2' : 'gap-2.5'}`}
+          >
+            <img src={authHeroImage} alt="CardSwipers" className={`${isNativeCoreApp ? 'w-14 h-14 rounded-lg' : 'w-16 h-16 rounded-xl'} object-contain`} />
+            <span className={`${isNativeCoreApp ? 'text-[16px] tracking-[0.08em]' : 'text-base sm:text-lg tracking-wide'} font-black uppercase italic text-white`}>CardSwipers</span>
+          </button>
 
           <div className="flex items-center">
             {isLandingScreen && (
@@ -3424,7 +4865,7 @@ export default function CardSwipersLanding() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCurrentTab('swipe')}
+                      onClick={() => setCurrentTab('onboarding')}
                       className="h-11 px-6 rounded-xl bg-gradient-to-b from-[#FF3040] to-[#D72638] text-white text-sm font-semibold shadow-[0_10px_30px_rgba(215,38,56,0.35)]"
                     >
                       Enter App
@@ -3435,11 +4876,11 @@ export default function CardSwipersLanding() {
             )}
 
             {isCoreAppScreen && isAuthenticated && (
-              <div className="flex items-center gap-2">
+              <div className={`flex items-center ${isNativeCoreApp ? 'gap-1.5' : 'gap-2'}`}>
                 <button
                   type="button"
                   onClick={handleOpenNotifications}
-                  className="relative w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white"
+                  className={`relative rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white ${isNativeCoreApp ? 'w-10 h-10' : 'w-11 h-11'}`}
                 >
                   <BellIcon />
                   {unreadNotificationCount > 0 && (
@@ -3451,11 +4892,8 @@ export default function CardSwipersLanding() {
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowNotificationsPanel(false);
-                      setAccountMenuOpen((prev) => !prev);
-                    }}
-                    className="w-11 h-11 rounded-full bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 transition-all flex items-center justify-center text-white font-bold shadow-lg"
+                    onClick={() => setAccountMenuOpen(!accountMenuOpen)}
+                    className={`rounded-full bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 transition-all flex items-center justify-center text-white font-bold shadow-lg ${isNativeCoreApp ? 'w-10 h-10 text-sm' : 'w-11 h-11'}`}
                   >
                     {firebaseUser?.email?.[0].toUpperCase() || 'U'}
                   </button>
@@ -3479,7 +4917,7 @@ export default function CardSwipersLanding() {
                         className="w-full text-left px-4 py-3 text-white hover:bg-white/5 transition-colors text-sm"
                         type="button"
                       >
-                        My Interests
+                        Card Clubs
                       </button>
                       <button
                         onClick={() => {
@@ -3489,47 +4927,6 @@ export default function CardSwipersLanding() {
                         type="button"
                       >
                         Notifications{unreadNotificationCount > 0 ? ` (${unreadNotificationCount})` : ''}
-                      </button>
-                      <div className="border-t border-white/10" />
-                      <div className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">Settings</div>
-                      <button
-                        onClick={openProfileSettings}
-                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
-                        type="button"
-                      >
-                        Profile Settings
-                      </button>
-
-                      <div className="px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">Legal</div>
-                      <button
-                        onClick={() => {
-                          setShowPrivacyPolicy(true);
-                          setAccountMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
-                        type="button"
-                      >
-                        Privacy Policy
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowTermsOfService(true);
-                          setAccountMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
-                        type="button"
-                      >
-                        Terms of Service
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowHelp(true);
-                          setAccountMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-white hover:bg-white/5 transition-colors text-sm"
-                        type="button"
-                      >
-                        Help
                       </button>
                       <div className="border-t border-white/10"></div>
                       <button
@@ -3554,10 +4951,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isCoreAppScreen ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'} ${isAuthScreen ? 'px-0' : isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}
-        style={showPersistentMobileDock ? { paddingBottom: coreScreenBottomInset } : undefined}
+        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
       >
-        <div className="max-w-6xl mx-auto w-full max-w-full h-full max-h-[100dvh] flex flex-col min-h-0 overflow-x-hidden overflow-hidden">
+        <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full max-w-full flex flex-col min-h-0 overflow-x-hidden`}>
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -3598,7 +4994,7 @@ export default function CardSwipersLanding() {
                   ) : isAuthenticated ? (
                     <button
                       type="button"
-                      onClick={() => setCurrentTab('swipe')}
+                      onClick={() => setCurrentTab('onboarding')}
                       className="h-11 px-6 rounded-xl bg-gradient-to-b from-[#FF3040] to-[#D72638] hover:from-[#ff3f4d] hover:to-[#c92031] text-white text-sm font-semibold shadow-[0_10px_30px_rgba(215,38,56,0.35)] transition-all"
                     >
                       Enter App
@@ -3710,8 +5106,15 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'auth' && (
           <div
-            className={`h-full min-h-0 w-full max-w-full flex flex-col ${isNativeApp ? 'justify-start pt-7 pb-5 px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-x-hidden overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
-            style={nativeAuthScreenStyle}
+            className={`h-full min-h-full w-full flex flex-col ${isNativeApp ? 'justify-between px-0 items-stretch' : 'justify-center py-6 px-4 items-center'} relative overflow-hidden ${isNativeApp ? 'bg-gradient-to-b from-[#FFF5F8] via-[#FFD7E1] to-[#D90429]' : ''}`}
+            style={
+              isNativeApp
+                ? {
+                    paddingTop: 'max(1.5rem, env(safe-area-inset-top))',
+                    paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
+                  }
+                : undefined
+            }
           >
             {isNativeApp && (
               <>
@@ -3734,13 +5137,13 @@ export default function CardSwipersLanding() {
                       'radial-gradient(115% 85% at 8% 8%, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0) 60%), radial-gradient(120% 96% at 92% 20%, rgba(255,227,233,0.68) 0%, rgba(255,227,233,0) 70%), linear-gradient(170deg, rgba(225,7,46,0) 44%, rgba(217,4,41,0.88) 100%)'
                   }}
                 />
-                <div className="relative z-10 w-full max-w-[780px] px-3 mb-2">
-                  <img src={authHeroImage} alt="CardSwipers mark" className="w-full h-auto max-h-[270px] object-contain" />
+                <div className="relative z-10 w-full max-w-[740px] px-3 shrink-0">
+                  <img src={authHeroImage} alt="CardSwipers mark" className="w-full h-auto max-h-[240px] object-contain" />
                 </div>
               </>
             )}
 
-            <div className={`w-full max-w-full ${isNativeApp ? 'max-w-[500px]' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[34px] p-6' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10 overflow-x-hidden`}>
+            <div className={`w-full ${isNativeApp ? 'max-w-[480px] mx-auto' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[32px] p-4.5 sm:p-5' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
               <div className="space-y-2 text-center">
                 <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
@@ -3784,7 +5187,7 @@ export default function CardSwipersLanding() {
                     value={authDisplayName}
                     onChange={(e) => setAuthDisplayName(e.target.value)}
                     placeholder="Display name"
-                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14 text-base'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40 touch-manipulation`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
                   />
                 )}
 
@@ -3798,7 +5201,7 @@ export default function CardSwipersLanding() {
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                     placeholder="Email"
-                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none touch-manipulation"
+                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
                   />
                 </label>
 
@@ -3812,7 +5215,7 @@ export default function CardSwipersLanding() {
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="Password"
-                    className="w-full bg-transparent text-base text-[#111827] placeholder-[#9CA3AF] focus:outline-none touch-manipulation"
+                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
                   />
                   <button
                     type="button"
@@ -3844,8 +5247,29 @@ export default function CardSwipersLanding() {
                     value={authConfirmPassword}
                     onChange={(e) => setAuthConfirmPassword(e.target.value)}
                     placeholder="Confirm password"
-                    className={`w-full ${isNativeApp ? 'h-10 text-base' : 'h-14 text-base'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40 touch-manipulation`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
                   />
+                )}
+
+                {authMode === 'create' && (
+                  <label className="flex items-start gap-3 rounded-2xl border border-[#E5E7EB] bg-[#FFF7F8] px-4 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={hasAcceptedEscrowTerms}
+                      onChange={(event) => setHasAcceptedEscrowTerms(event.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-[#D1D5DB] text-[#E60028]"
+                    />
+                    <span className="text-xs leading-5 text-[#374151]">
+                      {ESCROW_TERMS_LABEL}{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowTermsOfService(true)}
+                        className="text-[#E60028] underline underline-offset-2"
+                      >
+                        Review Terms
+                      </button>
+                    </span>
+                  </label>
                 )}
 
                 {authError && (
@@ -3871,7 +5295,7 @@ export default function CardSwipersLanding() {
                   type="submit"
                   disabled={isAuthSubmitting}
                   aria-busy={isAuthSubmitting}
-                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-lg'} px-6 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold transition-all touch-manipulation`}
+                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-lg'} px-6 rounded-2xl bg-[#E60028] hover:bg-[#C90024] text-white font-semibold transition-all`}
                 >
                   {isAuthSubmitting ? (authMode === 'create' ? 'Creating account...' : 'Logging in...') : authMode === 'create' ? 'Create Account' : 'Log In'}
                 </button>
@@ -3879,7 +5303,7 @@ export default function CardSwipersLanding() {
                 <button
                   type="button"
                   onClick={handleGoogleAuth}
-                  disabled={isAuthSubmitting || isGoogleRedirecting || isAppleRedirecting}
+                  disabled={isAuthSubmitting || isGoogleRedirecting}
                   className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-base'} px-6 rounded-2xl bg-white border border-[#D4D8DE] hover:border-[#BAC0C8] text-[#111827] font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5`}
                 >
                   <span
@@ -3896,27 +5320,15 @@ export default function CardSwipersLanding() {
                   {isGoogleRedirecting ? 'Opening Google...' : 'Continue with Google'}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleAppleAuth}
-                  disabled={isAuthSubmitting || isGoogleRedirecting || isAppleRedirecting}
-                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-base'} px-6 rounded-2xl bg-[#111111] border border-white/10 hover:border-white/20 text-white font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.2)]`}
-                >
-                  <span className={`${isNativeApp ? 'text-sm' : 'text-base'} font-black leading-none`} aria-hidden="true">
-                    Apple
-                  </span>
-                  {isAppleRedirecting ? 'Opening Apple...' : 'Continue with Apple'}
-                </button>
-
                 {isNativeApp && (
                   <p className={`${isNativeApp ? 'text-[9px] leading-4' : 'text-[11px] leading-5'} text-[#6B7280]`}>
-                    On iPhone, Google or Apple sign-in may open Safari to finish authentication and return to the app.
+                    On iPhone, Google sign-in may open Safari to finish authentication and return to the app.
                   </p>
                 )}
               </form>
             </div>
 
-            <div className={`text-center ${isNativeApp ? 'pt-4' : 'pt-7'} relative z-10 ${isNativeApp ? 'text-white' : ''}`}>
+            <div className={`text-center ${isNativeApp ? 'pt-3 shrink-0' : 'pt-7'} relative z-10 ${isNativeApp ? 'text-white' : ''}`}>
               <p className={`${isNativeApp ? 'text-[10px]' : 'text-xs'} mb-2 ${isNativeApp ? 'text-white' : 'text-[#9CA3AF]'}`}>Need help? Contact help@cardswipers.com</p>
               {!isNativeApp && (
                 <button
@@ -3959,6 +5371,11 @@ export default function CardSwipersLanding() {
             flaggedCardsLoading={flaggedCardsLoading}
             handleDeleteFlaggedCard={handleDeleteFlaggedCard}
             handleDeleteFlagRecord={handleDeleteFlagRecord}
+            chatReports={chatReports}
+            chatReportsError={chatReportsError}
+            chatReportsLoading={chatReportsLoading}
+            handleResolveChatReport={handleResolveChatReport}
+            handleBlockUserFromChatReport={handleBlockUserFromChatReport}
             adminUsersLoading={adminUsersLoading}
             filteredAdminUsers={filteredAdminUsers}
             firebaseUser={firebaseUser}
@@ -4101,11 +5518,7 @@ export default function CardSwipersLanding() {
                         <span className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/20 uppercase">{userRecord.role || 'user'}</span>
                       </div>
                       <div className="col-span-2">
-                        <StatusPill
-                          label={status}
-                          status={status}
-                          tone={status === 'deactivated' ? 'error' : 'success'}
-                        />
+                        <StatusPill label={status} status={status} tone={status === 'deactivated' ? 'error' : 'success'} />
                       </div>
                       <div className="col-span-2 text-xs text-red-100">{createdDate}</div>
                       <div className="col-span-2 flex justify-end">
@@ -4127,22 +5540,22 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'swipe' && (
-          <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col py-1.5 md:py-4 overflow-hidden">
+          <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-y-auto overscroll-y-contain pr-1">
             {currentCard ? (
-              <div className="w-full flex-1 overflow-y-auto overscroll-y-contain pr-1 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
+              <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
-                  <div className="w-full h-full min-h-0 rounded-[28px] md:rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(17,22,35,0.94),rgba(10,14,24,0.96))] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-                    <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-18 pointer-events-none`} />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.10),transparent_34%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.28))] pointer-events-none" />
+                  <div className="w-full h-full min-h-0 bg-[#171923] border border-white/10 rounded-[28px] md:rounded-[32px] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+                    <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-30 pointer-events-none`} />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_35%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.25))] pointer-events-none" />
 
                     {swipeFeedback === 'like' && (
-                      <div className="absolute top-6 left-4 z-20 -rotate-12 pointer-events-none">
-                        <StatusPill label="Interested" status="accepted" tone="success" />
+                      <div className="absolute top-6 left-4 -rotate-12 border-3 border-emerald-400 text-emerald-400 font-black text-lg sm:text-2xl px-2.5 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
+                        Interested
                       </div>
                     )}
                     {swipeFeedback === 'pass' && (
-                      <div className="absolute top-6 right-4 z-20 rotate-12 pointer-events-none">
-                        <StatusPill label="Pass" status="declined" tone="error" />
+                      <div className="absolute top-6 right-4 rotate-12 border-3 border-[#E11D48] text-[#E11D48] font-black text-lg sm:text-2xl px-2.5 py-1 rounded-xl uppercase tracking-wider z-20 pointer-events-none">
+                        Pass
                       </div>
                     )}
 
@@ -4152,16 +5565,19 @@ export default function CardSwipersLanding() {
                           {currentCard.brand}
                         </span>
                         <StatusPill label="Active Listing" status="active" tone="success" />
+                        {currentCard.sellerVerified && (
+                          <span className="bg-emerald-500/20 text-emerald-200 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-400/30 uppercase tracking-wider">
+                            Verified Seller
+                          </span>
+                        )}
                         {currentSellerRating?.count > 0 && (
-                          <StatusPill
-                            label={`Seller Rating ${currentSellerRating.average.toFixed(1)} stars (${currentSellerRating.count})`}
-                            status="verified"
-                            tone="warning"
-                          />
+                          <span className="bg-amber-500/15 text-amber-100 text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300/30 tracking-wider">
+                            Seller Rating {currentSellerRating.average.toFixed(1)} ★ ({currentSellerRating.count})
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
-                        <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full border border-rose-200/60 uppercase tracking-wider shadow-sm">
+                        <span className="bg-[#E11D48] text-white text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
                           {currentCard.condition}
                         </span>
                         <span className="bg-white/10 text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/15 tracking-wider">
@@ -4171,14 +5587,7 @@ export default function CardSwipersLanding() {
                     </div>
 
                     <div className="relative z-10 flex-1 flex items-center justify-center py-2 md:py-8">
-                      <div
-                        className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[linear-gradient(180deg,rgba(13,18,28,0.98),rgba(8,11,18,0.98))] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.62)] relative overflow-hidden`}
-                        onClick={() => {
-                          if (canToggleCurrentCardImage) {
-                            setActiveCardImageSide((prev) => (prev === 'front' ? 'back' : 'front'));
-                          }
-                        }}
-                      >
+                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`} onClick={() => canToggleCurrentCardImage && setActiveCardImageSide((prev) => (prev === 'front' ? 'back' : 'front'))}>
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
                         <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
@@ -4206,8 +5615,6 @@ export default function CardSwipersLanding() {
                               backImageUrl={currentCard.imageBackUrl || ''}
                               title={currentCard.title}
                               fallback={currentCard.imageEmoji}
-                              activeSide={activeCardImageSide}
-                              onToggle={setActiveCardImageSide}
                             />
                           </div>
                           {canToggleCurrentCardImage && (
@@ -4246,20 +5653,21 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="z-10 space-y-3 md:space-y-4 bg-gradient-to-t from-[#101521] via-[#101521]/96 to-transparent pt-3 md:pt-4 rounded-xl">
+                    <div className="z-10 space-y-3 md:space-y-4 bg-gradient-to-t from-[#171923] via-[#171923]/92 to-transparent pt-3 md:pt-4 rounded-xl">
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="space-y-2 min-w-0">
                           <h2 className="text-[1.18rem] sm:text-[1.8rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
                           <p className="text-sm text-white/70 font-medium">{currentCard.detailLine}</p>
-                          <p className="text-xs text-white/75">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
+                          <p className="text-xs text-white/55">{currentCard.listedAtLabel || formatListingDate(currentCard.listedAt)}</p>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Listed at</p>
                           <p className="text-lg sm:text-2xl font-bold text-white">{currentCard.tradeValue}</p>
+                          <p className="text-[11px] text-white/50 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 flex-wrap bg-white/[0.04] border border-white/10 rounded-2xl px-3 py-2.5 md:px-4 md:py-3 backdrop-blur-xl">
+                      <div className="flex items-center justify-between gap-3 flex-wrap bg-[#0F131C] border border-white/10 rounded-2xl px-3 py-2.5 md:px-4 md:py-3">
                         <button
                           type="button"
                           onClick={() => setViewingCollection(currentCard)}
@@ -4268,6 +5676,35 @@ export default function CardSwipersLanding() {
                           @{currentCard.owner} · View Binder ({(currentCard.collection || []).length} items)
                         </button>
                         <p className="text-sm text-white/65">Seeking: {currentCard.lookingFor}</p>
+                      </div>
+
+                      <div className="rounded-2xl border border-amber-400/25 bg-amber-500/[0.06] px-3 py-3 md:px-4 md:py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Recent Market Sales</p>
+                            <p className="mt-1 text-xs text-white/75">
+                              {currentCard.playerName || currentCard.player || currentCard.title} · {currentCard.grade || currentCard.detailLine || 'Grade not provided'}
+                            </p>
+                          </div>
+                          <p className="text-sm font-bold text-amber-100">
+                            {(() => {
+                              const estimate = parseDollarValue(currentCard.recentComps || currentCard.avgMarketValue || currentCard.value || currentCard.tradeValue || 0);
+                              return estimate > 0 ? `${formatMoney(estimate * 0.9)} - ${formatMoney(estimate * 1.1)}` : 'No sales range yet';
+                            })()}
+                          </p>
+                        </div>
+                        {Array.isArray(currentCard.recentTradeHistory) && currentCard.recentTradeHistory.length > 0 ? (
+                          <div className="mt-3 space-y-1.5">
+                            {currentCard.recentTradeHistory.slice(0, 3).map((sale, index) => (
+                              <div key={`${sale.id || sale.date || 'sale'}-${index}`} className="flex items-center justify-between gap-3 text-xs text-white/80">
+                                <span>{sale.date || sale.platform || 'Recent sale'}</span>
+                                <span className="font-semibold">{formatMoney(sale.price || sale.amount || 0)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-white/70">Estimated range based on the listed market value. Recent verified sales will appear here when available.</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -4282,7 +5719,7 @@ export default function CardSwipersLanding() {
                         <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/[0.04] border border-white/10 inline-flex items-center justify-center text-white/70"><PassIcon /></span>
                         <div>
                           <p className="font-semibold">Pass</p>
-                          <p className="text-xs text-white/75">Skip this listing</p>
+                          <p className="text-xs text-white/55">Skip this listing</p>
                         </div>
                       </div>
                     </button>
@@ -4312,24 +5749,28 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
                     </button>
+                    {ENABLE_PAYMENT_PIPELINE && (
+                      <button
+                        onClick={() => handleInstantPurchase(currentCard, { advanceAfterPurchase: true })}
+                        className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-gradient-to-b from-[#F59E0B] to-[#D97706] text-white shadow-[0_12px_24px_rgba(245,158,11,0.25)] hover:brightness-110 transition-all px-3 py-2.5 md:px-4 md:py-3 text-left disabled:opacity-55 disabled:cursor-not-allowed"
+                        type="button"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-white/10 border border-white/10 inline-flex items-center justify-center text-white font-black">$</span>
+                          <div>
+                            <p className="font-semibold">Buy Now</p>
+                            <p className="text-xs text-white/75">
+                              {currentCard.buyNowPrice || currentCard.tradeValue}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    )}
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 md:px-4 md:py-3 text-sm text-white/65">
                     Pass hides this listing for 30 days. Interested opens negotiation.
                   </div>
-
-                  {!hasActiveSubscription && (
-                    <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-3 py-2.5 md:px-4 md:py-3 text-sm text-amber-100 flex items-center justify-between gap-3">
-                      <span>{freeSwipesRemaining} free swipe{freeSwipesRemaining === 1 ? '' : 's'} left this week.</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowUpgradeModal(true)}
-                        className="px-3 py-1.5 rounded-lg bg-amber-500/25 border border-amber-300/35 text-xs font-semibold hover:bg-amber-500/35"
-                      >
-                        Upgrade
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 <aside className="space-y-3 md:space-y-4 xl:sticky xl:top-24">
@@ -4337,7 +5778,7 @@ export default function CardSwipersLanding() {
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Collector Profile</p>
                       <h3 className="mt-2 text-xl sm:text-2xl font-bold">{currentCard.owner}</h3>
-                      <p className="text-sm text-white/75 mt-1">{currentCard.location}</p>
+                      <p className="text-sm text-white/55 mt-1">{currentCard.location}</p>
                     </div>
 
                     <div className="mt-5 grid grid-cols-2 gap-3">
@@ -4377,55 +5818,24 @@ export default function CardSwipersLanding() {
                 </aside>
               </div>
             ) : (
-              <div className="flex-1 flex flex-col px-5">
-                <div className="flex-1" />
-                <div className="w-full max-w-md mx-auto flex flex-col items-center text-center">
-                  <span className="text-5xl text-white/60"><SwipeDeckIcon /></span>
-                  <h3
-                    className="mt-4 text-[28px] leading-[1.12] font-semibold text-white"
-                    style={{ fontFamily: "'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
-                  >
-                    {personalizedDeck.length === 0 ? 'No Cards Available' : 'End of the Deck'}
-                  </h3>
-                  <p
-                    className="mt-2 text-[17px] leading-[1.35] text-[#8E8E93]"
-                    style={{ fontFamily: "'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
-                  >
-                    {personalizedDeck.length === 0
-                      ? 'No listings match your current setup yet.'
-                      : 'You reached the end of listings that match your current filters.'}
-                  </p>
-                  <div className="w-full mt-6 space-y-3">
-                    <button
-                      type="button"
-                      onClick={() => setCurrentTab('onboarding')}
-                      className="w-full min-h-[44px] rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] transition-colors text-white text-[16px] font-semibold px-4"
-                    >
-                      Update Preferences
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (typeof window !== 'undefined') {
-                          window.location.reload();
-                        }
-                      }}
-                      className="w-full min-h-[44px] rounded-2xl border border-white/20 bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-white text-[16px] font-medium px-4"
-                    >
-                      Refresh Feed
-                    </button>
-                  </div>
-                </div>
-                <div className="flex-1" />
+              <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center py-8 space-y-4">
+                <span className="text-5xl text-white/60"><SwipeDeckIcon /></span>
+                <h3 className="text-xl font-bold">{personalizedDeck.length === 0 ? 'No Cards Available' : 'End of the Deck!'}</h3>
+                <p className="text-sm text-white/65 max-w-xs">
+                  {personalizedDeck.length === 0 
+                    ? 'No cards are available yet. Check back later or adjust your onboarding preferences.' 
+                    : 'No more collectors matching your filters in your radius. Try expanding your search options.'}
+                </p>
               </div>
             )}
           </div>
         )}
 
         {currentTab === 'post' && (
-          <div className="h-full max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden">
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-28 px-4 py-1.5 md:py-2">
-            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
+            {isNativeApp && <div id="camera-container" className="absolute inset-0 bg-transparent pointer-events-none" aria-hidden="true" />}
+            <div className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-32 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
+            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">+ Card</p>
@@ -4446,7 +5856,7 @@ export default function CardSwipersLanding() {
             </div>
 
             <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-4 md:gap-6 items-start flex-1 min-h-0">
-              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.38)] min-h-0 overflow-y-auto backdrop-blur-xl">
+              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 [touch-action:pan-y]">
                 <input
                   ref={postFrontImageInputRef}
                   type="file"
@@ -4468,21 +5878,21 @@ export default function CardSwipersLanding() {
                   <div className="grid sm:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setShowCardScanner(true)}
+                      onClick={() => postFrontImageInputRef.current?.click()}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postFrontImagePreview ? (
                           <img
                             src={postFrontImagePreview}
                             alt="Front card preview"
-                            className="w-full h-[132px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[104px] sm:h-[148px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Front Photo</p>
-                            <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
+                            <p className="mt-1 text-[11px] text-white/55">Tap to choose from camera or library</p>
                           </div>
                         )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
@@ -4493,21 +5903,23 @@ export default function CardSwipersLanding() {
 
                     <button
                       type="button"
-                      onClick={() => setShowCardScanner(true)}
+                      onClick={() => {
+                        postBackImageInputRef.current?.click();
+                      }}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[120px] sm:min-h-[160px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postBackImagePreview ? (
                           <img
                             src={postBackImagePreview}
                             alt="Back card preview"
-                            className="w-full h-[132px] sm:h-[170px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-[104px] sm:h-[148px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
                             <p className="mt-2 text-sm font-bold text-white">Take Back Photo</p>
-                            <p className="mt-1 text-[11px] text-white/55">or choose from library</p>
+                            <p className="mt-1 text-[11px] text-white/55">Tap to choose from camera or library</p>
                           </div>
                         )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-left">
@@ -4515,6 +5927,33 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
                     </button>
+                  </div>
+
+                  <div className="rounded-[18px] border border-white/10 bg-[#0D1117] px-4 py-4 space-y-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">On-Device OCR Scanner</p>
+                    <div className="relative h-36 sm:h-44 rounded-[14px] bg-black/45 overflow-hidden">
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.12),transparent_70%)]" />
+                      <div className="absolute inset-4 sm:inset-6 rounded-xl border-2 border-dashed border-[#FB7185]/70" />
+                      <div className="absolute inset-x-0 bottom-2 text-center text-[11px] text-white/70 px-2">
+                        Align card inside the frame before capture
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleScanCardWithOcr}
+                        disabled={scannerBusy}
+                        className="px-4 py-2 rounded-full text-xs font-semibold bg-[#E11D48] hover:brightness-110 disabled:opacity-60"
+                      >
+                        {scannerBusy ? 'Scanning...' : 'Scan Card Text'}
+                      </button>
+                      {scannerInfo && <p className="text-xs text-white/70">{scannerInfo}</p>}
+                    </div>
+                    {scannerDetectedLines.length > 0 && (
+                      <p className="text-[11px] text-white/55">
+                        OCR lines: {scannerDetectedLines.join(' • ')}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#0D1117] px-4 py-3">
@@ -4558,11 +5997,34 @@ export default function CardSwipersLanding() {
 
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">Card Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., 025"
+                      value={newCard.cardNumber || ''}
+                      onChange={(e) => setNewCard({ ...newCard, cardNumber: e.target.value })}
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">Set Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., 182"
+                      value={newCard.setNumber || ''}
+                      onChange={(e) => setNewCard({ ...newCard, setNumber: e.target.value })}
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🏷️ Brand</label>
                     <select
                       value={newCard.brand}
                       onChange={(e) => setNewCard({ ...newCard, brand: e.target.value })}
-                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {PUBLISHERS.map((group) => (
                         <optgroup key={group.label} label={group.label}>
@@ -4581,7 +6043,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.gradingCompany}
                       onChange={(e) => setNewCard({ ...newCard, gradingCompany: e.target.value })}
-                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {GRADING_COMPANIES.map((company) => (
                         <option key={company} value={company}>
@@ -4598,7 +6060,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.rawCondition}
                       onChange={(e) => setNewCard({ ...newCard, rawCondition: e.target.value })}
-                      className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {RAW_CONDITIONS.map((condition) => (
                         <option key={condition} value={condition}>
@@ -4613,7 +6075,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.grade}
                       onChange={(e) => setNewCard({ ...newCard, grade: e.target.value })}
-                      className="w-full px-4 py-4 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {NUMERIC_GRADES.map((grade) => (
                         <option key={grade} value={grade}>
@@ -4639,15 +6101,54 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
 
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">💸 Buy Now Price</label>
+                    <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
+                      <span className="text-white/65 font-semibold">$</span>
+                      <input
+                        type="text"
+                        placeholder={newCard.estimatedValue || '250'}
+                        value={newCard.buyNowPrice}
+                        onChange={(e) => setNewCard({ ...newCard, buyNowPrice: e.target.value })}
+                        className="w-full bg-transparent text-base font-semibold focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">📍 Seller State</label>
+                    <input
+                      type="text"
+                      placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
+                      value={newCard.sellerState}
+                      onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
+                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">📍 Seller State</label>
-                  <input
-                    type="text"
-                    placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
-                    value={newCard.sellerState}
-                    onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
-                    className="w-full px-4 py-3 text-base bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
-                  />
+                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🧭 Sale Mode</label>
+                  <div className="grid sm:grid-cols-3 gap-2">
+                    {[
+                      { value: 'trade_only', label: 'Trade Only' },
+                      { value: 'sale_only', label: 'Buy Now Only' },
+                      { value: 'trade_and_sale', label: 'Trade + Sale' }
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setNewCard({ ...newCard, saleMode: option.value })}
+                        className={`px-3 py-3 rounded-[18px] text-xs font-semibold border transition-all ${
+                          newCard.saleMode === option.value
+                            ? 'bg-[#E11D48] border-[#E11D48] text-white shadow-[0_6px_16px_rgba(225,29,72,0.32)]'
+                            : 'bg-[#161C27] border-white/10 text-white/80 hover:border-white/25'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -4681,7 +6182,7 @@ export default function CardSwipersLanding() {
                     placeholder="Add more details or specific trade targets"
                     value={newCard.lookingFor}
                     onChange={(e) => setNewCard({ ...newCard, lookingFor: e.target.value })}
-                    className="w-full px-4 py-3.5 bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 text-base resize-none transition-all"
+                    className="w-full px-4 py-3.5 bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 text-sm resize-none transition-all"
                     rows={3}
                   />
                 </div>
@@ -4741,12 +6242,538 @@ export default function CardSwipersLanding() {
                 </div>
               </aside>
             </div>
+          </div>
+          </div>
+        )}
+
+        {currentTab === 'create-club' && (
+          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-white text-[#191919] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleCreateClub();
+              }}
+              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
+            >
+              <div className="relative flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetClubDraft();
+                    setCurrentTab('onboarding');
+                  }}
+                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full text-[#202020] hover:bg-black/5"
+                  aria-label="Back to clubs"
+                >
+                  <span className="text-5xl font-light leading-none">‹</span>
+                </button>
+                <h1 className="text-3xl font-bold tracking-0">Create Club</h1>
+              </div>
+
+              <div className="mt-8 sm:mt-14">
+                <label htmlFor="club-name" className="block text-xl font-medium">Club Name</label>
+                <input
+                  id="club-name"
+                  type="text"
+                  value={clubDraftName}
+                  onChange={(event) => {
+                    setClubDraftName(event.target.value.slice(0, 20));
+                    setClubDraftError('');
+                  }}
+                  placeholder="Please enter your club name."
+                  maxLength={20}
+                  autoFocus
+                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#B9C2C9] px-5 text-lg text-[#202020] placeholder:text-[#89919D] focus:border-[#16C779] focus:outline-none focus:ring-2 focus:ring-[#16C779]/20 sm:h-[94px] sm:px-6 sm:text-xl"
+                />
+                <p className="mt-2 text-right text-xs text-[#7B8490]">{clubDraftName.trim().length}/20</p>
+              </div>
+
+              <div className="mt-8">
+                <p className="text-xl font-medium">Club Logo</p>
+                <input
+                  ref={clubLogoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleClubLogoFileChange}
+                  className="hidden"
+                />
+                <div className="mt-4 grid grid-cols-3 gap-3 sm:mt-5 sm:gap-5">
+                  <button
+                    type="button"
+                    onClick={() => clubLogoInputRef.current?.click()}
+                    className={`aspect-square rounded-2xl border-2 border-dashed p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#16C779] bg-[#F1FFF7]' : 'border-[#B9C2C9] bg-white hover:border-[#7B8490]'}`}
+                  >
+                    {clubDraftLogoPreview ? (
+                      <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
+                    ) : (
+                      <span className="flex h-full flex-col items-center justify-center text-center text-[#404040]">
+                        <span className="text-4xl leading-none">↑</span>
+                        <span className="mt-3 text-sm font-medium">Add Image</span>
+                        <span className="mt-1 text-xs text-[#69717B]">640 x 640</span>
+                      </span>
+                    )}
+                  </button>
+                  {CLUB_LOGO_PRESETS.map((preset) => {
+                    const selected = clubDraftLogoId === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
+                          setClubDraftLogoPreview('');
+                          setClubDraftLogoFile(null);
+                          setClubDraftLogoId(preset.id);
+                          setClubDraftError('');
+                        }}
+                        className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#16C779] ring-2 ring-[#16C779]' : 'border-[#CFD6DA]'}`}
+                        aria-label={`Use ${preset.id} club logo`}
+                      >
+                        <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
+                        <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
+                        {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#16C779] text-base font-bold text-white sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {clubDraftError && <p className="mt-5 text-sm font-medium text-[#D91B3C]">{clubDraftError}</p>}
+
+              <button
+                type="submit"
+                disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
+                className="mt-8 min-h-14 w-full shrink-0 rounded-2xl bg-[#16C779] px-6 py-3 text-xl font-bold text-white shadow-[0_8px_18px_rgba(22,199,121,0.22)] transition-colors hover:bg-[#10AD65] disabled:bg-[#D3E9E0] disabled:text-white/70 disabled:shadow-none sm:mt-auto sm:min-h-16 sm:py-4 sm:text-2xl"
+              >
+                {clubCreateBusy ? 'Creating...' : 'Confirm'}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {currentTab === 'onboarding' && (
+          <div className="max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
+            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1">
+              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-between">
+                {/* Search Club bar — full-width pill with magnifying glass */}
+                <div className="relative w-full">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
+                      <circle cx="8.5" cy="8.5" r="5.5" />
+                      <path d="m13.5 13.5 3 3" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <input
+                    type="text"
+                    value={clubSearchQuery}
+                    onChange={(event) => setClubSearchQuery(event.target.value)}
+                    placeholder="Search Club"
+                    className="w-full pl-9 pr-4 py-3 rounded-full bg-white text-[#111] placeholder-[#aaa] text-sm focus:outline-none shadow-sm"
+                  />
+                </div>
+
+                <div className="w-full max-w-[296px] mx-auto flex flex-col items-center gap-2.5">
+                  <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden w-full shadow-[0_14px_28px_rgba(0,0,0,0.24)]">
+                    <div className="relative w-full aspect-square bg-[#0A0D13] overflow-hidden">
+                      <img
+                        src={authHeroImage}
+                        alt="Create a club"
+                        className="w-full h-full object-cover opacity-80"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="w-12 h-12 rounded-2xl bg-[#22C55E] flex items-center justify-center shadow-[0_8px_20px_rgba(34,197,94,0.35)] border border-white/10">
+                    <CardClubsIcon />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={openCreateClub}
+                    className="w-full py-2.5 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
+                  >
+                    Create Club
+                  </button>
+                </div>
+
+                <div className="flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain space-y-2 pr-1">
+                  {filteredClubs.length === 0 ? (
+                    <p className="text-sm text-white/65 px-1 py-2">No clubs match your search yet.</p>
+                  ) : (
+                    filteredClubs.map((club) => {
+                      const isActive = club.id === selectedClubId;
+                      const logoPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === club.logoPresetId);
+                      return (
+                        <button
+                          key={club.id}
+                          type="button"
+                          onClick={() => setSelectedClubId(club.id)}
+                          className={`w-full text-left rounded-2xl border px-3 py-3 transition-colors ${isActive ? 'border-[#FB7185]/70 bg-[#25111A]' : 'border-white/10 bg-[#0D1117] hover:border-white/25'}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 gap-3">
+                              {club.logoUrl ? (
+                                <img src={club.logoUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />
+                              ) : logoPreset ? (
+                                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${logoPreset.className} text-2xl font-bold text-white`}>{logoPreset.symbol}</span>
+                              ) : null}
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-white">{club.name || 'Untitled Club'}</p>
+                                <p className="mt-1 text-[11px] text-white/55">{club.description || 'No description yet.'}</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{club.code || '------'}</span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-white/50">Owner: {club.ownerName || club.ownerEmail || 'Unknown'}</p>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
+                {selectedClub ? (
+                  <>
+                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg sm:text-xl font-black">{selectedClub.name}</h3>
+                          <p className="text-xs text-white/60 mt-1">{selectedClub.description || 'No description provided.'}</p>
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.15em] border border-white/20 bg-white/10">Code {selectedClub.code || '------'}</span>
+                      </div>
+                    </div>
+
+                    <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Trade Nights</p>
+                          <p className="mt-1 text-xs text-white/60">Buy-ins are held in escrow until the event payout is verified.</p>
+                        </div>
+                        {canModerateClubPosts && (
+                          <button
+                            type="button"
+                            onClick={handleCreateTradeNight}
+                            disabled={Boolean(clubEventBusyId)}
+                            className="px-3 py-2 rounded-lg text-xs font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed"
+                          >
+                            {clubEventBusyId === 'create' ? 'Opening...' : 'Open Trade Night'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {selectedClubEvents.length === 0 ? (
+                          <p className="text-sm text-white/60">No trade nights are open yet.</p>
+                        ) : (
+                          selectedClubEvents.map((event) => {
+                            const eventDate = toDateValue(event.scheduledFor);
+                            const registrationOpen = String(event.status || '').toLowerCase() === 'registration';
+                            return (
+                              <div key={event.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3 flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-bold">{event.title || 'Trade Night'}</p>
+                                  <p className="mt-1 text-[11px] text-white/55">
+                                    {event.buyInCredits || 0} credits · {event.currentRegistrations || 0}/{event.capLimit || '∞'} registered
+                                    {eventDate ? ` · ${eventDate.toLocaleDateString()}` : ''}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRegisterForTradeNight(event)}
+                                  disabled={!registrationOpen || !selectedClubMembership || isSelectedClubBanned || Boolean(clubEventBusyId)}
+                                  className="px-3 py-2 rounded-lg text-xs font-bold bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-55 disabled:cursor-not-allowed"
+                                >
+                                  {clubEventBusyId === `register-${event.id}` ? 'Registering...' : registrationOpen ? 'Register' : String(event.status || 'closed')}
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </section>
+
+                    <div className="grid lg:grid-cols-2 gap-3 min-h-0">
+                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
+                        <div className="space-y-2 overflow-y-auto pr-1">
+                          {selectedClubMembers.length === 0 ? (
+                            <p className="text-xs text-white/60">No members yet.</p>
+                          ) : (
+                            selectedClubMembers.map((member) => (
+                              <div key={member.uid} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold truncate">{member.displayName || member.email || member.uid}</p>
+                                    <p className="text-[11px] text-white/55 truncate">{member.email || member.uid}</p>
+                                    <p className="text-[11px] text-[#86EFAC] mt-1">{member.credits === 'infinite' ? 'Unlimited credits' : `${Number(member.credits || 0)} credits`} · {Number(member.escrowHeld || 0)} held</p>
+                                  </div>
+                                  <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{member.role || 'member'}</span>
+                                </div>
+                                {(canManageClubMembers || canModerateClubPosts) && member.uid !== firebaseUser?.uid && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {canManageClubMembers && member.role !== 'owner' && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'agent')}
+                                          disabled={clubActionBusyId === `role-${member.uid}`}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                        >
+                                          Make Agent
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'member')}
+                                          disabled={clubActionBusyId === `role-${member.uid}`}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                        >
+                                          Make Member
+                                        </button>
+                                      </>
+                                    )}
+                                    {member.role !== 'owner' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveClubMember(member)}
+                                        disabled={clubActionBusyId === `remove-${member.uid}`}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
+                                    {member.role !== 'owner' && canModerateClubPosts && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAllocateClubCredits(member)}
+                                        disabled={clubActionBusyId === `credits-${member.uid}` || (selectedClubRole === 'agent' && member.role !== 'member')}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-emerald-500/15 border border-emerald-400/30 text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-60"
+                                      >
+                                        {clubActionBusyId === `credits-${member.uid}` ? 'Assigning...' : 'Add Credits'}
+                                      </button>
+                                    )}
+                                    {member.role !== 'owner' && canModerateClubPosts && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleBanClubMember(member, 'Manual moderator action')}
+                                        disabled={clubActionBusyId === `ban-${member.uid}`}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-800/55 border border-red-300/40 text-red-100 hover:bg-red-800/70 disabled:opacity-60"
+                                      >
+                                        Block
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {member.uid !== firebaseUser?.uid && (
+                                  <div className="mt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReportClubMember(member)}
+                                      disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                    >
+                                      Report
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col gap-3">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Post Card In Club</p>
+                          <p className="text-[11px] text-white/55 mt-1">Members can post cards. Owners and agents can delete posts.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={clubPostDraft.title}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, title: event.target.value }))}
+                            placeholder="Card title"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                          />
+                          <input
+                            type="text"
+                            value={clubPostDraft.askingPrice}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, askingPrice: event.target.value }))}
+                            placeholder="Asking price (e.g. $450 or trade + $200)"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                          />
+                          <input
+                            type="text"
+                            value={clubPostDraft.imageUrl}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                            placeholder="Image URL (optional)"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
+                          />
+                          <textarea
+                            value={clubPostDraft.description}
+                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, description: event.target.value }))}
+                            placeholder="Condition, comp references, and shipping notes"
+                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
+                            rows={3}
+                          />
+                          <button
+                            type="button"
+                            onClick={handlePublishClubPost}
+                            disabled={clubPostBusy || !selectedClubMembership || isSelectedClubBanned}
+                            className="w-full px-3 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-55 disabled:cursor-not-allowed"
+                          >
+                            {clubPostBusy ? 'Posting...' : isSelectedClubBanned ? 'Blocked From Club' : selectedClubMembership ? 'Post In Club Feed' : 'Join Club To Post'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex-1 overflow-y-auto">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Club Feed</p>
+                      <div className="space-y-2">
+                        {selectedClubPosts.length === 0 ? (
+                          <p className="text-sm text-white/60">No card posts yet in this club.</p>
+                        ) : (
+                          selectedClubPosts.map((post) => {
+                            const canDeletePost = canModerateClubPosts || post.createdByUid === firebaseUser?.uid;
+                            return (
+                              <div key={post.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-bold">{post.title || 'Untitled Card'}</p>
+                                    <p className="text-xs text-[#FECACA] mt-1">Asking: {post.askingPrice || 'N/A'}</p>
+                                    <p className="text-[11px] text-white/55 mt-1">Posted by {post.createdByName || 'Unknown'} {post.createdByRole ? `(${post.createdByRole})` : ''}</p>
+                                  </div>
+                                  {canDeletePost && (
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteClubPost(post)}
+                                        disabled={clubActionBusyId === `post-${post.id}`}
+                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                      >
+                                        Delete
+                                      </button>
+                                      {post.createdByUid && post.createdByUid !== firebaseUser?.uid && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleReportClubPost(post)}
+                                          disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
+                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                        >
+                                          Report
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                  {!canDeletePost && post.createdByUid !== firebaseUser?.uid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReportClubPost(post)}
+                                      disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                    >
+                                      Report
+                                    </button>
+                                  )}
+                                </div>
+                                {post.imageUrl && (
+                                  <a
+                                    href={post.imageUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-2 inline-block text-[11px] text-red-200 hover:text-red-100"
+                                  >
+                                    View card image
+                                  </a>
+                                )}
+                                {post.description && <p className="mt-2 text-sm text-white/75">{post.description}</p>}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {canModerateClubPosts && (
+                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Moderation Queue</p>
+                          <span className="text-[11px] text-white/65">Open: {openSelectedClubReports.length}</span>
+                        </div>
+                        <div className="mt-2 space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {openSelectedClubReports.length === 0 ? (
+                            <p className="text-xs text-white/60">No open reports in this club.</p>
+                          ) : (
+                            openSelectedClubReports.map((report) => (
+                              <div key={report.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 space-y-2">
+                                <p className="text-sm font-semibold">
+                                  {report.reportType === 'post' ? 'Post Report' : 'Member Report'}: {report.targetName || report.targetPostTitle || 'Unknown target'}
+                                </p>
+                                <p className="text-[11px] text-white/60">Reason: {report.reason || 'No reason provided'}</p>
+                                <p className="text-[11px] text-white/50">Reported by {report.reportedByName || report.reportedByEmail || report.reportedByUid}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleModerationActionFromReport(report, 'dismiss')}
+                                    disabled={clubActionBusyId === `report-${report.id}`}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                  >
+                                    Dismiss
+                                  </button>
+                                  {report.targetUid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleModerationActionFromReport(report, 'remove-member')}
+                                      disabled={clubActionBusyId === `report-${report.id}`}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                                    >
+                                      Remove Member
+                                    </button>
+                                  )}
+                                  {report.targetUid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleModerationActionFromReport(report, 'ban-member')}
+                                      disabled={clubActionBusyId === `report-${report.id}`}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-red-800/55 border border-red-300/40 text-red-100 hover:bg-red-800/70 disabled:opacity-60"
+                                    >
+                                      Block Member
+                                    </button>
+                                  )}
+                                  {report.targetPostId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleModerationActionFromReport(report, 'delete-post')}
+                                      disabled={clubActionBusyId === `report-${report.id}`}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-amber-700/40 border border-amber-300/30 text-amber-100 hover:bg-amber-700/60 disabled:opacity-60"
+                                    >
+                                      Delete Post
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="h-full min-h-0 flex items-center justify-center text-center">
+                    <div>
+                      <p className="text-lg font-bold">No club selected</p>
+                      <p className="text-sm text-white/60 mt-1">Create a club or pick one from the list.</p>
+                    </div>
+                  </div>
+                )}
+              </section>
             </div>
           </div>
         )}
 
         {currentTab === 'collection' && (
-          <div className="h-full min-h-0 max-h-full space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pr-1">
+          <div className="min-h-0 space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pr-1">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg sm:text-2xl font-black">My Trading Binder</h2>
@@ -4757,143 +6784,37 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
-            {false && <details className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-4 space-y-4 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl" open={!isNativeCoreApp}>
-              <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+            <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-red-200">Verification Center</p>
-                  <h3 className="text-base font-bold">Buyer & Seller Verification</h3>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Account Verification</p>
+                  <p className="mt-1 text-sm text-white/80">
+                    Status: {String(currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'Verified' : sellerVerificationStatus)}
+                  </p>
                 </div>
-                <span className="text-xs text-red-100">Manage</span>
-              </summary>
-              <div className="mt-4 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs text-red-100 mt-1">Upload your license/ID once. CS support reviews in 1-2 days. You can keep trading while pending.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
-                    Buyer: {buyerVerificationStatus}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
-                    Seller: {sellerVerificationStatus}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
-                    Buyer Rating: {currentUserBuyerRating?.count ? `${currentUserBuyerRating.average.toFixed(1)} ★ (${currentUserBuyerRating.count})` : 'No reviews yet'}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] border border-white/15 bg-white/5">
-                    Seller Rating: {currentUserSellerRating?.count ? `${currentUserSellerRating.average.toFixed(1)} ★ (${currentUserSellerRating.count})` : 'No reviews yet'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  value={verificationForm.legalName}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, legalName: event.target.value }))}
-                  placeholder="Legal full name"
-                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
-                />
-                <input
-                  type="date"
-                  value={verificationForm.birthDate}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, birthDate: event.target.value }))}
-                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
-                />
-                <input
-                  type="tel"
-                  value={verificationForm.phone}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, phone: event.target.value }))}
-                  placeholder="Phone number"
-                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
-                />
-                <input
-                  type="email"
-                  value={verificationForm.email}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, email: event.target.value }))}
-                  placeholder="Email"
-                  className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35"
+                <StatusPill
+                  label={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'Verified' : 'Action needed'}
+                  status={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'verified' : 'pending'}
+                  tone={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'success' : 'warning'}
                 />
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                {['buyer', 'seller'].map((type) => {
-                  const selected = verificationForm.verificationTypes.includes(type);
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => toggleVerificationType(type)}
-                      className={`px-3 py-1.5 rounded-full text-xs border ${selected ? 'bg-[#E50914] border-[#E50914]' : 'bg-white/10 border-white/20 hover:border-white/35'}`}
-                    >
-                      {selected ? '✓ ' : ''}{type === 'buyer' ? 'Verify Buyer' : 'Verify Seller'}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="space-y-2">
-                <input
-                  ref={verificationDocInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleVerificationDocumentChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => verificationDocInputRef.current?.click()}
-                  className="px-3 py-2 rounded-xl border border-white/20 bg-white/10 text-xs font-semibold"
-                >
-                  {verificationDocFile ? `ID selected: ${verificationDocFile.name}` : 'Upload Driver License / Government ID'}
-                </button>
-                <textarea
-                  rows={2}
-                  value={verificationForm.notes}
-                  onChange={(event) => setVerificationForm((prev) => ({ ...prev, notes: event.target.value }))}
-                  placeholder="Optional notes for CS support"
-                  className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-sm focus:outline-none focus:border-white/35 resize-none"
-                />
-                <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left">
-                  <input
-                    type="checkbox"
-                    checked={hasAcceptedVerificationTerms}
-                    onChange={(event) => setHasAcceptedVerificationTerms(event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-white/25 bg-transparent"
-                  />
-                  <span className="text-xs text-red-100 leading-5">
-                    I agree to the marketplace policy. You can review policy documents in Profile {'>'} Settings {'>'} Legal.
-                  </span>
-                </label>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  disabled={verificationBusy}
-                  onClick={handleSubmitVerificationRequest}
-                  className="px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#E11D48] text-sm font-semibold disabled:opacity-60"
-                >
-                  {verificationBusy ? 'Submitting...' : 'Submit Verification'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowUpgradeModal(true)}
-                  className="text-xs font-semibold text-amber-200 underline underline-offset-2"
-                >
-                  Upgrade to unlimited swipes (${VERIFIED_BUYER_SUBSCRIPTION_PRICE.toFixed(2)}/month)
-                </button>
-                {verificationError && <p className="text-xs text-red-200">{verificationError}</p>}
-                {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
-              </div>
-              </div>
-            </details>}
+              <button
+                type="button"
+                onClick={handleStartIdentityVerification}
+                disabled={verificationSessionBusy}
+                className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-black hover:bg-amber-300 disabled:opacity-60"
+              >
+                {verificationSessionBusy ? 'Opening verification...' : 'Verify Account with Stripe Identity'}
+              </button>
+              {verificationError && <p className="text-xs text-rose-200">{verificationError}</p>}
+              {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
+            </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {myCollection.map((card) => (
                 <div
                   key={card.id}
-                  className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.98))] border border-white/10 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group shadow-[0_14px_36px_rgba(0,0,0,0.22)]"
+                  className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group"
                 >
                   <div className="absolute top-2 right-2 text-xs bg-white/20 px-2 py-0.5 rounded-md text-red-100 font-mono scale-90">
                     {card.condition}
@@ -4918,7 +6839,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'messages' && (
-          <div className="space-y-3 py-1.5 h-full min-h-0 max-h-full flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pr-1">
+          <div className="space-y-3 py-1.5 min-h-0 flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pr-1">
             {!activeChat ? (
               <div className="space-y-3">
                 <div>
@@ -4933,7 +6854,7 @@ export default function CardSwipersLanding() {
                 )}
 
                 {incomingInterests.length > 0 && (
-                  <div className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] border border-white/10 rounded-2xl p-4 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
                     <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Incoming Interests</h3>
                     {incomingInterests
                       .filter((interest) => interest.status === 'pending')
@@ -4963,7 +6884,7 @@ export default function CardSwipersLanding() {
                 )}
 
                 {outgoingInterests.length > 0 && (
-                  <div className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] border border-white/10 rounded-2xl p-4 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+                  <div className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3">
                     <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Interests You Sent</h3>
                     {outgoingInterests.slice(0, 6).map((interest) => (
                       <div key={interest.id} className="rounded-xl border border-red-400/20 bg-black/20 p-3">
@@ -4975,7 +6896,7 @@ export default function CardSwipersLanding() {
                 )}
 
                 {reviewableTransactions.length > 0 && (
-                  <details className="bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] border border-white/10 rounded-2xl p-4 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl" open={!isNativeCoreApp}>
+                  <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
                     <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
                       <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Completed Deals Awaiting Your Review</h3>
                       <span className="text-xs text-red-200">{reviewableTransactions.length}</span>
@@ -5026,7 +6947,140 @@ export default function CardSwipersLanding() {
                   </details>
                 )}
 
-                <div className="divide-y divide-white/8 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] shadow-[0_18px_44px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+                {escrowTransactions.length > 0 && (
+                  <details className="bg-red-950/50 border border-red-400/30 rounded-2xl p-4 space-y-3" open={!isNativeCoreApp}>
+                    <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-red-100">Escrow Orders</h3>
+                      <span className="text-xs text-red-200">{escrowTransactions.length}</span>
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                    {escrowTransactions.slice(0, 10).map((transaction) => {
+                      const trackingDraft = trackingDrafts[transaction.orderId] || { carrier: '', trackingNumber: '', trackingUrl: '' };
+                      const trackingBusy = Boolean(trackingBusyByPurchaseId[transaction.orderId]);
+                      const releaseBusy = Boolean(releaseBusyByPurchaseId[transaction.orderId]);
+                      const disputeBusy = Boolean(disputeBusyByPurchaseId[transaction.orderId]);
+                      const paymentHeld = String(transaction.escrowStatus || transaction.status || '').toLowerCase() === 'payment_held';
+                      return (
+                        <div key={transaction.orderId} className="rounded-xl border border-red-400/20 bg-black/20 p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div>
+                              <p className="text-sm font-semibold">{transaction.cardTitle || 'Escrow Order'}</p>
+                              <p className="text-xs text-red-100">
+                                Order {transaction.orderId} · Status {transaction.escrowStatus || transaction.status || 'pending'}
+                              </p>
+                              <p className="text-xs text-red-100">
+                                Charge {formatMoney(transaction.chargedTotalAmount || transaction.listingPrice || 0)} · Held for {formatMoney(transaction.escrowAmount || transaction.sellerPayoutAmount || transaction.listingPrice || 0)}
+                              </p>
+                            </div>
+                            <span className={`px-2.5 py-1 rounded-full text-[11px] border ${paymentHeld ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'border-white/20 bg-white/10'}`}>
+                              {transaction.isBuyer ? `Buyer view · Seller ${transaction.counterpartyName}` : `Seller view · Buyer ${transaction.counterpartyName}`}
+                            </span>
+                          </div>
+
+                          {transaction.isSeller && !paymentHeld && (
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-400">
+                              Awaiting Buyer Payment
+                            </div>
+                          )}
+
+                          {transaction.isSeller && paymentHeld && (
+                            <div className="grid gap-2 md:grid-cols-3">
+                              <input
+                                type="text"
+                                value={trackingDraft.carrier}
+                                onChange={(event) => setTrackingDrafts((prev) => ({
+                                  ...prev,
+                                  [transaction.orderId]: {
+                                    ...trackingDraft,
+                                    carrier: event.target.value
+                                  }
+                                }))}
+                                placeholder="Carrier (UPS, USPS, FedEx)"
+                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
+                              />
+                              <input
+                                type="text"
+                                value={trackingDraft.trackingNumber}
+                                onChange={(event) => setTrackingDrafts((prev) => ({
+                                  ...prev,
+                                  [transaction.orderId]: {
+                                    ...trackingDraft,
+                                    trackingNumber: event.target.value
+                                  }
+                                }))}
+                                placeholder="Tracking number"
+                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
+                              />
+                              <input
+                                type="url"
+                                value={trackingDraft.trackingUrl}
+                                onChange={(event) => setTrackingDrafts((prev) => ({
+                                  ...prev,
+                                  [transaction.orderId]: {
+                                    ...trackingDraft,
+                                    trackingUrl: event.target.value
+                                  }
+                                }))}
+                                placeholder="Optional tracking URL"
+                                className="px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none"
+                              />
+                            </div>
+                          )}
+
+                          {transaction.isBuyer && (
+                            <textarea
+                              rows={2}
+                              value={disputeDrafts[transaction.orderId] || ''}
+                              onChange={(event) => setDisputeDrafts((prev) => ({
+                                ...prev,
+                                [transaction.orderId]: event.target.value
+                              }))}
+                              placeholder="If needed, explain the dispute reason before the 48-hour timer expires"
+                              className="w-full px-3 py-2 rounded-xl bg-red-950 border border-red-400/30 text-xs focus:outline-none resize-none"
+                            />
+                          )}
+
+                          <div className="flex flex-wrap gap-2">
+                            {transaction.isSeller && paymentHeld && (
+                              <button
+                                type="button"
+                                disabled={trackingBusy}
+                                onClick={() => handleSubmitTrackingForOrder(transaction)}
+                                className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 disabled:opacity-60"
+                              >
+                                {trackingBusy ? 'Submitting tracking...' : 'Submit Tracking'}
+                              </button>
+                            )}
+
+                            {transaction.isBuyer && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={releaseBusy}
+                                  onClick={() => handleReleaseSellerFundsEarly(transaction)}
+                                  className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
+                                >
+                                  {releaseBusy ? 'Releasing...' : 'Accept Delivery & Release Funds'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={disputeBusy}
+                                  onClick={() => handleOpenOrderDispute(transaction)}
+                                  className="px-3 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                                >
+                                  {disputeBusy ? 'Opening dispute...' : 'Open Dispute'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    </div>
+                  </details>
+                )}
+
+                <div className="divide-y divide-red-700/40 rounded-2xl border border-red-400/30 bg-red-950/50">
                   {matches.length === 0 ? (
                     <div className="p-4 text-sm text-red-100">No active matches yet. Send interests from the swipe feed to start deals.</div>
                   ) : (
@@ -5056,24 +7110,46 @@ export default function CardSwipersLanding() {
               </div>
             ) : (
               <div className="flex flex-col h-full min-h-0 space-y-4">
-                <div className="flex items-center space-x-3 pb-3 border-b border-white/10">
+                <div className="flex items-center space-x-3 pb-3 border-b border-red-600/40">
                   <button onClick={() => setActiveChat(null)} className="text-red-200 text-sm hover:text-white" type="button">
                     ◀ Back
                   </button>
-                  <h3 className="font-bold text-base">Chatting with @{activeChat.counterpartyName || activeChat.user}</h3>
+                  <h3 className="font-bold text-base flex-1">Chatting with @{activeChat.counterpartyName || activeChat.user}</h3>
+                  <button
+                    type="button"
+                    onClick={handleReportChatUser}
+                    disabled={chatReportBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
+                  >
+                    {chatReportBusy ? 'Submitting...' : 'Report User'}
+                  </button>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,24,38,0.95),rgba(10,14,24,0.96))] p-3 space-y-3 shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+                <div className="rounded-2xl border border-red-400/30 bg-red-950/35 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <p className="text-xs uppercase tracking-wider text-red-100 font-bold">Offer Negotiation</p>
-                    <p className="text-xs text-red-200">You can send offers above or below the listing price.</p>
+                    <p className="text-xs text-red-200">Select trade-only or a cash difference protected by escrow.</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {DEAL_TYPES.filter((deal) => deal.value !== 'cash_sale').map((deal) => (
+                      <button
+                        key={deal.value}
+                        type="button"
+                        onClick={() => setOfferDealType(deal.value)}
+                        className={`px-2 py-2 rounded-xl text-[11px] border ${offerDealType === deal.value ? 'bg-[#E50914] border-[#E50914]' : 'bg-white/5 border-white/15 hover:border-white/30'}`}
+                      >
+                        {deal.label}
+                      </button>
+                    ))}
                   </div>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Enter offer amount"
+                      inputMode="decimal"
+                      placeholder={offerDealType === 'pure_trade' ? 'No cash amount' : 'Cash difference'}
                       value={offerDraftAmount}
                       onChange={(event) => setOfferDraftAmount(event.target.value)}
+                      disabled={offerDealType === 'pure_trade'}
                       className="flex-grow p-2.5 bg-red-950 border border-red-400/30 rounded-xl text-xs focus:outline-none"
                     />
                     <button
@@ -5091,21 +7167,53 @@ export default function CardSwipersLanding() {
                       {chatOffers.map((offer) => {
                         const fromSelf = offer.fromUserId === firebaseUser?.uid;
                         const isIncomingPending = !fromSelf && String(offer.status || '').toLowerCase() === 'pending';
+                        const dealType = offer.dealType || 'pure_trade';
+                        const paymentHeld = offer.paymentStatus === 'payment_held';
+                        const cashPaymentPending = ['hybrid_trade', 'cash_sale'].includes(dealType) && !paymentHeld && String(offer.status || '').toLowerCase() === 'accepted';
+                        const pureTradeAccepted = dealType === 'pure_trade' && String(offer.status || '').toLowerCase() === 'accepted';
+                        const isBuyer = offer.buyerUid === firebaseUser?.uid;
+                        const currentProtectionPaid = isBuyer
+                          ? offer.buyerProtectionPaymentStatus === 'payment_held'
+                          : offer.sellerProtectionPaymentStatus === 'payment_held';
+                        const pureTradePaymentPending = pureTradeAccepted && !currentProtectionPaid;
                         return (
                           <div
                             key={offer.id}
                             className={`rounded-xl border px-3 py-2 text-xs ${fromSelf ? 'bg-[#E50914]/20 border-[#E50914]/40' : 'bg-black/25 border-white/15'}`}
                           >
-                            <p className="font-semibold">
-                              {fromSelf ? 'You offered' : `${offer.fromUserName || 'Collector'} offered`} {formatMoney(offer.amount || 0)}
-                            </p>
-                            <div className="mt-2">
-                              <StatusPill
-                                label={`Status: ${offer.status || 'pending'}`}
-                                status={offer.status || 'pending'}
-                                tone={['accepted', 'completed'].includes(String(offer.status || '').toLowerCase()) ? 'success' : ['rejected', 'declined'].includes(String(offer.status || '').toLowerCase()) ? 'error' : 'warning'}
-                              />
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-semibold">
+                              {fromSelf ? 'You offered' : `${offer.fromUserName || 'Collector'} offered`} {offer.dealType === 'pure_trade' ? 'a card trade' : `${formatMoney(offer.cashAmount || offer.amount || 0)} cash`}
+                              </p>
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${DEAL_TYPE_STYLES[dealType] || DEAL_TYPE_STYLES.pure_trade}`}>
+                                {DEAL_TYPES.find((deal) => deal.value === dealType)?.label || 'Trade Only'}
+                              </span>
                             </div>
+                            <p className="text-[11px] text-white/70 mt-1">Status: {offer.status || 'pending'}</p>
+                            {(cashPaymentPending || pureTradePaymentPending) && (
+                              <div className={`mt-2 rounded-lg border px-2.5 py-2 ${fromSelf ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-500/30 bg-slate-500/10 text-slate-300'}`}>
+                                <p className="font-semibold">{pureTradePaymentPending ? 'Trade Protection Fee Required · $2.99' : 'Awaiting Buyer Payment'}</p>
+                                {((cashPaymentPending && isBuyer) || pureTradePaymentPending) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRetryOfferPayment(offer)}
+                                    className="mt-2 rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-bold text-black hover:bg-amber-400"
+                                  >
+                                    {pureTradePaymentPending ? 'Pay Trade Protection Fee' : 'Complete Escrow Payment'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {pureTradeAccepted && currentProtectionPaid && !paymentHeld && (
+                              <p className="mt-2 rounded-lg border border-slate-500/30 bg-slate-500/10 px-2.5 py-2 font-semibold text-slate-300">
+                                {isBuyer ? 'Your protection fee is paid. Awaiting the other party.' : 'Awaiting the other party’s Trade Protection Fee.'}
+                              </p>
+                            )}
+                            {paymentHeld && dealType !== 'pure_trade' && (
+                              <p className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 font-semibold text-emerald-400">
+                                Escrow Held · Seller may ship
+                              </p>
+                            )}
                             {isIncomingPending && (
                               <div className="flex gap-2 mt-2">
                                 <button
@@ -5138,7 +7246,7 @@ export default function CardSwipersLanding() {
                   )}
                 </div>
 
-                <div data-chat-messages className="flex-1 min-h-0 bg-white/[0.03] rounded-2xl p-4 flex flex-col justify-end space-y-3 overflow-y-auto border border-white/8">
+                <div data-chat-messages className="flex-1 min-h-0 bg-red-900/20 rounded-2xl p-4 flex flex-col justify-end space-y-3 overflow-y-auto">
                   {chatMessages.length === 0 ? (
                     <div className="text-xs text-red-100">No messages yet. Send your opening proposal.</div>
                   ) : (
@@ -5185,8 +7293,8 @@ export default function CardSwipersLanding() {
       </main>
 
       {showNotificationsPanel && (
-        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4" onClick={() => setShowNotificationsPanel(false)}>
-          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4">
+          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-bold">Notifications</h3>
@@ -5245,7 +7353,7 @@ export default function CardSwipersLanding() {
                       {!notification.read && <span className="w-2 h-2 rounded-full bg-[#E50914]" />}
                     </div>
                     <p className="text-xs text-white/75 mt-1">{notification.message}</p>
-                    <p className="text-[11px] text-white/70 mt-2">
+                    <p className="text-[11px] text-white/45 mt-2">
                       {new Date(notification.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                     </p>
                   </button>
@@ -5345,237 +7453,338 @@ export default function CardSwipersLanding() {
                 ? `Choose whether you want to negotiate or buy ${currentCard.title} at the listed price.`
                 : `Choose whether you want to negotiate for ${currentCard.title}.`}
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              {MARKETPLACE_ACTION_TYPES.map((type) => (
+            <div className="grid grid-cols-3 gap-2">
+              {DEAL_TYPES.map((deal) => (
                 <button
-                  key={type}
+                  key={deal.value}
                   type="button"
-                  onClick={() => setPendingInterestType(type)}
-                  className={`px-3 py-2 rounded-xl text-xs border ${pendingInterestType === type ? 'bg-[#E50914] border-[#E50914]' : 'bg-white/5 border-white/15 hover:border-white/30'}`}
+                  onClick={() => {
+                    setPendingDealType(deal.value);
+                    setPendingInterestType(deal.value === 'cash_sale' ? INSTANT_PURCHASE_ACTION : MARKETPLACE_ACTION_TYPES[0]);
+                  }}
+                  className={`px-2 py-2 rounded-xl text-[11px] border ${pendingDealType === deal.value ? DEAL_TYPE_STYLES[deal.value] : 'bg-white/5 border-white/15 hover:border-white/30'}`}
                 >
-                  {type}
+                  {deal.label}
                 </button>
               ))}
             </div>
+            {pendingDealType === 'hybrid_trade' && (
+              <label className="block text-xs text-white/70">
+                Cash difference
+                <div className="mt-1 flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+                  <span className="text-white/50">$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={pendingCashAmount}
+                    onChange={(event) => setPendingCashAmount(event.target.value)}
+                    placeholder="200"
+                    className="w-full bg-transparent text-sm text-white focus:outline-none"
+                  />
+                </div>
+              </label>
+            )}
             <button
               type="button"
               disabled={interestBusy}
               onClick={handleSendInterest}
               className="w-full py-3 rounded-xl bg-[#E50914] hover:bg-red-700 font-semibold text-sm disabled:opacity-60"
             >
-              {interestBusy ? 'Submitting...' : pendingInterestType === INSTANT_PURCHASE_ACTION ? 'Start Purchase' : 'Send Trade Request'}
+              {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
             </button>
             {interestError && <p className="text-xs text-red-300">{interestError}</p>}
           </div>
         </div>
       )}
 
-      {currentTab === 'onboarding' && (
-        <div className="h-full min-h-0 max-h-full w-full flex flex-col bg-[#0B0F19] text-white">
-          <header className="px-4 pt-4 pb-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-[#F5C542] via-[#E11D48] to-[#1D4ED8] shadow-[0_10px_24px_rgba(225,29,72,0.28)]">
-                  <div className="absolute inset-0 flex items-center justify-center text-sm font-black text-white">
-                    {String(firebaseUser?.displayName || 'P').charAt(0).toUpperCase()}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Member</p>
-                  <p className="text-sm font-semibold">{firebaseUser?.displayName || 'Player'}</p>
+      {showOnboarding && (
+        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-3xl bg-[#111827] border border-white/10 rounded-3xl p-7 space-y-6 my-8">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex-1">
+                  <h2 className="text-3xl font-black tracking-tight">Build Your Marketplace</h2>
+                  <p className="text-sm text-white/60 mt-1">We'll personalize your feed in under 30 seconds.</p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white/80"
-              >
-                Share
-              </button>
+              <div className="flex gap-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`flex-1 transition-all ${
+                      i < onboardingStep
+                        ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C]'
+                        : 'bg-white/15'
+                    }`}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-white/50 mt-2">Step {onboardingStep} of 5</p>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-white/10 bg-[#121A26] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <div className="flex items-center gap-3">
-                <span className="text-white/40">⌕</span>
-                <input
-                  type="text"
-                  value={clubSearchQuery}
-                  onChange={(event) => setClubSearchQuery(event.target.value)}
-                  placeholder="Search club ID"
-                  className="w-full bg-transparent text-sm text-white placeholder:text-white/35 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleJoinClubByCode()}
-                  disabled={clubJoinBusy}
-                  className="rounded-xl bg-[#E11D48] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-60"
-                >
-                  {clubJoinBusy ? '...' : 'Join'}
-                </button>
+            {onboardingIntroVisible ? (
+              <div className="rounded-2xl bg-gradient-to-r from-emerald-600/30 to-emerald-500/20 border border-emerald-400/40 p-6 text-center">
+                <p className="text-2xl font-black">✓ Your feed is ready</p>
+                <p className="text-sm text-white/80 mt-3">Based on your interests, we'll surface the best trade opportunities.</p>
               </div>
-            </div>
-          </header>
-
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-24">
-            <div className="mt-2">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Clubs</p>
-                <span className="text-[10px] text-white/55">{filteredClubs.length} active</span>
-              </div>
-
-              <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {filteredClubs.length === 0 ? (
-                  <div className="w-full min-w-full snap-center rounded-[26px] border border-dashed border-white/10 bg-[#121A26]/70 p-5">
-                    <div className="flex h-full min-h-[220px] flex-col items-center justify-center text-center">
-                      <div className="mb-4 text-4xl">🏆</div>
-                      <p className="text-lg font-bold">No clubs yet</p>
-                      <p className="mt-2 text-sm text-white/55">Create a club or join a club ID to get started.</p>
+            ) : (
+              <>
+                {onboardingStep === 1 && (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-white mb-3">What do you collect?</p>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs text-white/50 uppercase tracking-widest font-bold mb-2">Sports</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {['Baseball', 'Basketball', 'Football', 'Hockey'].map((option) => {
+                              const selected = onboardingData.interests.includes(option);
+                              return (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => toggleOnboardingValue('interests', option)}
+                                  className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
+                                    selected
+                                      ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
+                                      : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
+                                  }`}
+                                >
+                                  {selected ? '✓ ' : ''}{option}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs text-white/50 uppercase tracking-widest font-bold mb-2">Trading Card Games</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {['Pokemon', 'Magic', 'Yu-Gi-Oh', 'One Piece'].map((option) => {
+                              const selected = onboardingData.interests.includes(option);
+                              return (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => toggleOnboardingValue('interests', option)}
+                                  className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
+                                    selected
+                                      ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
+                                      : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
+                                  }`}
+                                >
+                                  {selected ? '✓ ' : ''}{option}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs text-white/50 uppercase tracking-widest font-bold mb-2">Preferences</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {['Graded', 'Raw', 'Autographs', 'Memorabilia'].map((option) => {
+                              const selected = onboardingData.interests.includes(option);
+                              return (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => toggleOnboardingValue('interests', option)}
+                                  className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
+                                    selected
+                                      ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
+                                      : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
+                                  }`}
+                                >
+                                  {selected ? '✓ ' : ''}{option}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
+                    {onboardingData.interests.length > 0 && (
+                      <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 text-xs">
+                        <p className="text-white/60 mb-2">Your feed will prioritize:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {onboardingData.interests.slice(0, 3).map((int) => (
+                            <span key={int} className="px-2 py-1 rounded-lg bg-[#E50914]/20 text-[#FF6B7A] text-xs">
+                              ✓ {int}
+                            </span>
+                          ))}
+                          {onboardingData.interests.length > 3 && (
+                            <span className="px-2 py-1 rounded-lg bg-white/10 text-white/60 text-xs">
+                              +{onboardingData.interests.length - 3} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <>
-                    {filteredClubs.map((club) => {
-                      const isActive = selectedClubId === club.id;
-                      const clubIdValue = String(club.code || club.clubId || '000000');
-                      const clubMembers = Number(club.membersCount || club.memberCount || 1192);
-                      const activeTables = Number(club.activeTables || club.tableCount || 308);
+                )}
 
-                      return (
+                {onboardingStep === 2 && (
+                  <div className="space-y-4">
+                    <p className="text-sm font-semibold text-white">What are you typically looking for?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ONBOARDING_INTENTS.map((option) => (
                         <button
-                          key={club.id}
+                          key={option}
                           type="button"
-                          onClick={() => setSelectedClubId(club.id)}
-                          className={`group relative w-[83%] min-w-[83%] snap-center overflow-hidden rounded-[28px] border p-4 text-left shadow-[0_24px_50px_rgba(0,0,0,0.28)] transition-all ${
-                            isActive ? 'border-[#F5C542]/40 bg-[linear-gradient(180deg,#111827,#0E1729)]' : 'border-white/10 bg-[#111827] hover:border-white/20'
+                          onClick={() => setOnboardingData((prev) => ({ ...prev, intent: option }))}
+                          className={`text-xs px-3 py-3 rounded-xl border font-medium transition-all ${
+                            onboardingData.intent === option
+                              ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
+                              : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
                           }`}
                         >
-                          <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,_rgba(245,197,66,0.28),transparent_63%)]" />
-                          <div className="relative flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#F5C542] via-[#E11D48] to-[#1D4ED8] text-sm font-black text-white shadow-[0_12px_20px_rgba(225,29,72,0.2)]">
-                                {String(club.name || 'C').charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="text-[10px] uppercase tracking-[0.22em] text-white/45">Union</p>
-                                <p className="text-sm font-bold text-white">{club.name || 'Club Name'}</p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                navigator.clipboard?.writeText?.(String(club.code || club.clubId || ''));
-                              }}
-                              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-white/75"
-                            >
-                              Share
-                            </button>
-                          </div>
-
-                          <div className="relative mt-6 space-y-3">
-                            <div>
-                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Club ID</p>
-                              <p className="mt-1 text-3xl font-black tracking-[0.08em] text-white">{clubIdValue.padStart(6, '0').slice(-6)}</p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 text-sm text-white/75">
-                              <div className="rounded-2xl border border-white/8 bg-white/5 px-3 py-2.5">
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Members</p>
-                                <p className="mt-2 text-lg font-bold text-white">{clubMembers.toLocaleString()}</p>
-                              </div>
-                              <div className="rounded-2xl border border-white/8 bg-white/5 px-3 py-2.5">
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">Tables</p>
-                                <p className="mt-2 text-lg font-bold text-white">{activeTables.toLocaleString()}</p>
-                              </div>
-                            </div>
-                          </div>
+                          {onboardingData.intent === option ? '✓ ' : ''}{option}
                         </button>
-                      );
-                    })}
+                      ))}
+                    </div>
+                    <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-4 space-y-2">
+                      <p className="text-xs font-semibold text-white">Why this matters:</p>
+                      <ul className="text-xs text-white/70 space-y-1">
+                        <li>✓ Better trade match recommendations</li>
+                        <li>✓ Prioritize listings that fit your goals</li>
+                        <li>✓ Surface active collectors in your niche</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {onboardingStep === 3 && (
+                  <div className="space-y-4">
+                    <p className="text-sm font-semibold text-white">Typical trade value</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {ONBOARDING_PRICE_RANGES.map((option) => {
+                        const selected =
+                          onboardingData.priceRange[0] === option.value[0] &&
+                          onboardingData.priceRange[1] === option.value[1];
+                        return (
+                          <button
+                            key={option.label}
+                            type="button"
+                            onClick={() => setOnboardingData((prev) => ({ ...prev, priceRange: option.value }))}
+                            className={`text-xs px-3 py-3 rounded-xl border font-medium transition-all ${
+                              selected
+                                ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
+                                : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
+                            }`}
+                          >
+                            {selected ? '✓ ' : ''}{option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {onboardingStep === 4 && (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-white">What are your top priorities? (Up to 3)</p>
+                      <p className="text-xs text-white/50 mt-1">This helps us rank which cards show first.</p>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {ONBOARDING_PRIORITIES.map((option) => {
+                        const selected = onboardingData.priorities.includes(option);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() => toggleOnboardingValue('priorities', option, 3)}
+                            className={`text-xs px-3 py-2.5 rounded-xl border font-medium transition-all ${
+                              selected
+                                ? 'bg-gradient-to-r from-[#E50914] to-[#FF3B5C] border-[#E50914] text-white shadow-lg shadow-red-500/20'
+                                : 'bg-white/5 border-white/15 hover:border-white/30 text-white/80'
+                            }`}
+                          >
+                            {selected ? '✓ ' : ''}{option}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-white/50 font-medium">{onboardingData.priorities.length} / 3 selected</p>
+                  </div>
+                )}
+
+                {onboardingStep === 5 && (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-white mb-4">Review your marketplace setup</p>
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3 text-xs">
+                        <div>
+                          <p className="text-white/60 font-medium mb-1">Collections:</p>
+                          <p className="text-white">{onboardingData.interests.join(', ') || 'Not selected'}</p>
+                        </div>
+                        <div className="border-t border-white/10 pt-3">
+                          <p className="text-white/60 font-medium mb-1">Looking for:</p>
+                          <p className="text-white capitalize">{onboardingData.intent}</p>
+                        </div>
+                        <div className="border-t border-white/10 pt-3">
+                          <p className="text-white/60 font-medium mb-1">Price Range:</p>
+                          <p className="text-white">${onboardingData.priceRange[0]} - ${onboardingData.priceRange[1]}</p>
+                        </div>
+                        <div className="border-t border-white/10 pt-3">
+                          <p className="text-white/60 font-medium mb-1">Top Priorities:</p>
+                          <p className="text-white">{onboardingData.priorities.join(', ') || 'Not selected'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-gradient-to-r from-emerald-600/20 to-emerald-500/10 border border-emerald-400/30 p-4 space-y-2">
+                      <p className="text-xs font-semibold text-emerald-300 uppercase">Your personalized feed will:</p>
+                      <ul className="text-xs text-white/80 space-y-1">
+                        <li>✓ Show better trade matches</li>
+                        <li>✓ Surface stronger collector connections</li>
+                        <li>✓ Hide irrelevant listings</li>
+                      </ul>
+                    </div>
 
                     <button
                       type="button"
-                      onClick={() => handleCreateClub()}
-                      className="group relative w-[83%] min-w-[83%] snap-center overflow-hidden rounded-[28px] border border-dashed border-[#F5C542]/35 bg-[linear-gradient(180deg,rgba(18,23,34,0.96),rgba(11,15,25,0.96))] p-5 text-left shadow-[0_24px_50px_rgba(0,0,0,0.24)]"
+                      disabled={onboardingBusy}
+                      onClick={handleCompleteOnboarding}
+                      className="w-full py-4 rounded-xl bg-gradient-to-r from-[#E50914] to-[#D72638] hover:from-[#FF3B5C] hover:to-[#E11D48] font-bold text-sm text-white shadow-lg shadow-red-500/25 transition-all disabled:opacity-60 uppercase tracking-wider"
                     >
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(245,197,66,0.22),transparent_65%)]" />
-                      <div className="relative flex h-full min-h-[220px] flex-col justify-between">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-[0.2em] text-[#F5C542]">Create</p>
-                          <h3 className="mt-4 text-2xl font-black leading-tight text-white">Create a club and run your own poker club</h3>
-                        </div>
-                        <div className="mt-6">
-                          <span className="inline-flex rounded-full bg-[#E11D48] px-4 py-2 text-sm font-bold text-white shadow-[0_12px_24px_rgba(225,29,72,0.24)]">
-                            {clubCreateBusy ? 'Creating...' : 'Create Club'}
-                          </span>
-                        </div>
-                      </div>
+                      {onboardingBusy ? 'Building Feed...' : 'Trade Now'}
                     </button>
-                  </>
+                    {onboardingError && <p className="text-xs text-red-300 text-center">{onboardingError}</p>}
+                  </div>
                 )}
-              </div>
 
-              <div className="mt-4 flex items-center justify-center gap-2">
-                {filteredClubs.length === 0 ? (
-                  <>
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#F5C542]" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-                  </>
-                ) : (
-                  <>
-                    {filteredClubs.concat({ id: 'create-card', createCard: true }).map((club, index) => (
-                      <span
-                        key={club.id || `${club.createCard ? 'create' : 'club'}-${index}`}
-                        className={`h-2.5 rounded-full transition-all ${
-                          selectedClubId === club.id || (!club.id && index === filteredClubs.length)
-                            ? 'w-6 bg-[#F5C542]'
-                            : 'w-2.5 bg-white/20'
-                        }`}
-                      />
-                    ))}
-                  </>
+                {onboardingStep < 5 && (
+                  <div className="flex justify-between pt-2 gap-3">
+                    <button
+                      type="button"
+                      disabled={onboardingStep === 1}
+                      onClick={() => setOnboardingStep((prev) => Math.max(1, prev - 1))}
+                      className="px-5 py-2.5 text-xs rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-40 font-medium transition-all"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOnboarding(false);
+                        setOnboardingBusy(false);
+                      }}
+                      className="px-4 py-2.5 text-xs rounded-xl bg-white/5 hover:bg-white/10 text-white/70 font-medium transition-all"
+                    >
+                      Skip for Now
+                    </button>
+                    <button
+                      type="button"
+                      disabled={onboardingStep === 5}
+                      onClick={() => setOnboardingStep((prev) => Math.min(5, prev + 1))}
+                      className="flex-1 px-5 py-2.5 text-xs rounded-xl bg-white/15 hover:bg-white/25 font-medium transition-all"
+                    >
+                      Continue
+                    </button>
+                  </div>
                 )}
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-[26px] border border-white/10 bg-gradient-to-r from-[#111827] via-[#111827] to-[#131B2B] p-2 shadow-[0_20px_40px_rgba(0,0,0,0.2)]">
-              <div className="overflow-hidden rounded-[22px]">
-                <img
-                  src="https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=80"
-                  alt="Club promo"
-                  className="h-32 w-full object-cover"
-                />
-              </div>
-            </div>
-
-            {selectedClub && (
-              <div className="mt-5 rounded-[24px] border border-white/10 bg-[#121A26] p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Active Club</p>
-                    <h3 className="mt-2 text-lg font-bold text-white">{selectedClub.name}</h3>
-                  </div>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-white/65">
-                    {selectedClub.role || 'Member'}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm text-white/60">
-                  {selectedClub.description || 'Club feed, tables, and updates live here.'}
-                </p>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
-                  <div className="rounded-2xl border border-white/8 bg-white/5 p-3">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Members</div>
-                    <div className="mt-2 text-base font-bold text-white">{Number(selectedClub.membersCount || selectedClub.memberCount || 0).toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-2xl border border-white/8 bg-white/5 p-3">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Tables</div>
-                    <div className="mt-2 text-base font-bold text-white">{Number(selectedClub.activeTables || selectedClub.tableCount || 0).toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-2xl border border-white/8 bg-white/5 p-3">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">ID</div>
-                    <div className="mt-2 text-base font-bold text-white">{String(selectedClub.code || selectedClub.clubId || '000000').padStart(6, '0').slice(-6)}</div>
-                  </div>
-                </div>
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -5624,23 +7833,34 @@ export default function CardSwipersLanding() {
         </div>
       )}
 
-      <CardScannerModal
-        isOpen={showCardScanner}
-        onClose={closeCardScanner}
-        onImagesCaptured={handleScannerImagesCaptured}
-      />
-
-      {showPersistentMobileDock && !showCardScanner && (
+      {showPersistentMobileDock && (
       <footer
-        className="fixed bottom-0 left-0 right-0 z-[70] px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none"
-        style={{
-          bottom: 0,
-          paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)',
-          transform: 'translateZ(0)'
-        }}
+        className="fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
       >
         <div className="max-w-lg mx-auto pointer-events-auto">
-        <nav className={`grid ${canAccessAdmin ? 'grid-cols-5' : 'grid-cols-4'} items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(20,25,37,0.94),rgba(10,14,24,0.96))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl ring-1 ring-white/8`}>
+        <nav className="grid grid-cols-5 items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(10,10,10,0.98),rgba(0,0,0,0.98))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl ring-1 ring-white/8">
+          <button
+            onClick={() => {
+              navigateToTab('onboarding');
+              setActiveChat(null);
+            }}
+            className="group relative flex items-center justify-center"
+            type="button"
+          >
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'onboarding' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
+            <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
+              {clubModerationBadgeCount > 0 && (
+                <span className="absolute -top-0.5 right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] border border-red-300/40 text-[10px] leading-4 text-white font-bold text-center">
+                  {clubModerationBadgeCount > 99 ? '99+' : clubModerationBadgeCount}
+                </span>
+              )}
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'onboarding' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><CardClubsIcon /></NavIcon>
+              <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'onboarding' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Card Clubs</span>
+              <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'onboarding' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
+            </span>
+          </button>
+
           <button
             onClick={() => {
               navigateToTab('swipe');
@@ -5658,18 +7878,15 @@ export default function CardSwipersLanding() {
           </button>
 
           <button
-            onClick={() => {
-              navigateToTab('post');
-              setActiveChat(null);
-            }}
+            onClick={handleQuickCaptureFromDock}
             className="group relative flex items-center justify-center -mt-4"
             type="button"
           >
-            <span className={`absolute inset-x-1 inset-y-0 rounded-[26px] border transition-all duration-300 ${currentTab === 'post' ? 'border-[#F5C542]/25 bg-[radial-gradient(circle_at_top,rgba(245,197,66,0.3),rgba(225,29,72,0.24)_62%,rgba(255,255,255,0.08))] shadow-[0_16px_30px_rgba(225,29,72,0.24)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.08]'}`} />
-            <span className="relative flex min-h-[72px] flex-col items-center justify-center gap-1 px-3 py-2.5">
-              <span className={`absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent transition-opacity duration-300 ${currentTab === 'post' ? 'opacity-100' : 'opacity-0'}`} />
-              <NavIcon className={`transition-all duration-300 ${currentTab === 'post' ? 'w-[1.45rem] h-[1.45rem] text-white' : 'w-[1.3rem] h-[1.3rem] text-white/78 group-hover:text-white'}`}><PostIcon /></NavIcon>
-              <span className={`text-[11px] font-bold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'post' ? 'text-white' : 'text-white/72 group-hover:text-white'}`}>Post Card</span>
+            <span className={`absolute inset-x-1 inset-y-0 rounded-[26px] border transition-all duration-300 ${currentTab === 'post' ? 'border-[#F5C542]/25 bg-[radial-gradient(circle_at_top,rgba(245,197,66,0.3),rgba(225,29,72,0.24)_62%,rgba(255,255,255,0.08))] shadow-[0_16px_30px_rgba(225,29,72,0.24)]' : 'border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] group-hover:bg-white/[0.08]'}`} />
+            <span className="relative flex min-h-[74px] flex-col items-center justify-center gap-1 px-3 py-2.5">
+              <span className="absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+              <NavIcon className={`transition-all duration-300 ${currentTab === 'post' ? 'w-[1.5rem] h-[1.5rem] text-white' : 'w-[1.4rem] h-[1.4rem] text-white/85 group-hover:text-white'}`}><CameraIcon /></NavIcon>
+              <span className={`text-[11px] font-bold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'post' ? 'text-white' : 'text-white/80 group-hover:text-white'}`}>Camera</span>
               <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'post' ? 'w-9 opacity-100' : 'w-3 opacity-40'}`} />
             </span>
           </button>
@@ -5705,28 +7922,10 @@ export default function CardSwipersLanding() {
                 </span>
               )}
             </div>
-            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Inbox</span>
+            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Imbox</span>
             <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'messages' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
             </span>
           </button>
-
-          {canAccessAdmin && (
-            <button
-              onClick={() => {
-                navigateToTab('admin');
-                setActiveChat(null);
-              }}
-              className="group relative flex items-center justify-center"
-              type="button"
-            >
-              <span className={`absolute inset-x-1 inset-y-0 rounded-[24px] border transition-all duration-300 ${currentTab === 'admin' ? 'border-white/10 bg-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'border-transparent bg-transparent group-hover:bg-white/[0.04]'}`} />
-              <span className="relative flex min-h-[64px] flex-col items-center justify-center gap-1 px-2 py-2">
-                <NavIcon className={`transition-all duration-300 ${currentTab === 'admin' ? 'w-[1.3rem] h-[1.3rem] text-white' : 'w-[1.2rem] h-[1.2rem] text-white/65 group-hover:text-white/80'}`}><ShieldIcon /></NavIcon>
-                <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'admin' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Admin</span>
-                <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'admin' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
-              </span>
-            </button>
-          )}
         </nav>
         </div>
       </footer>
@@ -5734,7 +7933,7 @@ export default function CardSwipersLanding() {
 
       {showPrivacyPolicy && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl max-h-[80vh] overflow-y-auto">
+          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-red-700">Privacy Policy</h2>
               <button
@@ -5746,16 +7945,12 @@ export default function CardSwipersLanding() {
               </button>
             </div>
             <p className="text-sm leading-relaxed">
-              CardSwipers collects the information needed to operate the marketplace: email address, display name, password or third-party sign-in identity, profile location, bio, card photos, card listings, messages, offers, interests, match history, verification status, and support or dispute records.
+              CardSwipers collects account details, trade listings, and in-app messages to operate the platform.
+              We do not sell your personal information. Data is used only for authentication, matching, and product
+              improvement.
             </p>
             <p className="text-sm leading-relaxed">
-              If you choose to verify your account, we may also request legal name, date of birth, phone number, government ID images, and other information reasonably needed for identity, fraud, or age checks. We may also collect device, browser, log, and analytics data to secure the service and improve reliability.
-            </p>
-            <p className="text-sm leading-relaxed">
-              We use this data to create and secure accounts, verify users, match collectors, process listings and messages, prevent fraud, provide support, enforce policies, and meet legal obligations. We do not sell your personal information.
-            </p>
-            <p className="text-sm leading-relaxed">
-              Your data may be processed by service providers that help us run CardSwipers, including authentication, cloud hosting, storage, analytics, and messaging providers. You can request account deletion through Profile Settings, and we will delete or deactivate data as required by law and our retention practices.
+              By continuing, you agree to data processing required for account security and trade functionality.
             </p>
           </div>
         </div>
@@ -5788,7 +7983,7 @@ export default function CardSwipersLanding() {
 
       {showTermsOfService && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl max-h-[80vh] overflow-y-auto">
+          <div className="w-full max-w-md bg-white text-neutral-900 rounded-2xl p-5 space-y-3 shadow-2xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-red-700">Terms of Service</h2>
               <button
@@ -5815,77 +8010,60 @@ export default function CardSwipersLanding() {
         </div>
       )}
 
-      {showProfileSettings && (
-        <div className="fixed inset-0 bg-black/70 z-[62] flex items-center justify-center p-4" onClick={() => setShowProfileSettings(false)}>
-          <div className="w-full max-w-md bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">Profile Settings</h2>
+      {ENABLE_PAYMENT_PIPELINE && activePaymentSheet && stripePromise && (
+        <div className="fixed inset-0 bg-black/70 z-[68] flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto bg-white text-[#111827] rounded-[28px] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold">Secure escrow checkout</h2>
+                <p className="text-sm text-[#6B7280]">Payment is held until shipment and release.</p>
+              </div>
               <button
                 type="button"
-                onClick={() => setShowProfileSettings(false)}
-                className="text-sm font-semibold text-white/70 hover:text-white"
+                onClick={() => {
+                  setActivePaymentSheet(null);
+                  setPaymentSheetError('');
+                }}
+                className="text-sm font-semibold text-[#6B7280] hover:text-[#111827]"
               >
                 Close
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-white/70">Location</label>
-                <input
-                  type="text"
-                  value={profileLocationDraft}
-                  onChange={(event) => setProfileLocationDraft(event.target.value)}
-                  placeholder="City, State"
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                />
+            {paymentSheetError && (
+              <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2 text-sm text-red-700">
+                {paymentSheetError}
               </div>
-              <div>
-                <label className="text-xs text-white/70">Bio</label>
-                <textarea
-                  rows={3}
-                  value={profileBioDraft}
-                  onChange={(event) => setProfileBioDraft(event.target.value)}
-                  placeholder="Tell collectors what you collect and trade"
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
-                />
-              </div>
-              {profileSettingsError && <p className="text-xs text-red-300">{profileSettingsError}</p>}
-            </div>
+            )}
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={profileSettingsBusy}
-                onClick={handleSaveProfileSettings}
-                className="px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#E11D48] text-sm font-semibold disabled:opacity-60"
-              >
-                Save Settings
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  await signOut(auth);
-                  setCurrentTab(isNativeApp ? 'auth' : 'landing');
-                  setShowProfileSettings(false);
+            <Elements
+              stripe={stripePromise}
+              options={{
+                clientSecret: activePaymentSheet.clientSecret,
+                appearance: {
+                  theme: 'stripe'
+                }
+              }}
+            >
+              <EscrowPaymentForm
+                purchaseSummary={activePaymentSheet}
+                onCancel={() => {
+                  if (activePaymentSheet.offerId) {
+                    updateDoc(doc(db, 'offers', activePaymentSheet.offerId), {
+                      paymentStatus: 'payment_pending',
+                      updatedAt: serverTimestamp()
+                    }).catch((error) => console.error('Failed marking offer payment pending:', error));
+                  }
+                  setActivePaymentSheet(null);
+                  setPaymentSheetError('');
                 }}
-                className="px-4 py-2.5 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 text-sm font-semibold"
-              >
-                Log Out
-              </button>
-              <button
-                type="button"
-                disabled={profileSettingsBusy}
-                onClick={handleDeleteAccount}
-                className="px-4 py-2.5 rounded-xl border border-red-400/35 bg-red-500/10 hover:bg-red-500/20 text-sm font-semibold text-red-200 disabled:opacity-60"
-              >
-                Delete Account
-              </button>
-            </div>
+                onError={setPaymentSheetError}
+                onSuccess={handleEscrowPaymentSuccess}
+              />
+            </Elements>
           </div>
         </div>
       )}
-
     </div>
   );
 }

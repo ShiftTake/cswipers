@@ -1,0 +1,12 @@
+{
+	"appId": "com.cardswipers.app",
+	"appName": "CardSwipers",
+	"webDir": "dist",
+	"server": {
+		"iosScheme": "https"
+	},
+	"packageClassList": [
+		"TextRecognitionPlugin",
+		"CAPCameraPlugin"
+	]
+}
