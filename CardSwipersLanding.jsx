@@ -35,7 +35,6 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
-import { CameraPreview } from '@capacitor-community/camera-preview';
 import { auth, db, storage } from './firebase';
 import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
 import authHeroImage from './image (3).png';
@@ -1025,25 +1024,6 @@ export default function CardSwipersLanding() {
       }
     }
   }, []);
-
-  useEffect(() => {
-    if (!isNativeApp || currentTab !== 'post') {
-      if (isNativeApp) CameraPreview.stop().catch(() => {});
-      return undefined;
-    }
-
-    CameraPreview.start({
-      parent: 'camera-container',
-      position: 'rear',
-      toBack: true
-    }).catch((error) => {
-      console.error('Failed to start camera preview:', error);
-    });
-
-    return () => {
-      CameraPreview.stop().catch(() => {});
-    };
-  }, [currentTab, isNativeApp]);
 
   useEffect(() => {
     if (firebaseUser) return;
@@ -5844,7 +5824,6 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'post' && (
           <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
-            {isNativeApp && <div id="camera-container" className="absolute inset-0 bg-transparent pointer-events-none" aria-hidden="true" />}
             <div className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-32 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
