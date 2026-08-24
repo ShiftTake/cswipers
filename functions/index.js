@@ -18,8 +18,11 @@ const ORDERS_COLLECTION = 'orders';
 const PURCHASE_INTENTS_COLLECTION = 'purchaseIntents';
 const USERS_COLLECTION = 'users';
 const DEFAULT_CURRENCY = 'usd';
-const PLATFORM_FEE_RATE = 0.02;
-const DISPUTE_WINDOW_MS = 48 * 60 * 60 * 1000;
+const PLATFORM_FEE_RATE = 0.05;
+const STANDARD_SHIPPING_FEE_CENTS = 599;
+const INSURED_SHIPPING_FEE_CENTS = 1299;
+const INSURED_SHIPPING_THRESHOLD_CENTS = 25000;
+const DISPUTE_WINDOW_MS = 72 * 60 * 60 * 1000;
 const TOS_VERSION = 'v1.1';
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
 
@@ -170,11 +173,19 @@ function mapOrderToLegacyPurchaseIntent(order) {
     cardId: order.card_id || null,
     cardTitle: order.card_title || 'Escrow Order',
     cardBrand: order.card_brand || '',
+    cardImageFrontUrl: order.card_image_front_url || null,
+    cardImageBackUrl: order.card_image_back_url || null,
     listingPrice: Number((order.amount_base || 0) / 100),
     chargedTotalAmount: Number((order.amount_charged || 0) / 100),
     marketplaceFeeRate: PLATFORM_FEE_RATE,
-    marketplaceFeeAmount: Number(((order.amount_charged || 0) - (order.amount_base || 0)) / 100),
+    marketplaceFeeAmount: Number((order.service_fee || (order.amount_charged || 0) - (order.amount_base || 0)) / 100),
     sellerPayoutAmount: Number((order.amount_base || 0) / 100),
+    subtotal: Number((order.subtotal || order.amount_base || 0) / 100),
+    shippingFee: Number((order.shipping_fee || 0) / 100),
+    serviceFee: Number((order.service_fee || 0) / 100),
+    tax: Number((order.tax || 0) / 100),
+    totalPaid: Number((order.total_paid || order.amount_charged || 0) / 100),
+    sellerNetPayout: Number((order.seller_net_payout || order.amount_base || 0) / 100),
     escrowAmount: Number((order.amount_base || 0) / 100),
     paymentIntentId: order.stripe_payment_intent_id || null,
     transferGroup: order.transfer_group,
@@ -198,6 +209,18 @@ function mapOrderToLegacyPurchaseIntent(order) {
 
 async function syncPurchaseIntentMirror(orderId, orderData) {
   await db.collection(PURCHASE_INTENTS_COLLECTION).doc(orderId).set(mapOrderToLegacyPurchaseIntent(orderData), { merge: true });
+}
+
+async function notifyUser(userId, type, message, data = {}) {
+  if (!userId) return;
+  await db.collection('notifications').add({
+    userId,
+    type,
+    message,
+    read: false,
+    ...data,
+    createdAt: serverTimestamp()
+  });
 }
 
 async function getOrderOrThrow(orderId) {
@@ -274,6 +297,10 @@ async function validateTrackingAgainstOrder(order, carrier, trackingNumber, dest
 async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadata = {}) {
   const { orderRef, order } = await getOrderOrThrow(orderId);
 
+  if (String(order.status || '').toLowerCase() === 'disputed' && !metadata.allowDisputedRelease) {
+    throw new Error('Escrow is frozen while this order has an active dispute.');
+  }
+
   if (String(order.stripe_transfer_id || '').trim()) {
     return {
       order,
@@ -301,7 +328,7 @@ async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadat
   }
 
   const transfer = await stripe.transfers.create({
-    amount: baseAmountCents,
+    amount: Number(order.seller_net_payout || baseAmountCents),
     currency: order.currency || DEFAULT_CURRENCY,
     destination: connectedAccountId,
     transfer_group: order.transfer_group,
@@ -332,6 +359,9 @@ async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadat
 
 async function refundBuyerForOrder(orderId, metadata = {}) {
   const { orderRef, order } = await getOrderOrThrow(orderId);
+  if (String(order.status || '').toLowerCase() === 'refunded' || order.stripe_refund_id) {
+    return { id: order.stripe_refund_id || null, status: 'already_refunded' };
+  }
   if (!order.stripe_payment_intent_id) {
     throw new Error('Order is missing a Stripe PaymentIntent id.');
   }
@@ -348,6 +378,7 @@ async function refundBuyerForOrder(orderId, metadata = {}) {
 
   const nextOrderState = {
     status: 'refunded',
+    stripe_refund_id: refund.id,
     refunded_at: serverTimestamp(),
     updated_at: serverTimestamp(),
     dispute_resolution: metadata.resolution || 'refund_buyer'
@@ -371,12 +402,20 @@ function buildOrderRecord({
   cardId,
   cardTitle,
   cardBrand,
+  cardImageFrontUrl,
+  cardImageBackUrl,
   baseAmountCents,
   totalAmountCents,
   currency,
   paymentIntent,
   transferGroup,
-  shippingAddress
+  shippingAddress,
+  subtotalCents,
+  shippingFeeCents,
+  serviceFeeCents,
+  taxCents,
+  totalPaidCents,
+  sellerNetPayoutCents
 }) {
   return {
     order_id: orderId,
@@ -388,6 +427,13 @@ function buildOrderRecord({
     buyer_name: buyerName || 'Buyer',
     amount_base: baseAmountCents,
     amount_charged: totalAmountCents,
+    subtotal: subtotalCents,
+    shipping_fee: shippingFeeCents,
+    service_fee: serviceFeeCents,
+    tax: taxCents,
+    total_paid: totalPaidCents,
+    seller_net_payout: sellerNetPayoutCents,
+    shipping_allowance: shippingFeeCents,
     currency,
     stripe_payment_intent_id: paymentIntent.id,
     stripe_transfer_id: null,
@@ -404,6 +450,8 @@ function buildOrderRecord({
     card_id: cardId || null,
     card_title: cardTitle || 'Escrow Order',
     card_brand: cardBrand || '',
+    card_image_front_url: cardImageFrontUrl || null,
+    card_image_back_url: cardImageBackUrl || null,
     tos_accepted: Boolean(buyerProfile?.tos_accepted),
     tos_accepted_at: buyerProfile?.tos_accepted_at || serverTimestamp(),
     tos_version_accepted: buyerProfile?.tos_version_accepted || TOS_VERSION,
@@ -432,6 +480,8 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       cardId,
       cardTitle,
       cardBrand,
+      cardImageFrontUrl,
+      cardImageBackUrl,
       buyerShippingAddress
     } = req.body || {};
 
@@ -440,7 +490,13 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
     }
 
     const baseAmountCents = toCents(itemPrice, 'itemPrice');
-    const totalAmountCents = baseAmountCents + platformFeeCentsFromBase(baseAmountCents);
+    const shippingFeeCents = baseAmountCents > INSURED_SHIPPING_THRESHOLD_CENTS
+      ? INSURED_SHIPPING_FEE_CENTS
+      : STANDARD_SHIPPING_FEE_CENTS;
+    const serviceFeeCents = platformFeeCentsFromBase(baseAmountCents);
+    const taxCents = 0;
+    const totalAmountCents = baseAmountCents + shippingFeeCents + serviceFeeCents + taxCents;
+    const sellerNetPayoutCents = baseAmountCents + shippingFeeCents - serviceFeeCents;
     const normalizedCurrency = normalizeCurrency(currency);
     const orderId = buildOrderId(requestedOrderId);
     const transferGroup = buildTransferGroup(orderId);
@@ -464,6 +520,9 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
         sellerConnectedAccountId: String(sellerConnectedAccountId || '').trim(),
         baseAmountCents: String(baseAmountCents),
         totalAmountCents: String(totalAmountCents),
+        shippingFeeCents: String(shippingFeeCents),
+        serviceFeeCents: String(serviceFeeCents),
+        taxCents: String(taxCents),
         pricingModel: 'separate_charges_and_transfers'
       }
     });
@@ -480,12 +539,20 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       cardId,
       cardTitle,
       cardBrand,
+      cardImageFrontUrl: req.body?.cardImageFrontUrl || null,
+      cardImageBackUrl: req.body?.cardImageBackUrl || null,
       baseAmountCents,
       totalAmountCents,
       currency: normalizedCurrency,
       paymentIntent,
       transferGroup,
-      shippingAddress: buyerShippingAddress || null
+      shippingAddress: buyerShippingAddress || null,
+      subtotalCents: baseAmountCents,
+      shippingFeeCents,
+      serviceFeeCents,
+      taxCents,
+      totalPaidCents: totalAmountCents,
+      sellerNetPayoutCents
     });
 
     await db.collection(ORDERS_COLLECTION).doc(orderId).set(orderRecord, { merge: true });
@@ -498,15 +565,67 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       clientSecret: paymentIntent.client_secret,
       amountBase: baseAmountCents,
       amountCharged: totalAmountCents,
+      subtotal: (baseAmountCents / 100).toFixed(2),
+      shippingFee: (shippingFeeCents / 100).toFixed(2),
+      serviceFee: (serviceFeeCents / 100).toFixed(2),
+      tax: (taxCents / 100).toFixed(2),
+      totalPaid: (totalAmountCents / 100).toFixed(2),
+      sellerNetPayout: (sellerNetPayoutCents / 100).toFixed(2),
       baseItemPrice: (baseAmountCents / 100).toFixed(2),
       totalCharge: (totalAmountCents / 100).toFixed(2),
-      platformFee: ((totalAmountCents - baseAmountCents) / 100).toFixed(2),
+      platformFee: (serviceFeeCents / 100).toFixed(2),
+      serviceFee: (serviceFeeCents / 100).toFixed(2),
+      percentageFee: ((baseAmountCents * PLATFORM_FEE_RATE) / 100).toFixed(2),
+      flatFee: (Math.min(PLATFORM_FLAT_FEE_CENTS, serviceFeeCents) / 100).toFixed(2),
+      shippingFee: (shippingFeeCents / 100).toFixed(2),
+      tax: (taxCents / 100).toFixed(2),
+      totalPaid: (totalAmountCents / 100).toFixed(2),
+      sellerNetPayout: (sellerNetPayoutCents / 100).toFixed(2),
       currency: normalizedCurrency,
       status: 'pending_payment'
     });
   } catch (error) {
     console.error('createOrderPaymentIntent failed:', error);
     return sendJson(res, 400, { error: error.message || 'Unable to create payment intent.' });
+  }
+});
+
+exports.createSellerPayoutAccount = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const decodedToken = await requireAuth(req);
+    const stripe = getStripeClient();
+    const profile = await getUserProfile(decodedToken.uid);
+    let accountId = profile?.stripeConnectedAccountId || profile?.connectedAccountId || '';
+    if (!accountId) {
+      const account = await stripe.accounts.create({
+        type: 'custom',
+        country: String(req.body?.country || 'US').toUpperCase(),
+        email: decodedToken.email || profile?.email || undefined,
+        capabilities: { transfers: { requested: true } },
+        business_type: 'individual'
+      });
+      accountId = account.id;
+      await db.collection(USERS_COLLECTION).doc(decodedToken.uid).set({
+        stripeConnectedAccountId: accountId,
+        connectedAccountId: accountId,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    const origin = String(req.headers.origin || process.env.APP_ORIGIN || 'https://cardswipers.com').replace(/\/$/, '');
+    const accountLink = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: `${origin}/wallet`,
+      return_url: `${origin}/wallet`,
+      type: 'account_onboarding'
+    });
+    return sendJson(res, 200, { accountId, onboardingUrl: accountLink.url });
+  } catch (error) {
+    console.error('createSellerPayoutAccount failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to start seller payout setup.' });
   }
 });
 
@@ -556,6 +675,12 @@ exports.submitTracking = onRequest({ secrets: [shippoApiKey] }, async (req, res)
     if (order.seller_user_id && order.seller_user_id !== decodedToken.uid) {
       return sendJson(res, 403, { error: 'Only the seller can submit tracking for this order.' });
     }
+    if (!String(carrier || '').trim() || !String(trackingNumber || '').trim()) {
+      return sendJson(res, 400, { error: 'Carrier and tracking number are required before shipping.' });
+    }
+    if (!['USPS', 'UPS', 'FEDEX'].includes(String(carrier).trim().toUpperCase())) {
+      return sendJson(res, 400, { error: 'Carrier must be USPS, UPS, or FedEx.' });
+    }
 
     const trackingDetails = await validateTrackingAgainstOrder(order, carrier, trackingNumber, destinationZip);
     const nextOrderState = {
@@ -565,11 +690,19 @@ exports.submitTracking = onRequest({ secrets: [shippoApiKey] }, async (req, res)
       shipping_api_tracker_id: trackingDetails.trackerId,
       status: 'shipped',
       shipped_at: serverTimestamp(),
+      tracking_status: trackingDetails.deliveryStatus || 'pre_transit',
+      tracking_destination_zip: trackingDetails.destinationZip || null,
+      tracking_submitted_at: serverTimestamp(),
+      auto_release_at: addMilliseconds(nowTimestamp(), 7 * 24 * 60 * 60 * 1000),
       updated_at: serverTimestamp()
     };
 
     await orderRef.set(nextOrderState, { merge: true });
     await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+    await Promise.all([
+      notifyUser(order.buyer_id, 'tracking_added', `Tracking was added for ${order.card_title || 'your order'}.`, { orderId, trackingNumber: trackingDetails.trackingNumber }),
+      notifyUser(order.seller_user_id, 'tracking_added', `Tracking was added for ${order.card_title || 'your sale'}.`, { orderId, trackingNumber: trackingDetails.trackingNumber })
+    ]);
 
     return sendJson(res, 200, {
       orderId,
@@ -628,6 +761,8 @@ exports.openDispute = onRequest({ secrets: [stripeSecret] }, async (req, res) =>
     const decodedToken = await requireAuth(req);
     const orderId = buildOrderId(req.body?.orderId);
     const disputeReason = String(req.body?.disputeReason || '').trim();
+    const disputeCategory = String(req.body?.disputeCategory || 'Item Not Received').trim();
+    const evidence = Array.isArray(req.body?.evidence) ? req.body.evidence.slice(0, 5) : [];
     if (!disputeReason) {
       return sendJson(res, 400, { error: 'disputeReason is required.' });
     }
@@ -640,6 +775,9 @@ exports.openDispute = onRequest({ secrets: [stripeSecret] }, async (req, res) =>
     const nextOrderState = {
       status: 'disputed',
       dispute_reason: disputeReason,
+      dispute_category: disputeCategory,
+      dispute_evidence: evidence,
+      payout_frozen: true,
       disputed_at: serverTimestamp(),
       dispute_timer_expires_at: null,
       updated_at: serverTimestamp()
@@ -696,6 +834,8 @@ exports.shippingWebhook = onRequest({ secrets: [shippingWebhookSecret] }, async 
     const nextOrderState = {
       tracking_number: trackingNumber || order.tracking_number || null,
       carrier: carrier || order.carrier || null,
+      tracking_status: rawStatus || order.tracking_status || 'unknown',
+      tracking_destination_zip: String(req.body?.data?.tracking_status?.location?.zip || req.body?.tracking_status?.location?.zip || order.tracking_destination_zip || '').trim(),
       updated_at: serverTimestamp()
     };
 
@@ -703,10 +843,18 @@ exports.shippingWebhook = onRequest({ secrets: [shippingWebhookSecret] }, async 
       nextOrderState.status = 'delivered';
       nextOrderState.delivered_at = serverTimestamp();
       nextOrderState.dispute_timer_expires_at = addMilliseconds(nowTimestamp(), DISPUTE_WINDOW_MS);
+      nextOrderState.delivery_release_at = addMilliseconds(nowTimestamp(), DISPUTE_WINDOW_MS);
+      nextOrderState.auto_release_at = nextOrderState.delivery_release_at;
     }
 
     await orderDoc.ref.set(nextOrderState, { merge: true });
     await syncPurchaseIntentMirror(order.order_id || orderDoc.id, { ...order, ...nextOrderState });
+    if (rawStatus === 'delivered') {
+      await Promise.all([
+        notifyUser(order.buyer_id, 'delivery_confirmed', `Carrier delivery was confirmed for ${order.card_title || 'your order'}.`, { orderId: order.order_id || orderDoc.id }),
+        notifyUser(order.seller_user_id, 'delivery_confirmed', `Carrier delivery was confirmed for ${order.card_title || 'your sale'}.`, { orderId: order.order_id || orderDoc.id })
+      ]);
+    }
 
     return sendJson(res, 200, {
       ok: true,
@@ -762,6 +910,10 @@ exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookS
       };
       await orderRef.set(nextOrderState, { merge: true });
       await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+      await Promise.all([
+        notifyUser(order.buyer_id, 'payout_released', `Funds were released for ${order.card_title || 'your order'}.`, { orderId }),
+        notifyUser(order.seller_user_id, 'payout_released', `Your payout was released for ${order.card_title || 'your sale'}.`, { orderId, transferId: transfer.id })
+      ]);
     }
 
     if (event.type === 'payment_intent.payment_failed' || event.type === 'payment_intent.canceled') {
@@ -986,12 +1138,67 @@ exports.registerTradeNight = onRequest(async (req, res) => {
   }
 });
 
+exports.autoRefundUnshippedOrders = onSchedule({ schedule: 'every 15 minutes', secrets: [stripeSecret] }, async () => {
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 5 * 24 * 60 * 60 * 1000);
+  const snapshot = await db.collection(ORDERS_COLLECTION).where('status', '==', 'payment_held').limit(200).get();
+
+  for (const docSnap of snapshot.docs) {
+    const order = docSnap.data();
+    const createdAt = order.created_at?.toMillis?.() || 0;
+    if (createdAt > cutoff.toMillis() || order.tracking_number) continue;
+    try {
+      await refundBuyerForOrder(order.order_id || docSnap.id, { actor: 'system', resolution: 'auto_refund_unshipped_after_5_days' });
+      await Promise.all([
+        notifyUser(order.buyer_id, 'order_refunded', `Your order was refunded because the seller did not add tracking within five days.`, { orderId: order.order_id || docSnap.id }),
+        notifyUser(order.seller_user_id, 'order_refunded', `Order ${order.order_id || docSnap.id} was refunded after the five-day shipping deadline.`, { orderId: order.order_id || docSnap.id })
+      ]);
+    } catch (error) {
+      console.error(`autoRefundUnshippedOrders failed for ${docSnap.id}:`, error);
+    }
+  }
+});
+
+exports.resolveDisputedOrders = onSchedule({ schedule: 'every 15 minutes', secrets: [stripeSecret] }, async () => {
+  const snapshot = await db.collection(ORDERS_COLLECTION).where('status', '==', 'disputed').limit(200).get();
+  for (const docSnap of snapshot.docs) {
+    const order = docSnap.data();
+    const orderId = order.order_id || docSnap.id;
+    const category = String(order.dispute_category || '').toLowerCase();
+    const disputedAt = order.disputed_at?.toMillis?.() || order.created_at?.toMillis?.() || Date.now();
+    const trackingStatus = String(order.tracking_status || '').toLowerCase();
+    const buyerZip = String(order.buyer_shipping_address?.postal_code || order.buyer_shipping_zip || '').trim();
+    const deliveredZip = String(order.tracking_destination_zip || '').trim();
+
+    try {
+      if (category.includes('item not received') && ['delivered', 'delivery'].includes(trackingStatus) && buyerZip && deliveredZip && buyerZip === deliveredZip) {
+        await docSnap.ref.set({ status: 'payment_held', dispute_resolution: 'auto_dismissed_delivered_to_buyer_zip', payout_frozen: false, updated_at: serverTimestamp() }, { merge: true });
+        const result = await releaseFundsForOrder(orderId, order.seller_id, { actor: 'system', resolution: 'auto_dismissed_delivered', allowDisputedRelease: true });
+        await Promise.all([
+          notifyUser(order.buyer_id, 'dispute_dismissed', 'Your dispute was dismissed because carrier data confirms delivery to your ZIP code.', { orderId }),
+          notifyUser(order.seller_user_id, 'payout_released', 'Funds were released after carrier data confirmed delivery.', { orderId, transferId: result.transferId })
+        ]);
+      } else if (category.includes('item not received') && Date.now() - disputedAt >= 7 * 24 * 60 * 60 * 1000 && ['unknown', 'pre_transit', ''].includes(trackingStatus)) {
+        await refundBuyerForOrder(orderId, { actor: 'system', resolution: 'auto_refund_no_carrier_scan_after_7_days' });
+        await Promise.all([
+          notifyUser(order.buyer_id, 'order_refunded', 'Your dispute was automatically refunded because no carrier scan appeared after seven days.', { orderId }),
+          notifyUser(order.seller_user_id, 'order_refunded', 'The order was refunded because no carrier scan appeared after seven days.', { orderId })
+        ]);
+      } else if (category.includes('counterfeit') || category.includes('incorrect') || category.includes('condition') || category.includes('fake')) {
+        const returnDueAt = admin.firestore.Timestamp.fromMillis(Date.now() + 4 * 24 * 60 * 60 * 1000);
+        await docSnap.ref.set({ certification_lookup_status: order.certification_lookup_status || 'pending', return_tracking_due_at: order.return_tracking_due_at || returnDueAt, updated_at: serverTimestamp() }, { merge: true });
+      }
+    } catch (error) {
+      console.error(`resolveDisputedOrders failed for ${orderId}:`, error);
+    }
+  }
+});
+
 exports.autoReleaseDeliveredOrders = onSchedule({ schedule: 'every 15 minutes', secrets: [stripeSecret] }, async () => {
   const cutoff = nowTimestamp();
   const snapshot = await db
     .collection(ORDERS_COLLECTION)
-    .where('status', '==', 'delivered')
-    .where('dispute_timer_expires_at', '<=', cutoff)
+    .where('status', 'in', ['shipped', 'delivered'])
+    .where('auto_release_at', '<=', cutoff)
     .limit(100)
     .get();
 
@@ -1000,7 +1207,7 @@ exports.autoReleaseDeliveredOrders = onSchedule({ schedule: 'every 15 minutes', 
     try {
       await releaseFundsForOrder(order.order_id || docSnap.id, order.seller_id, {
         actor: 'system',
-        resolution: 'auto_release_after_48h'
+        resolution: 'auto_release_after_7_days'
       });
     } catch (error) {
       console.error(`autoReleaseDeliveredOrders failed for ${docSnap.id}:`, error);

@@ -35,6 +35,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Script, TextRecognition } from '@capacitor-mlkit/text-recognition';
 import { auth, db, storage } from './firebase';
 import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
 import authHeroImage from './image (3).png';
@@ -348,6 +349,110 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
   );
 }
 
+function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReportIssue }) {
+  const [carrier, setCarrier] = useState(order?.shippingCarrier || order?.carrier || '');
+  const [trackingNumber, setTrackingNumber] = useState(order?.trackingNumber || order?.tracking_number || '');
+  if (!order) return null;
+
+  const isSeller = role === 'seller';
+  const subtotal = Number(order.subtotal ?? order.listingPrice ?? 0);
+  const shippingFee = Number(order.shippingFee ?? 5.99);
+  const serviceFee = Number(order.serviceFee ?? order.marketplaceFeeAmount ?? 0);
+  const tax = Number(order.tax ?? order.taxAmount ?? 0);
+  const totalPaid = Number(order.totalPaid ?? order.chargedTotalAmount ?? subtotal + shippingFee + serviceFee + tax);
+  const sellerNetPayout = Number(order.sellerNetPayout ?? order.sellerPayoutAmount ?? subtotal + shippingFee - serviceFee);
+  const status = String(order.status || order.escrowStatus || 'pending_payment').replaceAll('_', ' ');
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+      <div className="receipt-sheet w-full max-w-lg space-y-5 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Digital receipt</p>
+            <h2 id="receipt-title" className="mt-1 text-xl font-bold">{order.cardTitle || 'Card transaction'}</h2>
+            <p className="mt-1 text-xs text-white/70">Order {order.orderId || order.id}</p>
+          </div>
+          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-lg text-white/75 hover:bg-[#161B22]" aria-label="Close receipt">x</button>
+        </div>
+
+        <div className="flex gap-3 rounded-xl border border-white/10 bg-[#161B22] p-3">
+          {order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl ? <img src={order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl} alt="Card front" className="h-24 w-16 rounded-lg object-cover" /> : <div className="flex h-24 w-16 items-center justify-center rounded-lg bg-[#0B0E14] text-2xl">🃏</div>}
+          {order.cardImageBackUrl ? <img src={order.cardImageBackUrl} alt="Card back" className="h-24 w-16 rounded-lg object-cover" /> : null}
+          <div className="text-sm text-white/80"><p className="font-semibold text-white">{isSeller ? 'Seller payout receipt' : 'Buyer purchase receipt'}</p><p className="mt-2">Status: <span className="capitalize text-[#FFE66D]">{status}</span></p><p className="mt-1">{order.cardBrand || 'Trading card'}</p></div>
+        </div>
+
+        <div className="space-y-2 rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm">
+          {isSeller ? (
+            <>
+              <div className="flex justify-between"><span>Item subtotal</span><span>{formatMoney(subtotal)}</span></div>
+              <div className="flex justify-between"><span>Shipping allowance</span><span>+ {formatMoney(shippingFee)}</span></div>
+              <div className="flex justify-between"><span>Platform fee</span><span>- {formatMoney(serviceFee)}</span></div>
+              <div className="mt-2 flex justify-between border-t border-white/10 pt-2 font-bold text-[#FFE66D]"><span>Net payout</span><span>{formatMoney(sellerNetPayout)}</span></div>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between"><span>Item subtotal</span><span>{formatMoney(subtotal)}</span></div>
+              <div className="flex justify-between"><span>Shipping</span><span>{formatMoney(shippingFee)}</span></div>
+              <div className="flex justify-between"><span>Platform protection fee</span><span>{formatMoney(serviceFee)}</span></div>
+              <div className="flex justify-between"><span>Tax</span><span>{formatMoney(tax)}</span></div>
+              <div className="mt-2 flex justify-between border-t border-white/10 pt-2 font-bold text-[#FFE66D]"><span>Total paid</span><span>{formatMoney(totalPaid)}</span></div>
+            </>
+          )}
+        </div>
+
+        {!isSeller && order.buyerShippingAddress && <div className="rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm"><p className="font-semibold">Shipping address</p><p className="mt-2 text-white/75">{order.buyerShippingAddress.line1 || order.buyerShippingAddress.street}<br />{order.buyerShippingAddress.city}, {order.buyerShippingAddress.state} {order.buyerShippingAddress.postal_code || order.buyerShippingAddress.zip}<br />{order.buyerShippingAddress.country || 'US'}</p></div>}
+
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Download / Print Receipt</button>
+          {!isSeller && order.trackingNumber && <a href={order.trackingUrl || '#'} target="_blank" rel="noreferrer" className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 py-2.5 text-sm font-semibold text-[#FFE66D]">View Live Tracking</a>}
+          {!isSeller && <button type="button" onClick={onReportIssue} className="min-h-11 rounded-xl border border-rose-300/60 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-400/10">Report Issue / Dispute</button>}
+        </div>
+
+        {isSeller && (
+          <div className="space-y-3 rounded-xl border border-white/10 bg-[#161B22] p-4">
+            <p className="font-semibold">Shipping fulfillment</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><select value={carrier} onChange={(event) => setCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base" /></div>
+            <button type="button" onClick={() => onTrackingSubmit(order, carrier, trackingNumber)} className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 text-sm font-bold text-[#FFE66D] hover:bg-[#FFD700]/10">Submit Tracking</button>
+            <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl border border-white/20 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Print Shipping Label</button>
+          </div>
+        )}
+      </div>
+      <style>{`@media print { body * { visibility: hidden; } .receipt-sheet, .receipt-sheet * { visibility: visible; } .receipt-sheet { position: absolute; inset: 0; max-width: none; border: 0; box-shadow: none; } }`}</style>
+    </div>
+  );
+}
+
+function EvidenceSubmissionModal({ order, isOpen, onClose, onSubmit, isSubmitting }) {
+  const [category, setCategory] = useState('Item Not Received');
+  const [explanation, setExplanation] = useState('');
+  const [files, setFiles] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCategory('Item Not Received');
+    setExplanation('');
+    setFiles([]);
+  }, [isOpen]);
+
+  if (!isOpen || !order) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="evidence-title">
+      <form onSubmit={(event) => { event.preventDefault(); onSubmit({ category, explanation, files }); }} className="w-full max-w-lg space-y-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div><p className="text-[11px] uppercase tracking-[0.2em] text-rose-200">Order issue</p><h2 id="evidence-title" className="mt-1 text-xl font-bold">Submit dispute evidence</h2><p className="mt-1 text-sm text-white/70">Order {order.orderId || order.id}</p></div>
+          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-lg text-white/75 hover:bg-[#161B22]" aria-label="Close dispute form">x</button>
+        </div>
+        <label className="block text-sm font-semibold text-white/80">Dispute category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option>Item Not Received</option><option>Damaged in Transit</option><option>Counterfeit / Incorrect Card</option></select></label>
+        <label className="block text-sm font-semibold text-white/80">Detailed explanation<textarea required minLength={10} value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={5} placeholder="Describe what happened and what resolution you are requesting." className="mt-1 w-full resize-none rounded-xl border border-white/15 bg-[#161B22] px-3 py-3 text-base text-white placeholder:text-white/45" /></label>
+        <label className="block text-sm font-semibold text-white/80">Photo or video evidence<input type="file" accept="image/*,video/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 5))} className="mt-2 block w-full text-sm text-white/70 file:mr-3 file:rounded-lg file:border-0 file:bg-[#FFD700] file:px-3 file:py-2 file:font-semibold file:text-[#0B0E14]" /></label>
+        {files.length > 0 && <p className="text-xs text-white/65">{files.length} evidence file{files.length === 1 ? '' : 's'} selected.</p>}
+        <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-[#30363D] bg-[#161B22] px-4 text-sm font-semibold">Cancel</button><button type="submit" disabled={isSubmitting} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] disabled:opacity-60">{isSubmitting ? 'Submitting...' : 'Open Dispute'}</button></div>
+      </form>
+    </div>
+  );
+}
+
 const INITIAL_DECK = [];
 
 const PUBLISHERS = [
@@ -462,7 +567,13 @@ const CLUB_LOGO_PRESETS = [
   { id: 'spade', symbol: '♠', className: 'from-slate-800 via-zinc-600 to-black' },
   { id: 'jack', symbol: 'J', className: 'from-fuchsia-950 via-purple-800 to-slate-950' },
   { id: 'queen', symbol: 'Q', className: 'from-cyan-950 via-slate-700 to-slate-950' },
-  { id: 'king', symbol: 'K', className: 'from-amber-950 via-amber-700 to-stone-950' }
+  { id: 'king', symbol: 'K', className: 'from-amber-950 via-amber-700 to-stone-950' },
+  { id: 'baseball', symbol: '⚾', className: 'from-sky-900 via-blue-700 to-slate-950' },
+  { id: 'basketball', symbol: '🏀', className: 'from-orange-900 via-orange-700 to-stone-950' },
+  { id: 'football', symbol: '🏈', className: 'from-amber-950 via-orange-800 to-stone-950' },
+  { id: 'soccer', symbol: '⚽', className: 'from-slate-800 via-zinc-600 to-black' },
+  { id: 'pokeball', symbol: '◉', className: 'from-red-900 via-red-600 to-slate-950' },
+  { id: 'shield', symbol: '⬟', className: 'from-indigo-950 via-blue-800 to-slate-950' }
 ];
 const normalizeClubRole = (role) => {
   const normalized = String(role || 'member').toLowerCase();
@@ -510,12 +621,14 @@ const calculateEscrowCharge = (baseItemPrice) => {
   const baseAmount = Number(baseItemPrice || 0);
   const percentageFee = Number((baseAmount * MARKETPLACE_FEE_RATE).toFixed(2));
   const flatFee = baseAmount > 0 ? MARKETPLACE_FLAT_FEE : 0;
+  const shippingFee = baseAmount > 250 ? 12.99 : 5.99;
   const platformFee = Number((percentageFee + flatFee).toFixed(2));
-  const totalCharge = Number((baseAmount + platformFee).toFixed(2));
+  const totalCharge = Number((baseAmount + shippingFee + platformFee).toFixed(2));
   return {
     baseAmount,
     percentageFee,
     flatFee,
+    shippingFee,
     platformFee,
     totalCharge
   };
@@ -635,33 +748,18 @@ const extractTextLinesFromMlKitResult = (result) => {
 };
 
 const runMlKitTextRecognition = async (imagePath) => {
-  const mlkitModule = await import('@capacitor-mlkit/text-recognition');
-  const plugin = mlkitModule?.TextRecognition || mlkitModule?.default || mlkitModule;
-  const methods = [plugin?.recognize, plugin?.recognizeText, plugin?.processImage].filter(
-    (candidate) => typeof candidate === 'function'
-  );
-
-  if (!methods.length) {
-    throw new Error('Text recognition plugin is unavailable. Install and sync @capacitor-mlkit/text-recognition.');
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error('On-device OCR is available in the native app only.');
   }
 
-  const payloads = [{ path: imagePath }, { imagePath }, { filePath: imagePath }];
-  let lastError = null;
-
-  for (const method of methods) {
-    for (const payload of payloads) {
-      try {
-        const result = await method.call(plugin, payload);
-        if (result) {
-          return result;
-        }
-      } catch (error) {
-        lastError = error;
-      }
-    }
+  if (!imagePath || imagePath.startsWith('data:') || imagePath.startsWith('blob:')) {
+    throw new Error('OCR requires the native camera file path.');
   }
 
-  throw lastError || new Error('Text recognition failed to return a result.');
+  return TextRecognition.processImage({
+    path: imagePath,
+    script: Script.Latin
+  });
 };
 
 const scoreCardForUser = (card, profile, likedCards = [], successfulMatches = []) => {
@@ -777,6 +875,8 @@ export default function CardSwipersLanding() {
   const [scannerBusy, setScannerBusy] = useState(false);
   const [scannerInfo, setScannerInfo] = useState('');
   const [scannerDetectedLines, setScannerDetectedLines] = useState([]);
+  const [isDockCompact, setIsDockCompact] = useState(false);
+  const postScrollRef = useRef(null);
   const postFrontImageInputRef = useRef(null);
   const postBackImageInputRef = useRef(null);
   const [activeCardImageSide, setActiveCardImageSide] = useState('front');
@@ -784,6 +884,12 @@ export default function CardSwipersLanding() {
   const [chatDraft, setChatDraft] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [walletAddress, setWalletAddress] = useState({ street: '', city: '', state: '', zip: '', country: 'US' });
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [walletMessage, setWalletMessage] = useState('');
+  const [activeReceipt, setActiveReceipt] = useState(null);
+  const [disputeOrder, setDisputeOrder] = useState(null);
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [incomingInterests, setIncomingInterests] = useState([]);
   const [outgoingInterests, setOutgoingInterests] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -836,6 +942,8 @@ export default function CardSwipersLanding() {
   const [moderatedClubIds, setModeratedClubIds] = useState([]);
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
+  const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
+  const clubCarouselRef = useRef(null);
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
   const [selectedClubEvents, setSelectedClubEvents] = useState([]);
   const [selectedClubPosts, setSelectedClubPosts] = useState([]);
@@ -1757,12 +1865,19 @@ export default function CardSwipersLanding() {
   useEffect(() => {
     if (!clubs.length) {
       setSelectedClubId('');
+      setSelectedClubCarouselIndex(0);
       return;
     }
 
     if (!selectedClubId || !clubs.some((club) => club.id === selectedClubId)) {
       setSelectedClubId(clubs[0].id);
+      setSelectedClubCarouselIndex(0);
     }
+  }, [clubs, selectedClubId]);
+
+  useEffect(() => {
+    const index = clubs.findIndex((club) => club.id === selectedClubId);
+    if (index >= 0) setSelectedClubCarouselIndex(index);
   }, [clubs, selectedClubId]);
 
   useEffect(() => {
@@ -2352,7 +2467,7 @@ export default function CardSwipersLanding() {
     }
 
     const grossAmount = feeOnly ? 0 : (cashAmount > 0 ? cashAmount : parseDollarValue(card.buyNowPrice || card.tradeValue || card.value));
-    const { baseAmount, platformFee, totalCharge } = calculateEscrowCharge(grossAmount);
+    const { baseAmount, shippingFee, platformFee, totalCharge } = calculateEscrowCharge(grossAmount);
     const chargeAmount = feeOnly ? TRADE_PROTECTION_FEE : totalCharge;
     const taxState = normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || card.sellerState || '');
     const orderId = buildEscrowOrderId();
@@ -2368,7 +2483,15 @@ export default function CardSwipersLanding() {
       cardId: card.id,
       cardTitle: card.title,
       cardBrand: card.brand || '',
+      cardImageFrontUrl: card.imageFrontUrl || card.imageUrl || '',
+      cardImageBackUrl: card.imageBackUrl || '',
       listingPrice: baseAmount,
+      subtotal: baseAmount,
+      shippingFee,
+      serviceFee: feeOnly ? TRADE_PROTECTION_FEE : platformFee,
+      tax: 0,
+      totalPaid: chargeAmount,
+      sellerNetPayout: baseAmount + shippingFee - platformFee,
       marketplaceFeeRate: MARKETPLACE_FEE_RATE,
       marketplaceFeeAmount: feeOnly ? TRADE_PROTECTION_FEE : platformFee,
       chargedTotalAmount: chargeAmount,
@@ -2408,10 +2531,16 @@ export default function CardSwipersLanding() {
           sellerName: card.owner || 'Collector',
           cardId: card.id,
           cardTitle: card.title,
+          cardImageUrl: card.imageFrontUrl || card.imageUrl || '',
+          cardImageFrontUrl: card.imageFrontUrl || card.imageUrl || '',
+          cardImageBackUrl: card.imageBackUrl || '',
           cardBrand: card.brand || '',
           buyerShippingAddress: {
-            postal_code: currentUserProfile?.shippingZip || currentUserProfile?.postalCode || '',
-            state: currentUserProfile?.state || currentUserProfile?.shippingState || ''
+            line1: walletAddress.street || currentUserProfile?.shippingAddress?.street || '',
+            city: walletAddress.city || currentUserProfile?.shippingAddress?.city || '',
+            state: walletAddress.state || currentUserProfile?.state || currentUserProfile?.shippingState || '',
+            postal_code: walletAddress.zip || currentUserProfile?.shippingAddress?.zip || currentUserProfile?.shippingZip || currentUserProfile?.postalCode || '',
+            country: walletAddress.country || currentUserProfile?.shippingAddress?.country || 'US'
           }
         })
       });
@@ -2426,6 +2555,12 @@ export default function CardSwipersLanding() {
         paymentIntentClientSecret: payload.clientSecret,
         transferGroup: payload.transferGroup,
         chargedTotalAmount: Number(payload.totalCharge || chargeAmount),
+        subtotal: Number(payload.subtotal || baseAmount),
+        shippingFee: Number(payload.shippingFee || shippingFee),
+        serviceFee: Number(payload.serviceFee || payload.platformFee || platformFee),
+        tax: Number(payload.tax || 0),
+        totalPaid: Number(payload.totalPaid || payload.totalCharge || chargeAmount),
+        sellerNetPayout: Number(payload.sellerNetPayout || baseAmount + shippingFee - platformFee),
         marketplaceFeeAmount: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
         sellerPayoutAmount: Number(payload.baseItemPrice || baseAmount),
         escrowAmount: Number(payload.baseItemPrice || (feeOnly ? TRADE_PROTECTION_FEE : baseAmount)),
@@ -2442,6 +2577,7 @@ export default function CardSwipersLanding() {
         cardId: card.id,
         cardTitle: card.title,
         baseItemPrice: Number(payload.baseItemPrice || baseAmount),
+        shippingFee: Number(payload.shippingFee || shippingFee),
         totalCharge: Number(payload.totalCharge || chargeAmount),
         platformFee: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
         percentageFee: feeOnly ? 0 : Number(payload.percentageFee || calculateEscrowCharge(grossAmount).percentageFee),
@@ -2564,10 +2700,10 @@ export default function CardSwipersLanding() {
     });
   };
 
-  const handleSubmitTrackingForOrder = async (transaction) => {
+  const handleSubmitTrackingForOrder = async (transaction, suppliedDraft = null) => {
     if (!transaction?.orderId || !transaction?.isSeller) return;
 
-    const draft = trackingDrafts[transaction.orderId] || {};
+    const draft = suppliedDraft || trackingDrafts[transaction.orderId] || {};
     const carrier = String(draft.carrier || '').trim();
     const trackingNumber = String(draft.trackingNumber || '').trim();
     const trackingUrl = String(draft.trackingUrl || '').trim();
@@ -2668,10 +2804,29 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleOpenOrderDispute = async (transaction) => {
+  const handleSubmitDisputeEvidence = async ({ category, explanation, files }) => {
+    if (!disputeOrder || !firebaseUser || disputeSubmitting) return;
+    setDisputeSubmitting(true);
+    try {
+      const evidence = [];
+      for (const file of files || []) {
+        const evidenceRef = ref(storage, `order-evidence/${firebaseUser.uid}/${disputeOrder.orderId}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`);
+        await uploadBytes(evidenceRef, file);
+        evidence.push({ name: file.name, type: file.type, url: await getDownloadURL(evidenceRef) });
+      }
+      await handleOpenOrderDispute(disputeOrder, { category, explanation, evidence });
+      setDisputeOrder(null);
+    } catch (error) {
+      setAuthError(error.message || 'Unable to submit dispute evidence.');
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  };
+
+  const handleOpenOrderDispute = async (transaction, disputeDetails = {}) => {
     if (!transaction?.orderId || !transaction?.isBuyer) return;
 
-    const disputeReason = String(disputeDrafts[transaction.orderId] || '').trim();
+    const disputeReason = String(disputeDetails.explanation || disputeDrafts[transaction.orderId] || '').trim();
     if (!disputeReason) {
       setAuthError('Enter a dispute reason before opening a dispute.');
       return;
@@ -2689,7 +2844,9 @@ export default function CardSwipersLanding() {
         },
         body: JSON.stringify({
           orderId: transaction.orderId,
-          disputeReason
+          disputeReason: disputeDetails.explanation || disputeReason,
+          disputeCategory: disputeDetails.category || 'Item Not Received',
+          evidence: disputeDetails.evidence || []
         })
       });
       const payload = await response.json();
@@ -2702,6 +2859,8 @@ export default function CardSwipersLanding() {
         status: 'disputed',
         escrowStatus: 'disputed',
         disputeReason,
+        disputeCategory: disputeDetails.category || 'Item Not Received',
+        evidence: disputeDetails.evidence || [],
         updatedAt: serverTimestamp()
       });
 
@@ -3332,6 +3491,41 @@ export default function CardSwipersLanding() {
       setVerificationError(error.message || 'Unable to start identity verification.');
     } finally {
       setVerificationSessionBusy(false);
+    }
+  };
+
+  const handleSaveWalletAddress = async () => {
+    if (!firebaseUser || walletBusy) return;
+    setWalletBusy(true);
+    setWalletMessage('');
+    try {
+      await setDoc(doc(db, 'users', firebaseUser.uid), { shippingAddress: walletAddress, updatedAt: serverTimestamp() }, { merge: true });
+      setCurrentUserProfile((previous) => ({ ...(previous || {}), shippingAddress: walletAddress }));
+      setWalletMessage('Shipping address saved.');
+    } catch (error) {
+      setWalletMessage(error.message || 'Unable to save shipping address.');
+    } finally {
+      setWalletBusy(false);
+    }
+  };
+
+  const handleConnectPayoutAccount = async () => {
+    if (!firebaseUser || walletBusy) return;
+    setWalletBusy(true);
+    setWalletMessage('');
+    try {
+      const response = await fetch('/api/payouts/create-account', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await firebaseUser.getIdToken()}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.onboardingUrl) throw new Error(payload.error || 'Unable to open payout setup.');
+      window.open(payload.onboardingUrl, '_blank', 'noopener,noreferrer');
+      setWalletMessage('Payout setup opened in a new window.');
+    } catch (error) {
+      setWalletMessage(error.message || 'Unable to open payout setup.');
+    } finally {
+      setWalletBusy(false);
     }
   };
 
@@ -4668,6 +4862,33 @@ export default function CardSwipersLanding() {
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
   const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
+
+  useEffect(() => {
+    if (currentTab !== 'post') {
+      setIsDockCompact(false);
+      return undefined;
+    }
+
+    const scrollContainer = postScrollRef.current;
+    if (!scrollContainer) return undefined;
+
+    let previousScrollTop = scrollContainer.scrollTop;
+    const handlePostScroll = () => {
+      const currentScrollTop = scrollContainer.scrollTop;
+      const scrollDelta = currentScrollTop - previousScrollTop;
+      if (currentScrollTop <= 8) {
+        setIsDockCompact(false);
+      } else if (scrollDelta > 2) {
+        setIsDockCompact(true);
+      } else if (scrollDelta < -2) {
+        setIsDockCompact(false);
+      }
+      previousScrollTop = currentScrollTop;
+    };
+
+    scrollContainer.addEventListener('scroll', handlePostScroll, { passive: true });
+    return () => scrollContainer.removeEventListener('scroll', handlePostScroll);
+  }, [currentTab]);
   const canAccessAdmin = hasAdminAccess && !isNativeApp;
   const totalUsers = adminUsers.length;
   const activeUsers = adminUsers.filter((user) => user.status !== 'deactivated').length;
@@ -4901,6 +5122,17 @@ export default function CardSwipersLanding() {
                         type="button"
                       >
                         My Binder
+                      </button>
+                      <button
+                        onClick={() => {
+                          setWalletAddress(currentUserProfile?.shippingAddress || { street: '', city: '', state: '', zip: '', country: 'US' });
+                          setCurrentTab('wallet');
+                          setAccountMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 text-white hover:bg-white/5 transition-colors text-sm"
+                        type="button"
+                      >
+                        Wallet & Payouts
                       </button>
                       <button
                         onClick={() => {
@@ -5824,7 +6056,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'post' && (
           <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
-            <div className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-32 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
+            <div ref={postScrollRef} className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-32 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -6237,7 +6469,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-white text-[#191919] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -6252,16 +6484,16 @@ export default function CardSwipersLanding() {
                     resetClubDraft();
                     setCurrentTab('onboarding');
                   }}
-                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full text-[#202020] hover:bg-black/5"
+                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#30363D] text-white hover:bg-[#161B22]"
                   aria-label="Back to clubs"
                 >
                   <span className="text-5xl font-light leading-none">‹</span>
                 </button>
-                <h1 className="text-3xl font-bold tracking-0">Create Club</h1>
+                <h1 className="text-3xl font-bold tracking-0 text-white">Create Club</h1>
               </div>
 
               <div className="mt-8 sm:mt-14">
-                <label htmlFor="club-name" className="block text-xl font-medium">Club Name</label>
+                <label htmlFor="club-name" className="block text-xl font-medium text-white">Club Name</label>
                 <input
                   id="club-name"
                   type="text"
@@ -6273,13 +6505,13 @@ export default function CardSwipersLanding() {
                   placeholder="Please enter your club name."
                   maxLength={20}
                   autoFocus
-                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#B9C2C9] px-5 text-lg text-[#202020] placeholder:text-[#89919D] focus:border-[#16C779] focus:outline-none focus:ring-2 focus:ring-[#16C779]/20 sm:h-[94px] sm:px-6 sm:text-xl"
+                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#30363D] bg-[#161B22] px-5 text-base text-white placeholder:text-slate-500 focus:border-[#FFD700] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/20 sm:h-[94px] sm:px-6 sm:text-xl"
                 />
-                <p className="mt-2 text-right text-xs text-[#7B8490]">{clubDraftName.trim().length}/20</p>
+                <p className="mt-2 text-right text-xs text-slate-400">{clubDraftName.trim().length}/20</p>
               </div>
 
               <div className="mt-8">
-                <p className="text-xl font-medium">Club Logo</p>
+                <p className="text-xl font-medium text-white">Club Logo</p>
                 <input
                   ref={clubLogoInputRef}
                   type="file"
@@ -6291,15 +6523,15 @@ export default function CardSwipersLanding() {
                   <button
                     type="button"
                     onClick={() => clubLogoInputRef.current?.click()}
-                    className={`aspect-square rounded-2xl border-2 border-dashed p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#16C779] bg-[#F1FFF7]' : 'border-[#B9C2C9] bg-white hover:border-[#7B8490]'}`}
+                    className={`aspect-square rounded-2xl border-2 border-dashed bg-[#161B22] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-[#30363D] hover:border-slate-500'}`}
                   >
                     {clubDraftLogoPreview ? (
                       <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
                     ) : (
-                      <span className="flex h-full flex-col items-center justify-center text-center text-[#404040]">
+                      <span className="flex h-full flex-col items-center justify-center text-center text-white/80">
                         <span className="text-4xl leading-none">↑</span>
                         <span className="mt-3 text-sm font-medium">Add Image</span>
-                        <span className="mt-1 text-xs text-[#69717B]">640 x 640</span>
+                        <span className="mt-1 text-xs text-slate-400">640 x 640</span>
                       </span>
                     )}
                   </button>
@@ -6316,24 +6548,24 @@ export default function CardSwipersLanding() {
                           setClubDraftLogoId(preset.id);
                           setClubDraftError('');
                         }}
-                        className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#16C779] ring-2 ring-[#16C779]' : 'border-[#CFD6DA]'}`}
+                        className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-[#30363D]'}`}
                         aria-label={`Use ${preset.id} club logo`}
                       >
                         <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
                         <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
-                        {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#16C779] text-base font-bold text-white sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
+                        {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#0B0E14] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {clubDraftError && <p className="mt-5 text-sm font-medium text-[#D91B3C]">{clubDraftError}</p>}
+              {clubDraftError && <p className="mt-5 text-sm font-medium text-rose-300">{clubDraftError}</p>}
 
               <button
                 type="submit"
                 disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
-                className="mt-8 min-h-14 w-full shrink-0 rounded-2xl bg-[#16C779] px-6 py-3 text-xl font-bold text-white shadow-[0_8px_18px_rgba(22,199,121,0.22)] transition-colors hover:bg-[#10AD65] disabled:bg-[#D3E9E0] disabled:text-white/70 disabled:shadow-none sm:mt-auto sm:min-h-16 sm:py-4 sm:text-2xl"
+                className="mt-8 min-h-14 w-full shrink-0 rounded-2xl bg-emerald-500 px-6 py-3 text-xl font-bold text-black shadow-[0_8px_18px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none sm:mt-auto sm:min-h-16 sm:py-4 sm:text-2xl"
               >
                 {clubCreateBusy ? 'Creating...' : 'Confirm'}
               </button>
@@ -6386,40 +6618,72 @@ export default function CardSwipersLanding() {
                   </button>
                 </div>
 
-                <div className="flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain space-y-2 pr-1">
+                <div
+                  ref={clubCarouselRef}
+                  onScroll={(event) => {
+                    const container = event.currentTarget;
+                    const cardWidth = container.clientWidth;
+                    const nextIndex = cardWidth ? Math.round(container.scrollLeft / cardWidth) : 0;
+                    setSelectedClubCarouselIndex(Math.max(0, Math.min(filteredClubs.length - 1, nextIndex)));
+                  }}
+                  className="flex w-full snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
                   {filteredClubs.length === 0 ? (
-                    <p className="text-sm text-white/65 px-1 py-2">No clubs match your search yet.</p>
+                    <p className="w-full shrink-0 snap-center px-1 py-6 text-sm text-white/65">No clubs match your search yet.</p>
                   ) : (
                     filteredClubs.map((club) => {
-                      const isActive = club.id === selectedClubId;
                       const logoPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === club.logoPresetId);
                       return (
-                        <button
+                        <article
                           key={club.id}
-                          type="button"
-                          onClick={() => setSelectedClubId(club.id)}
-                          className={`w-full text-left rounded-2xl border px-3 py-3 transition-colors ${isActive ? 'border-[#FB7185]/70 bg-[#25111A]' : 'border-white/10 bg-[#0D1117] hover:border-white/25'}`}
+                          className="w-full min-w-full snap-center rounded-2xl border border-white/10 bg-[#0D1117] p-4 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)]"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 gap-3">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-3">
                               {club.logoUrl ? (
-                                <img src={club.logoUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />
+                                <img src={club.logoUrl} alt="" className="h-14 w-14 shrink-0 rounded-2xl object-cover" />
                               ) : logoPreset ? (
-                                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${logoPreset.className} text-2xl font-bold text-white`}>{logoPreset.symbol}</span>
+                                <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${logoPreset.className} text-3xl font-bold text-white`}>{logoPreset.symbol}</span>
                               ) : null}
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-bold text-white">{club.name || 'Untitled Club'}</p>
-                                <p className="mt-1 text-[11px] text-white/55">{club.description || 'No description yet.'}</p>
+                                <p className="truncate text-lg font-bold text-white">{club.name || 'Untitled Club'}</p>
+                                <p className="mt-1 text-xs text-white/65">{club.description || 'No description yet.'}</p>
                               </div>
                             </div>
-                            <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{club.code || '------'}</span>
+                            <span className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/80">{club.code || '------'}</span>
                           </div>
-                          <p className="mt-2 text-[11px] text-white/50">Owner: {club.ownerName || club.ownerEmail || 'Unknown'}</p>
-                        </button>
+                          <div className="mt-6 grid grid-cols-2 gap-3">
+                            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-white/55">Members</p>
+                              <p className="mt-1 text-xl font-bold text-white">{Number(club.membersCount || club.memberCount || 0).toLocaleString()}</p>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-white/55">Your role</p>
+                              <p className="mt-1 text-xl font-bold capitalize text-white">{club.role || 'Member'}</p>
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => setSelectedClubId(club.id)} className="mt-4 min-h-11 w-full rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Enter Club</button>
+                        </article>
                       );
                     })
                   )}
                 </div>
+                {filteredClubs.length > 0 && (
+                  <div className="flex items-center justify-center gap-1.5" aria-label="Club carousel pagination">
+                    {filteredClubs.map((club, index) => (
+                      <button
+                        key={club.id}
+                        type="button"
+                        aria-label={`Show ${club.name || 'club'} ${index + 1}`}
+                        onClick={() => {
+                          clubCarouselRef.current?.scrollTo({ left: clubCarouselRef.current.clientWidth * index, behavior: 'smooth' });
+                          setSelectedClubId(club.id);
+                        }}
+                        className={`h-2.5 rounded-full transition-all ${selectedClubCarouselIndex === index ? 'w-7 bg-[#FFD700]' : 'w-2.5 bg-white/25'}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </section>
 
               <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
@@ -6774,32 +7038,6 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
-            <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">Account Verification</p>
-                  <p className="mt-1 text-sm text-white/80">
-                    Status: {String(currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'Verified' : sellerVerificationStatus)}
-                  </p>
-                </div>
-                <StatusPill
-                  label={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'Verified' : 'Action needed'}
-                  status={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'verified' : 'pending'}
-                  tone={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'success' : 'warning'}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleStartIdentityVerification}
-                disabled={verificationSessionBusy}
-                className="min-h-11 rounded-xl border border-[#FFD700]/70 bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70 disabled:opacity-60"
-              >
-                {verificationSessionBusy ? 'Opening verification...' : 'Verify Account with Stripe Identity'}
-              </button>
-              {verificationError && <p className="text-xs text-rose-200">{verificationError}</p>}
-              {verificationInfo && <p className="text-xs text-emerald-200">{verificationInfo}</p>}
-            </div>
-
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {myCollection.map((card) => (
                 <div
@@ -6824,6 +7062,128 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {currentTab === 'wallet' && (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-32 pr-1">
+            <div className="mx-auto w-full max-w-4xl space-y-4 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200">Account wallet</p>
+                  <h2 className="mt-1 text-2xl font-black">Wallet & Payouts</h2>
+                </div>
+                <StatusPill
+                  label={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'Verified' : 'Verification needed'}
+                  status={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'verified' : 'pending'}
+                  tone={currentUserProfile?.isVerified || currentUserProfile?.is_verified || sellerVerificationStatus === 'verified' ? 'success' : 'warning'}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  ['Available balance', userPurchaseIntents.filter((record) => ['completed', 'released', 'fulfilled'].includes(String(record.status || '').toLowerCase())).reduce((total, record) => total + Number(record.sellerPayoutAmount || record.listingPrice || 0), 0)],
+                  ['Pending escrow', userPurchaseIntents.filter((record) => ['payment_pending', 'payment_held', 'shipped', 'delivered'].includes(String(record.escrowStatus || record.status || '').toLowerCase())).reduce((total, record) => total + Number(record.escrowAmount || record.listingPrice || 0), 0)],
+                  ['Completed payouts', userPurchaseIntents.filter((record) => ['released', 'completed', 'fulfilled'].includes(String(record.status || '').toLowerCase())).length]
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-white/65">{label}</p>
+                    <p className="mt-2 text-2xl font-black text-[#FFE66D]">{label === 'Completed payouts' ? value : formatMoney(value)}</p>
+                  </div>
+                ))}
+              </div>
+
+              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+                <div>
+                  <h3 className="text-base font-bold">Shipping address</h3>
+                  <p className="mt-1 text-sm text-white/70">Used for buyer receipts and shipment destination validation.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {[
+                    ['street', 'Street'],
+                    ['city', 'City'],
+                    ['state', 'State'],
+                    ['zip', 'ZIP'],
+                    ['country', 'Country']
+                  ].map(([field, label]) => (
+                    <label key={field} className="text-xs font-semibold text-white/75">
+                      {label}
+                      <input
+                        type="text"
+                        value={walletAddress[field] || ''}
+                        onChange={(event) => setWalletAddress((previous) => ({ ...previous, [field]: event.target.value }))}
+                        className="mt-1 w-full rounded-xl border border-white/15 bg-[#0B0E14] px-3 py-2.5 text-base text-white focus:border-[#FFD700] focus:outline-none"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <button type="button" onClick={handleSaveWalletAddress} disabled={walletBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60">
+                  {walletBusy ? 'Saving...' : 'Save Shipping Address'}
+                </button>
+              </section>
+
+              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold">Seller payout account</h3>
+                    <p className="mt-1 text-sm text-white/70">Connect a Stripe payout account to receive released escrow funds.</p>
+                  </div>
+                  <StatusPill label={currentUserProfile?.stripeConnectedAccountId || currentUserProfile?.connectedAccountId ? 'Connected' : 'Not connected'} status={currentUserProfile?.stripeConnectedAccountId || currentUserProfile?.connectedAccountId ? 'active' : 'pending'} tone={currentUserProfile?.stripeConnectedAccountId || currentUserProfile?.connectedAccountId ? 'success' : 'warning'} />
+                </div>
+                <button type="button" onClick={handleConnectPayoutAccount} disabled={walletBusy} className="min-h-11 rounded-xl border border-[#FFD700]/70 bg-transparent px-4 py-2.5 text-sm font-bold text-[#FFE66D] hover:bg-[#FFD700]/10 disabled:opacity-60">
+                  {currentUserProfile?.stripeConnectedAccountId || currentUserProfile?.connectedAccountId ? 'Manage Payout Account' : 'Connect Payout Account'}
+                </button>
+                {walletMessage && <p className="text-sm text-white/75">{walletMessage}</p>}
+              </section>
+
+              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold">Identity verification</h3>
+                    <p className="mt-1 text-sm text-white/70">Required for high-value cash transactions and payout access.</p>
+                  </div>
+                  <StatusPill label={sellerVerificationStatus} status={sellerVerificationStatus} tone={sellerVerificationStatus === 'verified' ? 'success' : 'warning'} />
+                </div>
+                <button type="button" onClick={handleStartIdentityVerification} disabled={verificationSessionBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60">
+                  {verificationSessionBusy ? 'Opening verification...' : 'Verify Account with Stripe Identity'}
+                </button>
+              </section>
+
+              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+                <div>
+                  <h3 className="text-base font-bold">Purchases & Orders</h3>
+                  <p className="mt-1 text-sm text-white/70">Digital receipts, shipment progress, and dispute actions.</p>
+                </div>
+                {userPurchaseIntents.filter((record) => record.buyerUid === firebaseUser?.uid).length === 0 ? (
+                  <p className="text-sm text-white/70">No purchases yet.</p>
+                ) : userPurchaseIntents.filter((record) => record.buyerUid === firebaseUser?.uid).map((order) => {
+                  const status = String(order.status || order.escrowStatus || 'pending_payment').toLowerCase();
+                  const stages = ['payment_held', 'shipped', 'delivered', 'completed'];
+                  const stageIndex = status === 'released' ? 3 : Math.max(0, stages.indexOf(status));
+                  return (
+                    <div key={order.id} className="rounded-xl border border-white/10 bg-[#0B0E14] p-3 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div><p className="font-semibold">{order.cardTitle || 'Card purchase'}</p><p className="text-xs text-white/65">Order {order.orderId || order.id}</p></div>
+                        <StatusPill label={status.replaceAll('_', ' ')} status={status} tone={status === 'disputed' ? 'error' : status === 'completed' || status === 'released' ? 'success' : 'warning'} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-white/75"><span>Price: {formatMoney(order.listingPrice || 0)}</span><span>Shipping: {formatMoney(order.shippingFee || 0)}</span><span>Cash adjustment: {formatMoney(order.cashAmount || 0)}</span><span>Total paid: {formatMoney(order.chargedTotalAmount || order.listingPrice || 0)}</span></div>
+                      <div className="grid grid-cols-4 gap-1 text-center text-[10px] text-white/70">{['Paid / Awaiting Shipment', 'Shipped', 'Delivered', 'Funds Released'].map((stage, index) => <span key={stage} className={`rounded-lg px-1 py-2 ${index <= stageIndex ? 'bg-[#FFD700]/20 text-[#FFE66D]' : 'bg-white/5'}`}>{stage}</span>)}</div>
+                      {order.trackingNumber && <a href={order.trackingUrl || '#'} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[#FFE66D] underline">{order.carrier || 'Carrier'} {order.trackingNumber}</a>}
+                      <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActiveReceipt({ ...order, isBuyer: true, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white hover:bg-white/10">View Digital Receipt</button><button type="button" onClick={() => { setActiveReceipt(null); setDisputeOrder({ ...order, orderId: order.orderId || order.id, isBuyer: true }); }} className="min-h-11 rounded-xl border border-rose-300/50 px-3 text-xs font-semibold text-rose-100 hover:bg-rose-400/10">Report Issue / Dispute</button></div>
+                    </div>
+                  );
+                })}
+              </section>
+
+              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+                <div><h3 className="text-base font-bold">Seller Hub / Sales Orders</h3><p className="mt-1 text-sm text-white/70">Enter valid carrier tracking before a sale can move to shipped.</p></div>
+                {userPurchaseIntents.filter((record) => record.sellerUid === firebaseUser?.uid).map((order) => {
+                  const orderId = order.orderId || order.id;
+                  const draft = trackingDrafts[orderId] || { carrier: order.shippingCarrier || '', trackingNumber: order.trackingNumber || '', trackingUrl: order.trackingUrl || '' };
+                  return <div key={order.id} className="rounded-xl border border-white/10 bg-[#0B0E14] p-3 space-y-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{order.cardTitle || 'Sale'} <span className="text-xs text-white/60">#{orderId}</span></p><StatusPill label={order.status || order.escrowStatus || 'pending'} status={order.status || 'pending'} tone={order.status === 'shipped' || order.status === 'delivered' ? 'success' : 'warning'} /></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><select value={draft.carrier} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, carrier: event.target.value } }))} className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={draft.trackingNumber} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, trackingNumber: event.target.value } }))} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /><button type="button" onClick={() => handleSubmitTrackingForOrder({ ...order, orderId, isSeller: true }, draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-3 text-xs font-bold text-[#0B0E14]">Submit Tracking</button><button type="button" onClick={() => setActiveReceipt({ ...order, orderId, isSeller: true, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white">View Receipt</button></div></div>;
+                })}
+              </section>
             </div>
           </div>
         )}
@@ -7825,11 +8185,11 @@ export default function CardSwipersLanding() {
 
       {showPersistentMobileDock && (
       <footer
-        className="fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none"
+        className={`fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none transition-transform duration-300 ease-out ${isDockCompact ? 'translate-y-7' : 'translate-y-0'}`}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
       >
         <div className="max-w-lg mx-auto pointer-events-auto">
-        <nav className="grid grid-cols-5 items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(10,10,10,0.98),rgba(0,0,0,0.98))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl ring-1 ring-white/8">
+        <nav className={`grid grid-cols-5 items-end rounded-[30px] border border-white/12 bg-[linear-gradient(180deg,rgba(10,10,10,0.98),rgba(0,0,0,0.98))] px-2 py-2 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl ring-1 ring-white/8 transition-transform duration-300 ${isDockCompact ? 'scale-[0.86] origin-bottom' : 'scale-100'}`}>
           <button
             onClick={() => {
               navigateToTab('onboarding');
@@ -8096,6 +8456,24 @@ export default function CardSwipersLanding() {
           </div>
         </div>
       )}
+
+      <OrderReceiptModal
+        order={activeReceipt}
+        role={activeReceipt?.isSeller ? 'seller' : 'buyer'}
+        onClose={() => setActiveReceipt(null)}
+        onTrackingSubmit={(order, carrier, trackingNumber) => handleSubmitTrackingForOrder(
+          { ...order, orderId: order.orderId || order.id, isSeller: true },
+          { carrier, trackingNumber, trackingUrl: order.trackingUrl || '' }
+        )}
+        onReportIssue={() => { setActiveReceipt(null); setDisputeOrder({ ...activeReceipt, isBuyer: true }); }}
+      />
+      <EvidenceSubmissionModal
+        order={disputeOrder}
+        isOpen={Boolean(disputeOrder)}
+        isSubmitting={disputeSubmitting}
+        onClose={() => setDisputeOrder(null)}
+        onSubmit={handleSubmitDisputeEvidence}
+      />
     </div>
   );
 }

@@ -41,6 +41,10 @@
         "function": "createVerificationSession"
       },
       {
+        "source": "/api/payouts/create-account",
+        "function": "createSellerPayoutAccount"
+      },
+      {
         "source": "/api/clubs/allocate-credits",
         "function": "allocateClubCredits"
       },
