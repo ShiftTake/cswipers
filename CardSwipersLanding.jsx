@@ -609,6 +609,16 @@ const formatMoney = (value) => {
   }).format(Number.isFinite(amount) ? amount : 0);
 };
 
+const formatMessageTime = (value) => {
+  const date = toDateValue(value);
+  return date ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+};
+
+const formatMessageDate = (value) => {
+  const date = toDateValue(value);
+  return date ? date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+};
+
 const formatListingDate = (value) => {
   if (!value) return 'Listed today';
   const date = value?.toDate?.() || value;
@@ -675,6 +685,12 @@ const normalizeTag = (value) => String(value || '').toLowerCase().trim();
 
 const parseDollarValue = (value) => {
   const parsed = Number(String(value || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const parseSignedDollarValue = (value) => {
+  const raw = String(value || '').trim();
+  const parsed = Number(raw.replace(/[^\d.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
@@ -863,6 +879,8 @@ export default function CardSwipersLanding() {
   const [offerDraftAmount, setOfferDraftAmount] = useState('');
   const [offerDealType, setOfferDealType] = useState('hybrid_trade');
   const [offerBusy, setOfferBusy] = useState(false);
+  const [showTradeOfferModal, setShowTradeOfferModal] = useState(false);
+  const [selectedTradeCardIds, setSelectedTradeCardIds] = useState([]);
 
   const [newCard, setNewCard] = useState({
     title: '',
@@ -901,6 +919,9 @@ export default function CardSwipersLanding() {
   const [walletBusy, setWalletBusy] = useState(false);
   const [walletMessage, setWalletMessage] = useState('');
   const [activeReceipt, setActiveReceipt] = useState(null);
+  const [sellerHubTab, setSellerHubTab] = useState('active');
+  const [savedDrafts, setSavedDrafts] = useState([]);
+  const previousTabRef = useRef(currentTab);
   const [disputeOrder, setDisputeOrder] = useState(null);
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [incomingInterests, setIncomingInterests] = useState([]);
@@ -3175,6 +3196,101 @@ export default function CardSwipersLanding() {
     setCurrentTab('swipe');
   };
 
+  const buildLocalDraft = () => ({
+    id: `draft-${Date.now()}`,
+    title: newCard.title,
+    brand: newCard.brand,
+    cardNumber: newCard.cardNumber || '',
+    setNumber: newCard.setNumber || '',
+    gradingCompany: newCard.gradingCompany,
+    rawCondition: newCard.rawCondition,
+    grade: newCard.grade,
+    estimatedValue: newCard.estimatedValue,
+    buyNowPrice: newCard.buyNowPrice,
+    sellerState: newCard.sellerState,
+    saleMode: newCard.saleMode,
+    lookingFor: newCard.lookingFor,
+    frontPreview: postFrontImagePreview,
+    backPreview: postBackImagePreview,
+    updatedAt: Date.now()
+  });
+
+  const saveDraft = async (exitAfterSave = false) => {
+    if (!firebaseUser) return;
+    const draft = buildLocalDraft();
+    const localDrafts = JSON.parse(window.localStorage.getItem('cardswipers_drafts') || '[]')
+      .filter((entry) => entry.id !== draft.id);
+    window.localStorage.setItem('cardswipers_drafts', JSON.stringify([draft, ...localDrafts].slice(0, 20)));
+    setSavedDrafts((previous) => [draft, ...previous.filter((entry) => entry.id !== draft.id)].slice(0, 20));
+
+    try {
+      const { frontPreview, backPreview, ...draftMetadata } = draft;
+      await setDoc(doc(db, 'drafts', draft.id), {
+        ...draftMetadata,
+        userId: firebaseUser.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed to save Firestore draft; local draft retained:', error);
+    }
+
+    if (exitAfterSave) {
+      setPostComposerStep(1);
+      setCurrentTab('collection');
+    }
+  };
+
+  const deleteDraft = async (draftId) => {
+    setSavedDrafts((previous) => previous.filter((draft) => draft.id !== draftId));
+    const drafts = JSON.parse(window.localStorage.getItem('cardswipers_drafts') || '[]')
+      .filter((draft) => draft.id !== draftId);
+    window.localStorage.setItem('cardswipers_drafts', JSON.stringify(drafts));
+    try {
+      await deleteDoc(doc(db, 'drafts', draftId));
+    } catch (error) {
+      console.error('Failed to delete Firestore draft:', error);
+    }
+  };
+
+  const resumeDraft = (draft) => {
+    setNewCard((previous) => ({ ...previous, ...draft }));
+    setPostFrontImagePreview(draft.frontPreview || '');
+    setPostBackImagePreview(draft.backPreview || '');
+    setPostComposerStep(draft.frontPreview && draft.backPreview ? 2 : 1);
+    setSellerHubTab('drafts');
+    setCurrentTab('post');
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const drafts = JSON.parse(window.localStorage.getItem('cardswipers_drafts') || '[]');
+    setSavedDrafts(Array.isArray(drafts) ? drafts : []);
+  }, []);
+
+  useEffect(() => {
+    const previousTab = previousTabRef.current;
+    if (previousTab === 'post' && currentTab !== 'post' && firebaseUser && (postFrontImagePreview || postBackImagePreview || newCard.title || newCard.lookingFor)) {
+      saveDraft(false);
+    }
+    previousTabRef.current = currentTab;
+  }, [currentTab, firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    getDocs(query(collection(db, 'drafts'), where('userId', '==', firebaseUser.uid), limit(20)))
+      .then((snapshot) => {
+        const remoteDrafts = snapshot.docs.map((draftDoc) => ({ id: draftDoc.id, ...draftDoc.data() }));
+        const localDrafts = JSON.parse(window.localStorage.getItem('cardswipers_drafts') || '[]');
+        const merged = [...localDrafts, ...remoteDrafts].reduce((drafts, draft) => {
+          if (!drafts.some((entry) => entry.id === draft.id)) drafts.push(draft);
+          return drafts;
+        }, []);
+        setSavedDrafts(merged.slice(0, 20));
+      })
+      .catch((error) => console.error('Failed to load Firestore drafts:', error));
+  }, [firebaseUser]);
+
   const handlePostImageChange = (side, e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3608,6 +3724,10 @@ export default function CardSwipersLanding() {
       setAuthError('Please enter a message before sending.');
       return;
     }
+    if (trimmedMessage.length > 1000) {
+      setAuthError('Messages are limited to 1,000 characters.');
+      return;
+    }
 
     try {
       await addDoc(collection(db, 'messages'), {
@@ -3637,11 +3757,22 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleSendOffer = async () => {
+  const toggleTradeCard = (cardId) => {
+    setSelectedTradeCardIds((previous) => previous.includes(cardId)
+      ? previous.filter((id) => id !== cardId)
+      : [...previous, cardId]);
+  };
+
+  const handleSendOffer = async (selectedCardsOverride = null) => {
     if (!firebaseUser || !activeChat?.id || offerBusy) return;
 
-    const amount = parseDollarValue(offerDraftAmount);
-    if (offerDealType !== 'pure_trade' && (!amount || amount <= 0)) {
+    const amount = parseSignedDollarValue(offerDraftAmount);
+    const selectedCards = selectedCardsOverride || myCollection.filter((card) => selectedTradeCardIds.includes(card.id));
+    if (selectedCardsOverride !== null && selectedCards.length === 0) {
+      setAuthError('Select at least one card from your binder.');
+      return;
+    }
+    if (offerDealType !== 'pure_trade' && amount === 0) {
       setAuthError('Enter a valid offer amount.');
       return;
     }
@@ -3668,6 +3799,13 @@ export default function CardSwipersLanding() {
         matchId: activeChat.id,
         cardId: activeChat.cardId || null,
         cardTitle: activeChat.cardTitle || '',
+        cardIds: selectedCards.map((card) => card.id),
+        cards: selectedCards.map((card) => ({
+          id: card.id,
+          title: card.name || card.title || 'Trading card',
+          brand: card.brand || '',
+          imageUrl: card.imageUrl || card.imageFrontUrl || ''
+        })),
         buyerUid,
         sellerUid,
         fromUserId,
@@ -3692,6 +3830,8 @@ export default function CardSwipersLanding() {
       });
 
       setOfferDraftAmount('');
+      setSelectedTradeCardIds([]);
+      setShowTradeOfferModal(false);
     } catch (error) {
       console.error('Failed to send offer:', error);
       setAuthError('Unable to send offer right now. Please try again.');
@@ -6209,24 +6349,14 @@ export default function CardSwipersLanding() {
 
                   <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#0D1117] px-4 py-3">
                     <p className="text-xs text-white/70">Step {postComposerStep} of 2: {postComposerStep === 1 ? 'Capture photos' : 'Enter details manually'}</p>
-                    {postComposerStep === 1 ? (
-                      <button
-                        type="button"
-                        onClick={() => setPostComposerStep(2)}
-                        disabled={!postFrontImagePreview || !postBackImagePreview}
-                        className="px-4 py-2 rounded-full text-xs font-semibold bg-[#E11D48] disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Continue
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setPostComposerStep(1)}
-                        className="px-4 py-2 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20"
-                      >
-                        Edit Photos
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => saveDraft(true)} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white/80 hover:bg-white/10">Save Draft & Exit</button>
+                      {postComposerStep === 1 ? (
+                        <button type="button" onClick={() => setPostComposerStep(2)} disabled={!postFrontImagePreview || !postBackImagePreview} className="min-h-11 rounded-xl bg-[#E11D48] px-4 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed">Continue</button>
+                      ) : (
+                        <button type="button" onClick={() => setPostComposerStep(1)} className="min-h-11 rounded-xl bg-white/10 px-4 text-xs font-semibold hover:bg-white/20">Edit Photos</button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -7067,6 +7197,39 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
+            <div className="grid grid-cols-3 rounded-xl border border-[#30363D] bg-[#161B22] p-1">
+              {[
+                ['active', 'Active'],
+                ['drafts', 'Drafts'],
+                ['sales', 'Sales History']
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSellerHubTab(value)}
+                  className={`min-h-11 rounded-lg px-2 text-xs font-semibold ${sellerHubTab === value ? 'bg-[#FFD700] text-[#0B0E14]' : 'text-white/70 hover:bg-white/10'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {sellerHubTab === 'drafts' ? (
+              <div className="space-y-3">
+                {savedDrafts.length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No saved drafts yet.</p> : savedDrafts.map((draft) => (
+                  <div key={draft.id} className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+                    <div className="flex items-center gap-3">
+                      {draft.frontPreview ? <img src={draft.frontPreview} alt="Draft front" className="h-16 w-12 rounded-lg object-cover" /> : <div className="flex h-16 w-12 items-center justify-center rounded-lg bg-[#0B0E14] text-xl">🃏</div>}
+                      <div className="min-w-0 flex-1"><p className="truncate font-semibold">{draft.title || 'Untitled draft'}</p><p className="text-xs text-white/65">{draft.brand || 'No brand'} · {draft.updatedAt ? new Date(draft.updatedAt).toLocaleDateString() : 'Recently saved'}</p></div>
+                    </div>
+                    <div className="mt-3 flex gap-2"><button type="button" onClick={() => resumeDraft(draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-xs font-bold text-[#0B0E14]">Resume</button><button type="button" onClick={() => deleteDraft(draft.id)} className="min-h-11 rounded-xl border border-rose-300/50 px-4 text-xs font-semibold text-rose-100">Delete</button></div>
+                  </div>
+                ))}
+              </div>
+            ) : sellerHubTab === 'sales' ? (
+              <div className="space-y-3">
+                {userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid && ['completed', 'released', 'fulfilled', 'shipped', 'payment_held', 'payment_pending'].includes(String(order.status || order.escrowStatus || '').toLowerCase())).length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No sales history yet.</p> : userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid).map((order) => <button key={order.id} type="button" onClick={() => setActiveReceipt({ ...order, isSeller: true, orderId: order.orderId || order.id, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#30363D] bg-[#161B22] p-3 text-left hover:border-[#FFD700]/60"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{order.cardTitle || 'Sold card'}</p><p className="mt-1 text-xs text-white/65">Order {order.orderId || order.id} · {order.status || order.escrowStatus || 'pending'}</p></div><span className="text-sm font-bold text-[#FFE66D]">{formatMoney(order.sellerNetPayout || order.sellerPayoutAmount || order.listingPrice || 0)}</span></button>)}</div>
+            ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {myCollection.map((card) => (
                 <div
@@ -7092,6 +7255,7 @@ export default function CardSwipersLanding() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )}
 
@@ -7568,7 +7732,24 @@ export default function CardSwipersLanding() {
                                 {DEAL_TYPES.find((deal) => deal.value === dealType)?.label || 'Trade Only'}
                               </span>
                             </div>
-                            <p className="text-[11px] text-white/70 mt-1">Status: {offer.status || 'pending'}</p>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <StatusPill
+                                label={String(offer.status || 'pending').replace(/^[a-z]/, (value) => value.toUpperCase())}
+                                status={offer.status || 'pending'}
+                                tone={offer.status === 'accepted' ? 'success' : ['declined', 'rejected'].includes(offer.status) ? 'error' : 'warning'}
+                              />
+                              <span className="text-[11px] text-white/65">{offer.createdAt?.toDate ? formatMessageTime(offer.createdAt) : ''}</span>
+                            </div>
+                            {Array.isArray(offer.cards) && offer.cards.length > 0 && (
+                              <div className="mt-2 flex gap-2 overflow-x-auto">
+                                {offer.cards.map((card) => (
+                                  <div key={card.id} className="flex min-w-[92px] items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 p-1.5">
+                                    {card.imageUrl ? <img src={card.imageUrl} alt="" className="h-10 w-8 rounded object-cover" /> : <span className="flex h-10 w-8 items-center justify-center rounded bg-white/10 text-xs">🃏</span>}
+                                    <span className="max-w-[52px] truncate text-[10px] text-white/80">{card.title}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {(cashPaymentPending || pureTradePaymentPending) && (
                               <div className={`mt-2 rounded-lg border px-2.5 py-2 ${fromSelf ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-500/30 bg-slate-500/10 text-slate-300'}`}>
                                 <p className="font-semibold">{pureTradePaymentPending ? 'Trade Protection Fee Required · $2.99' : 'Awaiting Buyer Payment'}</p>
@@ -7629,28 +7810,36 @@ export default function CardSwipersLanding() {
                   {chatMessages.length === 0 ? (
                     <div className="text-xs text-red-100">No messages yet. Send your opening proposal.</div>
                   ) : (
-                    chatMessages.map((message) => {
+                    chatMessages.map((message, index) => {
                       const isSelf = message.fromUserId === firebaseUser?.uid;
+                      const previousMessage = chatMessages[index - 1];
+                      const currentDate = formatMessageDate(message.createdAt);
+                      const previousDate = formatMessageDate(previousMessage?.createdAt);
                       return (
-                        <div
-                          key={message.id}
-                          className={`${isSelf ? 'bg-[#E50914] text-white rounded-br-none self-end' : 'bg-red-950 border border-red-400/30 rounded-bl-none self-start'} p-3 rounded-2xl max-w-[80%] text-xs`}
-                        >
-                          {message.text}
-                        </div>
+                        <React.Fragment key={message.id}>
+                          {currentDate && currentDate !== previousDate && (
+                            <div className="self-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/65">{currentDate}</div>
+                          )}
+                          <div className={`${isSelf ? 'bg-[#E50914] text-white rounded-br-none self-end' : 'bg-red-950 border border-red-400/30 rounded-bl-none self-start'} max-w-[80%] rounded-2xl p-3 text-xs`}>
+                            <p>{message.text}</p>
+                            <p className={`mt-1 text-[10px] ${isSelf ? 'text-white/75' : 'text-white/60'}`}>{formatMessageTime(message.createdAt)}</p>
+                          </div>
+                        </React.Fragment>
                       );
                     })
                   )}
                 </div>
 
                 <div className="flex gap-2">
-                  <input
+                    <input
                     type="text"
                     placeholder="Type a trade offer..."
                     value={chatDraft}
                     onChange={(e) => setChatDraft(e.target.value)}
-                    className="flex-grow p-3 bg-red-950 border border-red-400/30 rounded-xl text-xs focus:outline-none"
+                      maxLength={1000}
+                      className="min-h-11 flex-grow rounded-xl border border-[#30363D] bg-[#161B22] p-3 text-base text-white focus:outline-none"
                   />
+                  <button type="button" onClick={() => setShowTradeOfferModal(true)} className="min-h-11 min-w-11 rounded-xl border border-[#FFD700]/60 bg-[#FFD700]/10 text-xl font-bold text-[#FFE66D]" aria-label="Propose trade">+</button>
                   <button 
                     className={`px-4 rounded-xl text-xs font-bold transition-opacity ${
                       activeChat && chatDraft.trim() 
@@ -8482,6 +8671,30 @@ export default function CardSwipersLanding() {
                 onSuccess={handleEscrowPaymentSuccess}
               />
             </Elements>
+          </div>
+        </div>
+      )}
+
+      {showTradeOfferModal && activeChat && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="trade-offer-title">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Trade builder</p><h2 id="trade-offer-title" className="mt-1 text-xl font-bold">Propose Trade</h2></div><button type="button" onClick={() => setShowTradeOfferModal(false)} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-white/75">x</button></div>
+            <p className="text-sm text-white/70">Select one or more cards from your binder to offer in this conversation.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {DEAL_TYPES.filter((deal) => ['pure_trade', 'hybrid_trade'].includes(deal.value)).map((deal) => (
+                <button key={deal.value} type="button" onClick={() => setOfferDealType(deal.value)} className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${offerDealType === deal.value ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/15 bg-[#161B22] text-white/75'}`}>
+                  {deal.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid max-h-[42vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+              {myCollection.length === 0 ? <p className="col-span-full rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm text-white/70">Your binder is empty.</p> : myCollection.map((card) => {
+                const selected = selectedTradeCardIds.includes(card.id);
+                return <button key={card.id} type="button" onClick={() => toggleTradeCard(card.id)} className={`rounded-xl border p-2 text-left ${selected ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-[#161B22]'}`}><div className="flex items-center gap-2">{card.imageUrl ? <img src={card.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <span className="flex h-14 w-10 items-center justify-center rounded bg-[#0B0E14]">🃏</span>}<span className="min-w-0"><span className="block truncate text-xs font-semibold">{card.name || card.title}</span><span className="block truncate text-[10px] text-white/60">{card.brand}</span></span></div></button>;
+              })}
+            </div>
+            <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white disabled:opacity-50" /></label>
+            <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
           </div>
         </div>
       )}
