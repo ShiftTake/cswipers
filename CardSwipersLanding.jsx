@@ -574,19 +574,15 @@ const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community market
 const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
 const CLUB_LOGO_PRESETS = [
-  { id: 'club', symbol: '♣', className: 'from-emerald-800 via-green-700 to-emerald-950' },
-  { id: 'diamond', symbol: '♦', className: 'from-blue-900 via-blue-700 to-slate-950' },
-  { id: 'heart', symbol: '♥', className: 'from-red-950 via-red-700 to-orange-950' },
-  { id: 'spade', symbol: '♠', className: 'from-slate-800 via-zinc-600 to-black' },
-  { id: 'jack', symbol: 'J', className: 'from-fuchsia-950 via-purple-800 to-slate-950' },
-  { id: 'queen', symbol: 'Q', className: 'from-cyan-950 via-slate-700 to-slate-950' },
-  { id: 'king', symbol: 'K', className: 'from-amber-950 via-amber-700 to-stone-950' },
   { id: 'baseball', symbol: '⚾', className: 'from-sky-900 via-blue-700 to-slate-950' },
   { id: 'basketball', symbol: '🏀', className: 'from-orange-900 via-orange-700 to-stone-950' },
   { id: 'football', symbol: '🏈', className: 'from-amber-950 via-orange-800 to-stone-950' },
   { id: 'soccer', symbol: '⚽', className: 'from-slate-800 via-zinc-600 to-black' },
-  { id: 'pokeball', symbol: '◉', className: 'from-red-900 via-red-600 to-slate-950' },
-  { id: 'shield', symbol: '⬟', className: 'from-indigo-950 via-blue-800 to-slate-950' }
+  { id: 'lightning', symbol: '⚡', className: 'from-yellow-900 via-amber-600 to-slate-950' },
+  { id: 'energy', symbol: '✦', className: 'from-red-900 via-orange-700 to-slate-950' },
+  { id: 'gem', symbol: '◇', className: 'from-cyan-900 via-blue-700 to-slate-950' },
+  { id: 'shield', symbol: '⬟', className: 'from-indigo-950 via-blue-800 to-slate-950' },
+  { id: 'star', symbol: '★', className: 'from-amber-950 via-yellow-700 to-slate-950' }
 ];
 const normalizeClubRole = (role) => {
   const normalized = String(role || 'member').toLowerCase();
@@ -1023,6 +1019,8 @@ export default function CardSwipersLanding() {
   const [verificationError, setVerificationError] = useState('');
   const [verificationInfo, setVerificationInfo] = useState('');
   const [verificationSessionBusy, setVerificationSessionBusy] = useState(false);
+  const [showDiscoverFilters, setShowDiscoverFilters] = useState(false);
+  const [discoverFilters, setDiscoverFilters] = useState({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' });
   const verificationDocInputRef = useRef(null);
   const splashStartTimeRef = useRef(Date.now());
   const hasHydratedPendingInterests = useRef(false);
@@ -1032,7 +1030,19 @@ export default function CardSwipersLanding() {
   const unreadMatchIdsRef = useRef(new Set());
   const clubReportIdsRef = useRef(new Set());
   const clubReportsHydratedRef = useRef(false);
-  const currentCard = personalizedDeck[cardIndex] || null;
+  const filteredDiscoverDeck = personalizedDeck.filter((card) => {
+    const search = discoverFilters.search.trim().toLowerCase();
+    const cardText = `${card.title || ''} ${card.name || ''} ${card.brand || ''} ${card.playerName || card.player || ''}`.toLowerCase();
+    const price = parseDollarValue(card.tradeValue || card.value || card.avgMarketValue);
+    const year = String(card.releaseYear || card.year || card.release_year || '');
+    const isGraded = Boolean(card.grade && !String(card.gradingCompany || '').toLowerCase().includes('raw') && !String(card.grade).toLowerCase().includes('ungraded'));
+    return (!search || cardText.includes(search))
+      && (!discoverFilters.minPrice || price >= Number(discoverFilters.minPrice))
+      && (!discoverFilters.maxPrice || price <= Number(discoverFilters.maxPrice))
+      && (!discoverFilters.year || year === String(discoverFilters.year).trim())
+      && (discoverFilters.gradeStatus === 'all' || (discoverFilters.gradeStatus === 'graded' ? isGraded : !isGraded));
+  });
+  const currentCard = filteredDiscoverDeck[cardIndex] || null;
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
   const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
@@ -1601,6 +1611,10 @@ export default function CardSwipersLanding() {
       profileUnsubscribe();
     };
   }, [firebaseUser]);
+
+  useEffect(() => {
+    setCardIndex((previous) => (filteredDiscoverDeck.length === 0 ? 0 : Math.min(previous, filteredDiscoverDeck.length - 1)));
+  }, [filteredDiscoverDeck.length, discoverFilters.search, discoverFilters.minPrice, discoverFilters.maxPrice, discoverFilters.year, discoverFilters.gradeStatus]);
 
   useEffect(() => {
     if (!isAdmin || currentTab !== 'admin') {
@@ -2431,7 +2445,7 @@ export default function CardSwipersLanding() {
   const advanceDeck = () => {
     window.setTimeout(() => {
       setSwipeFeedback(null);
-      setCardIndex((prevIndex) => (prevIndex < personalizedDeck.length - 1 ? prevIndex + 1 : 0));
+      setCardIndex((prevIndex) => (prevIndex < filteredDiscoverDeck.length - 1 ? prevIndex + 1 : 0));
     }, 400);
   };
 
@@ -5260,6 +5274,18 @@ export default function CardSwipersLanding() {
 
             {isCoreAppScreen && isAuthenticated && (
               <div className={`flex items-center ${isNativeCoreApp ? 'gap-1.5' : 'gap-2'}`}>
+                {currentTab === 'swipe' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDiscoverFilters(true)}
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white hover:bg-white/20"
+                    aria-label="Open Discover filters"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden="true">
+                      <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleOpenNotifications}
@@ -5281,7 +5307,7 @@ export default function CardSwipersLanding() {
                     {firebaseUser?.email?.[0].toUpperCase() || 'U'}
                   </button>
                   {accountMenuOpen && (
-                    <div className="absolute right-0 top-12 w-48 bg-[#111827] border border-white/10 rounded-2xl shadow-xl overflow-hidden z-50">
+                    <div className="absolute right-0 top-12 w-48 overflow-hidden rounded-2xl border border-white/[0.12] bg-[rgba(12,12,16,0.95)] shadow-xl backdrop-blur-2xl z-50">
                       <button
                         onClick={() => {
                           setCurrentTab('collection');
@@ -6678,7 +6704,8 @@ export default function CardSwipersLanding() {
                   onChange={handleClubLogoFileChange}
                   className="hidden"
                 />
-                <div className="mt-4 grid grid-cols-3 gap-3 sm:mt-5 sm:gap-5">
+                <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1 sm:mt-5">
+                  <div className="grid grid-cols-3 gap-3 sm:gap-5">
                   <button
                     type="button"
                     onClick={() => clubLogoInputRef.current?.click()}
@@ -6716,6 +6743,7 @@ export default function CardSwipersLanding() {
                       </button>
                     );
                   })}
+                  </div>
                 </div>
               </div>
 
@@ -8061,6 +8089,22 @@ export default function CardSwipersLanding() {
               {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
             </button>
             {interestError && <p className="text-xs text-red-300">{interestError}</p>}
+          </div>
+        </div>
+      )}
+
+      {showDiscoverFilters && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
+          <div className="w-full max-w-md space-y-5 rounded-2xl border border-white/15 bg-[#0B0F19] p-5 text-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3">
+              <div><p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p><h2 id="discover-filters-title" className="mt-1 text-xl font-bold">Filter Listings</h2></div>
+              <button type="button" onClick={() => setShowDiscoverFilters(false)} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-xl text-white/75 hover:bg-white/10" aria-label="Close filters">x</button>
+            </div>
+            <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label>
+            <div className="grid grid-cols-2 gap-3"><label className="text-sm font-semibold text-white/80">Min Price<input type="number" min="0" value={discoverFilters.minPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minPrice: event.target.value }))} placeholder="$0" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label><label className="text-sm font-semibold text-white/80">Max Price<input type="number" min="0" value={discoverFilters.maxPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, maxPrice: event.target.value }))} placeholder="$5,000" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label></div>
+            <label className="block text-sm font-semibold text-white/80">Year<input type="number" min="1880" max="2100" value={discoverFilters.year} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, year: event.target.value }))} placeholder="2024" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label>
+            <label className="block text-sm font-semibold text-white/80">Grade Status<select value={discoverFilters.gradeStatus} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, gradeStatus: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option value="all">All</option><option value="graded">Graded Only</option><option value="ungraded">Ungraded Only</option></select></label>
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => setDiscoverFilters({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' })} className="min-h-11 rounded-xl border border-white/20 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Clear</button><button type="button" onClick={() => setShowDiscoverFilters(false)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Apply Filters</button></div>
           </div>
         </div>
       )}

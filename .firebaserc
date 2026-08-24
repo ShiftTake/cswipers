@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "cardswipers-6aa66"
+  },
+  "targets": {
+    "cardswipers-6aa66": {
+      "hosting": {
+        "app": [
+          "cardswipers-6aa66"
+        ],
+        "admin": [
+          "cardswipers-admin"
+        ]
+      }
+    }
   }
 }
