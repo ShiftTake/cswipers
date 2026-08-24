@@ -162,6 +162,28 @@ function isVerifiedProfile(profile) {
   return String(profile?.isVerified || profile?.is_verified || profile?.verificationStatus || '').toLowerCase() === 'verified';
 }
 
+async function validateCardCertification(order) {
+  const certificationNumber = String(order.certification_number || order.card_certification_number || '').trim();
+  if (!certificationNumber) return { status: 'not_provided', provider: 'fallback' };
+
+  const provider = String(process.env.CARD_CERT_PROVIDER || '').toLowerCase();
+  const apiKey = process.env.CARD_CERT_API_KEY || '';
+  if (!provider || !apiKey) {
+    return { status: 'manual_review_required', provider: 'fallback', reason: 'External certification credentials are not configured.' };
+  }
+
+  try {
+    const endpoint = provider === 'psa' ? process.env.PSA_CERT_ENDPOINT : provider === 'bgs' ? process.env.BGS_CERT_ENDPOINT : process.env.CGC_CERT_ENDPOINT;
+    if (!endpoint) return { status: 'manual_review_required', provider: 'fallback', reason: 'Certification endpoint is not configured.' };
+    const response = await fetch(`${endpoint.replace(/\/$/, '')}/${encodeURIComponent(certificationNumber)}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!response.ok) return { status: 'manual_review_required', provider, reason: `Certification provider returned ${response.status}.` };
+    const result = await response.json();
+    return { status: result.valid === false ? 'not_validated' : 'validated', provider, certification: result };
+  } catch (error) {
+    return { status: 'manual_review_required', provider: 'fallback', reason: error.message || 'Certification provider unavailable.' };
+  }
+}
+
 function mapOrderToLegacyPurchaseIntent(order) {
   return {
     orderId: order.order_id,
@@ -796,6 +818,37 @@ exports.openDispute = onRequest({ secrets: [stripeSecret] }, async (req, res) =>
   }
 });
 
+exports.submitReturnTracking = onRequest({ secrets: [shippoApiKey] }, async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const decodedToken = await requireAuth(req);
+    const orderId = buildOrderId(req.body?.orderId);
+    const carrier = String(req.body?.carrier || '').trim();
+    const trackingNumber = String(req.body?.trackingNumber || '').trim();
+    if (!carrier || !trackingNumber) throw new Error('Return carrier and tracking number are required.');
+    const { orderRef, order } = await getOrderOrThrow(orderId);
+    if (order.buyer_id !== decodedToken.uid || String(order.status || '').toLowerCase() !== 'disputed') throw new Error('Only the buyer can submit return tracking for an active dispute.');
+    const tracker = await createShippoTracker(carrier, trackingNumber);
+    const nextOrderState = {
+      return_carrier: carrier,
+      return_tracking_number: trackingNumber,
+      return_shipping_api_tracker_id: tracker.object_id || tracker.id || null,
+      return_tracking_status: String(tracker.tracking_status?.status || tracker.status || 'pre_transit').toLowerCase(),
+      return_tracking_submitted_at: serverTimestamp(),
+      return_refund_status: 'awaiting_delivery',
+      updated_at: serverTimestamp()
+    };
+    await orderRef.set(nextOrderState, { merge: true });
+    await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+    return sendJson(res, 200, { orderId, status: nextOrderState.return_tracking_status });
+  } catch (error) {
+    console.error('submitReturnTracking failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to submit return tracking.' });
+  }
+});
+
 exports.shippingWebhook = onRequest({ secrets: [shippingWebhookSecret] }, async (req, res) => {
   setCorsHeaders(res);
 
@@ -825,12 +878,44 @@ exports.shippingWebhook = onRequest({ secrets: [shippingWebhookSecret] }, async 
     if ((!orderQuery || orderQuery.empty) && trackingNumber) {
       orderQuery = await db.collection(ORDERS_COLLECTION).where('tracking_number', '==', trackingNumber).limit(1).get();
     }
+    let isReturnShipment = false;
+    if (!orderQuery || orderQuery.empty) {
+      if (trackerId) {
+        orderQuery = await db.collection(ORDERS_COLLECTION).where('return_shipping_api_tracker_id', '==', trackerId).limit(1).get();
+      }
+      if ((!orderQuery || orderQuery.empty) && trackingNumber) {
+        orderQuery = await db.collection(ORDERS_COLLECTION).where('return_tracking_number', '==', trackingNumber).limit(1).get();
+      }
+      isReturnShipment = Boolean(orderQuery && !orderQuery.empty);
+    }
     if (!orderQuery || orderQuery.empty) {
       return sendJson(res, 404, { error: 'Matching order not found for shipping webhook.' });
     }
 
     const orderDoc = orderQuery.docs[0];
     const order = orderDoc.data();
+    if (order.return_tracking_number === trackingNumber || order.return_shipping_api_tracker_id === trackerId) {
+      isReturnShipment = true;
+    }
+    if (isReturnShipment) {
+      const returnState = {
+        return_tracking_status: rawStatus || order.return_tracking_status || 'unknown',
+        return_delivered_at: rawStatus === 'delivered' ? serverTimestamp() : order.return_delivered_at || null,
+        return_refund_status: rawStatus === 'delivered' ? 'refund_pending' : order.return_refund_status || 'awaiting_delivery',
+        updated_at: serverTimestamp()
+      };
+      await orderDoc.ref.set(returnState, { merge: true });
+      await syncPurchaseIntentMirror(order.order_id || orderDoc.id, { ...order, ...returnState });
+      if (rawStatus === 'delivered') {
+        const refund = await refundBuyerForOrder(order.order_id || orderDoc.id, { actor: 'system', resolution: 'return_delivered_dispute_refund' });
+        await orderDoc.ref.set({ return_refund_status: 'refunded', return_refund_id: refund.id || null, updated_at: serverTimestamp() }, { merge: true });
+        await Promise.all([
+          notifyUser(order.buyer_id, 'dispute_refunded', 'Your returned item was delivered and the dispute refund was issued.', { orderId: order.order_id || orderDoc.id }),
+          notifyUser(order.seller_user_id, 'dispute_refunded', 'The buyer return was delivered and the dispute refund was issued.', { orderId: order.order_id || orderDoc.id })
+        ]);
+      }
+      return sendJson(res, 200, { ok: true, orderId: order.order_id || orderDoc.id, status: returnState.return_refund_status });
+    }
     const nextOrderState = {
       tracking_number: trackingNumber || order.tracking_number || null,
       carrier: carrier || order.carrier || null,
@@ -1185,7 +1270,8 @@ exports.resolveDisputedOrders = onSchedule({ schedule: 'every 15 minutes', secre
         ]);
       } else if (category.includes('counterfeit') || category.includes('incorrect') || category.includes('condition') || category.includes('fake')) {
         const returnDueAt = admin.firestore.Timestamp.fromMillis(Date.now() + 4 * 24 * 60 * 60 * 1000);
-        await docSnap.ref.set({ certification_lookup_status: order.certification_lookup_status || 'pending', return_tracking_due_at: order.return_tracking_due_at || returnDueAt, updated_at: serverTimestamp() }, { merge: true });
+        const certification = await validateCardCertification(order);
+        await docSnap.ref.set({ certification_lookup_status: certification.status, certification_lookup_result: certification, return_tracking_due_at: order.return_tracking_due_at || returnDueAt, updated_at: serverTimestamp() }, { merge: true });
       }
     } catch (error) {
       console.error(`resolveDisputedOrders failed for ${orderId}:`, error);

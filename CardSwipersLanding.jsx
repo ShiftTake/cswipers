@@ -349,9 +349,11 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
   );
 }
 
-function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReportIssue }) {
+function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTrackingSubmit, onReportIssue }) {
   const [carrier, setCarrier] = useState(order?.shippingCarrier || order?.carrier || '');
   const [trackingNumber, setTrackingNumber] = useState(order?.trackingNumber || order?.tracking_number || '');
+  const [returnCarrier, setReturnCarrier] = useState(order?.returnCarrier || order?.return_carrier || '');
+  const [returnTrackingNumber, setReturnTrackingNumber] = useState(order?.returnTrackingNumber || order?.return_tracking_number || '');
   if (!order) return null;
 
   const isSeller = role === 'seller';
@@ -405,8 +407,19 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReportIss
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Download / Print Receipt</button>
           {!isSeller && order.trackingNumber && <a href={order.trackingUrl || '#'} target="_blank" rel="noreferrer" className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 py-2.5 text-sm font-semibold text-[#FFE66D]">View Live Tracking</a>}
-          {!isSeller && <button type="button" onClick={onReportIssue} className="min-h-11 rounded-xl border border-rose-300/60 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-400/10">Report Issue / Dispute</button>}
+          {!isSeller && !['disputed', 'completed', 'released', 'refunded'].includes(String(order.status || order.escrowStatus || '').toLowerCase()) && <button type="button" onClick={onReportIssue} className="min-h-11 rounded-xl border border-rose-300/60 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-400/10">Report Issue / Dispute</button>}
         </div>
+
+        {!isSeller && String(order.status || order.escrowStatus || '').toLowerCase() === 'disputed' && (
+          <div className="space-y-3 rounded-xl border border-rose-300/50 bg-rose-400/10 p-4">
+            <div><p className="font-semibold text-rose-100">Return shipment required</p><p className="mt-1 text-sm text-white/70">Submit return tracking to start the automated refund clock after delivery.</p></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select value={returnCarrier} onChange={(event) => setReturnCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select>
+              <input value={returnTrackingNumber} onChange={(event) => setReturnTrackingNumber(event.target.value)} placeholder="Return tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base text-white" />
+            </div>
+            <button type="button" onClick={() => onReturnTrackingSubmit(order, returnCarrier, returnTrackingNumber)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Submit Return Tracking</button>
+          </div>
+        )}
 
         {isSeller && (
           <div className="space-y-3 rounded-xl border border-white/10 bg-[#161B22] p-4">
@@ -2820,6 +2833,22 @@ export default function CardSwipersLanding() {
       setAuthError(error.message || 'Unable to submit dispute evidence.');
     } finally {
       setDisputeSubmitting(false);
+    }
+  };
+
+  const handleSubmitReturnTracking = async (transaction, carrier, trackingNumber) => {
+    if (!transaction?.orderId || !firebaseUser || !carrier || !trackingNumber) return;
+    try {
+      const response = await fetch(`${ESCROW_API_BASE}/orders/submit-return-tracking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await firebaseUser.getIdToken()}` },
+        body: JSON.stringify({ orderId: transaction.orderId, carrier, trackingNumber })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to submit return tracking.');
+      setAuthInfo('Return tracking submitted. The refund clock will start after delivery is confirmed.');
+    } catch (error) {
+      setAuthError(error.message || 'Unable to submit return tracking.');
     }
   };
 
@@ -8465,6 +8494,7 @@ export default function CardSwipersLanding() {
           { ...order, orderId: order.orderId || order.id, isSeller: true },
           { carrier, trackingNumber, trackingUrl: order.trackingUrl || '' }
         )}
+        onReturnTrackingSubmit={handleSubmitReturnTracking}
         onReportIssue={() => { setActiveReceipt(null); setDisputeOrder({ ...activeReceipt, isBuyer: true }); }}
       />
       <EvidenceSubmissionModal

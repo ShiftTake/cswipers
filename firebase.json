@@ -77,6 +77,10 @@
         "function": "submitTracking"
       },
       {
+        "source": "/api/orders/submit-return-tracking",
+        "function": "submitReturnTracking"
+      },
+      {
         "source": "/api/webhooks/shipping",
         "function": "shippingWebhook"
       },
