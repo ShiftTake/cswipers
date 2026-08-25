@@ -896,6 +896,7 @@ export default function CardSwipersLanding() {
   const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState('All');
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
   const [personalizedDeck, setPersonalizedDeck] = useState(INITIAL_DECK);
@@ -1081,6 +1082,13 @@ export default function CardSwipersLanding() {
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
   const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
+  const notificationFilterOptions = ['All', 'Trades', 'System'];
+  const filteredNotifications = notifications.filter((item) => {
+    if (notificationFilter === 'All') return true;
+    if (notificationFilter === 'Trades') return ['interest', 'match', 'trade', 'offer', 'message', 'transaction'].includes(String(item.category || item.type || '').toLowerCase());
+    if (notificationFilter === 'System') return ['system', 'admin', 'alert', 'verification', 'security'].includes(String(item.category || item.type || '').toLowerCase());
+    return true;
+  });
   const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
   const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
@@ -4236,14 +4244,22 @@ export default function CardSwipersLanding() {
   };
 
   const handleCreateClub = async () => {
-    if (!firebaseUser || clubCreateBusy) return;
+    if (!firebaseUser?.uid || clubCreateBusy) {
+      setClubDraftError('You must be signed in to create a club.');
+      return;
+    }
+
     const ownerName = currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector';
     const clubName = clubDraftName.trim();
+    const sanitizedLogoId = String(clubDraftLogoId || '').trim();
+    const hasPresetLogo = CLUB_LOGO_PRESETS.some((preset) => preset.id === sanitizedLogoId);
+    const hasCustomLogo = sanitizedLogoId === 'custom' && Boolean(clubDraftLogoFile);
+
     if (clubName.length < 3 || clubName.length > 20) {
       setClubDraftError('Club names must be between 3 and 20 characters.');
       return;
     }
-    if (!clubDraftLogoId) {
+    if (!sanitizedLogoId || (!hasPresetLogo && !hasCustomLogo)) {
       setClubDraftError('Choose a club logo before confirming.');
       return;
     }
@@ -4255,7 +4271,7 @@ export default function CardSwipersLanding() {
 
     try {
       let logoUrl = '';
-      if (clubDraftLogoId === 'custom' && clubDraftLogoFile) {
+      if (sanitizedLogoId === 'custom' && clubDraftLogoFile) {
         const safeFileName = clubDraftLogoFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         const logoRef = ref(storage, `club-logos/${firebaseUser.uid}/${Date.now()}-${safeFileName}`);
         await withTimeout(uploadBytes(logoRef, clubDraftLogoFile), 15000, 'Club logo upload timed out');
@@ -4269,12 +4285,12 @@ export default function CardSwipersLanding() {
         clubCode = buildClubCode();
       }
 
-      const clubRef = await addDoc(collection(db, 'clubs'), {
+      const clubPayload = {
         name: clubName,
         description: clubDraftDescription.trim() || 'Club built for card trade nights and member credit management.',
         code: clubCode,
-        logoType: clubDraftLogoId === 'custom' ? 'custom' : 'preset',
-        logoPresetId: clubDraftLogoId === 'custom' ? null : clubDraftLogoId,
+        logoType: sanitizedLogoId === 'custom' ? 'custom' : 'preset',
+        logoPresetId: sanitizedLogoId === 'custom' ? null : sanitizedLogoId,
         logoUrl,
         accessMode: 'private',
         creditHierarchy: 'owner→agent→member',
@@ -4309,7 +4325,9 @@ export default function CardSwipersLanding() {
           capLimit: 64,
           status: 'upcoming'
         }
-      });
+      };
+
+      const clubRef = await addDoc(collection(db, 'clubs'), clubPayload);
 
       await setDoc(doc(clubRef, 'members', firebaseUser.uid), {
         uid: firebaseUser.uid,
@@ -4329,8 +4347,15 @@ export default function CardSwipersLanding() {
       resetClubDraft();
       setCurrentTab('onboarding');
     } catch (error) {
-      console.error('Failed creating club:', error);
-      setClubDraftError('Could not create club right now. Please try again.');
+      console.error('Failed creating club:', {
+        code: error?.code || 'unknown',
+        message: error?.message || 'Unknown Firebase error',
+        stack: error?.stack || null,
+        userUid: firebaseUser?.uid || null,
+        clubName,
+        logoId: sanitizedLogoId
+      });
+      setClubDraftError(error?.message || 'Could not create club right now. Please try again.');
     } finally {
       setClubCreateBusy(false);
     }
@@ -5177,7 +5202,7 @@ export default function CardSwipersLanding() {
   }, {});
   return (
     <div
-      className="text-white font-sans flex flex-col relative min-h-[100dvh] bg-black"
+      className="text-white font-sans flex flex-col relative min-h-dvh bg-[#070A10] pb-[env(safe-area-inset-bottom)]"
       style={
         isNativeApp && nativeViewportHeight
           ? {
@@ -5405,7 +5430,7 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
+        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden pb-44 md:pb-52 ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'}`}`}
       >
         <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full max-w-full flex flex-col min-h-0 overflow-x-hidden`}>
         {currentTab === 'landing' && (
@@ -6688,7 +6713,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] pb-32 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] pb-44 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -6795,13 +6820,12 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
-            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1">
-              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-between">
-                {/* Search Club bar — full-width pill with magnifying glass */}
+          <div className="max-w-6xl mx-auto w-full flex flex-col gap-3 md:gap-4 py-2 overflow-y-auto overscroll-y-contain pb-44 md:pb-52">
+            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-3 md:gap-4 min-h-0 flex-1">
+              <section className="rounded-[24px] border border-white/10 bg-[#11161F] p-3.5 sm:p-4 shadow-[0_20px_48px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
                 <div className="relative w-full">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
+                  <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
                       <circle cx="8.5" cy="8.5" r="5.5" />
                       <path d="m13.5 13.5 3 3" strokeLinecap="round" />
                     </svg>
@@ -6811,33 +6835,27 @@ export default function CardSwipersLanding() {
                     value={clubSearchQuery}
                     onChange={(event) => setClubSearchQuery(event.target.value)}
                     placeholder="Search Club"
-                    className="w-full pl-9 pr-4 py-3 rounded-full bg-white text-[#111] placeholder-[#aaa] text-sm focus:outline-none shadow-sm"
+                    className="w-full rounded-full border border-white/10 bg-white px-10 py-3 text-sm text-[#111] placeholder-[#666] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700]/50"
                   />
                 </div>
 
-                <div className="w-full max-w-[296px] mx-auto flex flex-col items-center gap-2.5">
-                  <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden w-full shadow-[0_14px_28px_rgba(0,0,0,0.24)]">
-                    <div className="relative w-full aspect-square bg-[#0A0D13] overflow-hidden">
-                      <img
-                        src={authHeroImage}
-                        alt="Create a club"
-                        className="w-full h-full object-cover opacity-80"
-                      />
+                <button
+                  type="button"
+                  onClick={openCreateClub}
+                  className="group relative w-full overflow-hidden rounded-[22px] border border-emerald-400/30 bg-gradient-to-r from-emerald-500/20 via-emerald-500/10 to-[#0D1117] px-4 py-4 text-left shadow-[0_12px_28px_rgba(16,185,129,0.18)] transition-transform hover:-translate-y-0.5"
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_42%)]" />
+                  <div className="relative flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20 text-2xl shadow-inner shadow-emerald-500/30">＋</span>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-100/80">Club Hub</p>
+                        <p className="mt-1 text-lg font-black text-white">Create a New Club</p>
+                      </div>
                     </div>
+                    <span className="text-sm font-bold text-emerald-200">Open</span>
                   </div>
-
-                  <div className="w-12 h-12 rounded-2xl bg-[#22C55E] flex items-center justify-center shadow-[0_8px_20px_rgba(34,197,94,0.35)] border border-white/10">
-                    <CardClubsIcon />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={openCreateClub}
-                    className="w-full py-2.5 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
-                  >
-                    Create Club
-                  </button>
-                </div>
+                </button>
 
                 <div
                   ref={clubCarouselRef}
@@ -6850,40 +6868,68 @@ export default function CardSwipersLanding() {
                   className="flex w-full snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {filteredClubs.length === 0 ? (
-                    <p className="w-full shrink-0 snap-center px-1 py-6 text-sm text-white/65">No clubs match your search yet.</p>
+                    <div className="w-full shrink-0 snap-center rounded-[22px] border border-white/10 bg-[#0D1117] px-4 py-6 text-center">
+                      <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-2xl text-white/75">⌕</div>
+                      <p className="text-lg font-bold text-white">No clubs match your search yet.</p>
+                      <p className="mt-1 text-sm text-white/60">Start a new club and bring your crew together.</p>
+                    </div>
                   ) : (
                     filteredClubs.map((club) => {
                       const logoPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === club.logoPresetId);
+                      const clubTags = Array.isArray(club.categories) && club.categories.length > 0
+                        ? club.categories
+                        : Array.isArray(club.tags) && club.tags.length > 0
+                          ? club.tags
+                          : ['General'];
+                      const clubCover = club.bannerImage || club.logoUrl || authHeroImage;
                       return (
                         <article
                           key={club.id}
-                          className="w-full min-w-full snap-center rounded-2xl border border-white/10 bg-[#0D1117] p-4 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)]"
+                          className="w-full min-w-full snap-center overflow-hidden rounded-[24px] border border-white/10 bg-[#0D1117] text-left shadow-[0_18px_40px_rgba(0,0,0,0.26)]"
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex min-w-0 items-center gap-3">
-                              {club.logoUrl ? (
-                                <img src={club.logoUrl} alt="" className="h-14 w-14 shrink-0 rounded-2xl object-cover" />
-                              ) : logoPreset ? (
-                                <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${logoPreset.className} text-3xl font-bold text-white`}>{logoPreset.symbol}</span>
-                              ) : null}
-                              <div className="min-w-0">
-                                <p className="truncate text-lg font-bold text-white">{club.name || 'Untitled Club'}</p>
-                                <p className="mt-1 text-xs text-white/65">{club.description || 'No description yet.'}</p>
+                          <div className="relative h-28 w-full overflow-hidden border-b border-white/10 bg-[#0B0E14]">
+                            <img src={clubCover} alt={`${club.name || 'Club'} preview`} className="h-full w-full object-cover opacity-85" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E14] via-[#0B0E14]/25 to-transparent" />
+                            <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-2 py-1 backdrop-blur-sm">
+                              <span className="text-[10px] uppercase tracking-[0.18em] text-amber-200">Club</span>
+                              <span className="text-[10px] font-bold text-white/85">{club.code || '------'}</span>
+                            </div>
+                          </div>
+                          <div className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                {club.logoUrl ? (
+                                  <img src={club.logoUrl} alt="" className="h-12 w-12 shrink-0 rounded-2xl object-cover border border-white/10" />
+                                ) : logoPreset ? (
+                                  <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${logoPreset.className} text-2xl font-bold text-white`}>{logoPreset.symbol}</span>
+                                ) : null}
+                                <div className="min-w-0">
+                                  <p className="truncate text-lg font-black text-white">{club.name || 'Untitled Club'}</p>
+                                  <p className="mt-1 text-[11px] text-white/60">{club.description || 'No description yet.'}</p>
+                                </div>
                               </div>
                             </div>
-                            <span className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/80">{club.code || '------'}</span>
-                          </div>
-                          <div className="mt-6 grid grid-cols-2 gap-3">
-                            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-white/55">Members</p>
-                              <p className="mt-1 text-xl font-bold text-white">{Number(club.membersCount || club.memberCount || 0).toLocaleString()}</p>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {clubTags.slice(0, 3).map((tag) => (
+                                <span key={tag} className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] uppercase tracking-[0.08em] text-slate-200">
+                                  {String(tag)}
+                                </span>
+                              ))}
                             </div>
-                            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-white/55">Your role</p>
-                              <p className="mt-1 text-xl font-bold capitalize text-white">{club.role || 'Member'}</p>
+
+                            <div className="mt-4 grid grid-cols-2 gap-2.5">
+                              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                                <p className="text-[10px] uppercase tracking-[0.15em] text-white/55">Members</p>
+                                <p className="mt-1 text-lg font-black text-white">{Number(club.membersCount || club.memberCount || 0).toLocaleString()}</p>
+                              </div>
+                              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                                <p className="text-[10px] uppercase tracking-[0.15em] text-white/55">Role</p>
+                                <p className="mt-1 text-lg font-black capitalize text-white">{club.role || 'Member'}</p>
+                              </div>
                             </div>
+                            <button type="button" onClick={() => setSelectedClubId(club.id)} className="mt-4 min-h-11 w-full rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Enter Club</button>
                           </div>
-                          <button type="button" onClick={() => setSelectedClubId(club.id)} className="mt-4 min-h-11 w-full rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Enter Club</button>
                         </article>
                       );
                     })
@@ -7248,7 +7294,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'collection' && (
-          <div className="min-h-0 space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pr-1">
+          <div className="min-h-0 space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pb-44 pr-1">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg sm:text-2xl font-black">My Trading Binder</h2>
@@ -7441,7 +7487,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'messages' && (
-          <div className="space-y-3 py-1.5 min-h-0 flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pr-1">
+          <div className="space-y-3 py-1.5 min-h-0 flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pb-44 pr-1">
             {!activeChat ? (
               <div className="space-y-3">
                 <div>
@@ -7920,69 +7966,69 @@ export default function CardSwipersLanding() {
       </main>
 
       {showNotificationsPanel && (
-        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4">
-          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between gap-3">
+        <div className="fixed inset-0 z-[66] flex justify-end bg-black/60 backdrop-blur-sm">
+          <button type="button" aria-label="Close notifications" className="h-full flex-1" onClick={() => setShowNotificationsPanel(false)} />
+          <div className="h-full w-full max-w-md border-l border-white/10 bg-[#0B0E14]/95 p-4 text-white shadow-[0_0_50px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div>
-                <h3 className="text-lg font-bold">Notifications</h3>
-                <p className="text-xs text-white/60">Realtime updates for interests, matches, and messages.</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Center</p>
+                <h3 className="mt-1 text-2xl font-black">Notifications</h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowNotificationsPanel(false)}
-                className="text-sm text-white/70 hover:text-white"
-              >
-                Close
+              <button type="button" onClick={() => setShowNotificationsPanel(false)} className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-xl text-white/75 hover:bg-white/[0.08]">
+                ×
               </button>
             </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleMarkAllNotificationsRead}
-                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold"
-              >
-                Mark all as read
-              </button>
-              <button
-                type="button"
-                onClick={() => setNotifications([])}
-                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-white/80"
-              >
-                Clear all
-              </button>
-              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {notificationFilterOptions.map((option) => (
                 <button
+                  key={option}
                   type="button"
-                  onClick={() => Notification.requestPermission().catch(() => {})}
-                  className="px-3 py-2 rounded-xl bg-[#E50914] hover:bg-red-700 text-xs font-semibold"
+                  onClick={() => setNotificationFilter(option)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${notificationFilter === option ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08]'}`}
                 >
-                  Enable Browser Alerts
+                  {option}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={handleMarkAllNotificationsRead} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/75 hover:bg-white/[0.08]">Mark all as read</button>
+              <button type="button" onClick={() => setNotifications([])} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/[0.08]">Clear all</button>
+              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+                <button type="button" onClick={() => Notification.requestPermission().catch(() => {})} className="rounded-xl border border-[#E50914]/30 bg-[#E50914]/15 px-3 py-2 text-xs font-semibold text-[#FECACA] hover:bg-[#E50914]/20">
+                  Browser alerts
                 </button>
               )}
             </div>
 
-            <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
-              {notifications.length === 0 ? (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">
-                  No notifications yet.
+            <div className="mt-4 max-h-[calc(100vh-210px)] space-y-3 overflow-y-auto pr-1 pb-24">
+              {filteredNotifications.length === 0 ? (
+                <div className="flex min-h-[240px] flex-col items-center justify-center rounded-[22px] border border-white/10 bg-white/[0.02] p-5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-3xl text-[#FFD700]">◌</div>
+                  <p className="text-lg font-bold text-white">No {notificationFilter.toLowerCase()} updates yet.</p>
+                  <p className="mt-2 max-w-xs text-sm text-white/60">Trade requests, club activity, and system notices will appear here.</p>
                 </div>
               ) : (
-                notifications.map((notification) => (
+                filteredNotifications.map((notification) => (
                   <button
                     key={notification.id}
                     type="button"
                     onClick={() => handleNotificationClick(notification)}
-                    className={`w-full text-left rounded-xl border p-3 transition-colors ${notification.read ? 'border-white/10 bg-white/[0.02]' : 'border-red-400/30 bg-red-500/10 hover:bg-red-500/15'}`}
+                    className={`w-full rounded-[18px] border p-3 text-left transition-all ${notification.read ? 'border-white/10 bg-white/[0.02]' : 'border-[#F43F5E]/30 bg-[#E50914]/8 hover:bg-[#E50914]/12'}`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold">{notification.title}</p>
-                      {!notification.read && <span className="w-2 h-2 rounded-full bg-[#E50914]" />}
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex h-2.5 w-2.5 rounded-full ${notification.read ? 'bg-white/35' : 'bg-[#E50914]'}`} />
+                        <p className="text-sm font-semibold text-white">{notification.title}</p>
+                      </div>
+                      {!notification.read && <span className="rounded-full border border-[#E50914]/30 bg-[#E50914]/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-red-200">New</span>}
                     </div>
-                    <p className="text-xs text-white/75 mt-1">{notification.message}</p>
-                    <p className="text-[11px] text-white/45 mt-2">
-                      {new Date(notification.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                    </p>
+                    <p className="mt-2 text-xs leading-5 text-white/70">{notification.message}</p>
+                    <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-white/50">
+                      <span>{String(notification.category || notification.type || 'System').replace(/^./, (char) => char.toUpperCase())}</span>
+                      <span>{new Date(notification.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                    </div>
                   </button>
                 ))
               )}
