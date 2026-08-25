@@ -127,6 +127,37 @@ function NavIcon({ children, className = '' }) {
   return <span className={`inline-flex items-center justify-center ${className}`}>{children}</span>;
 }
 
+function CardSilhouettePlaceholder({ className = '', label = 'Card image unavailable' }) {
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className={`relative flex items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(160deg,#111827,#1f2937)] ${className}`}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.16),transparent_40%),radial-gradient(circle_at_80%_90%,rgba(255,255,255,0.08),transparent_45%)]" />
+      <svg viewBox="0 0 120 180" className="relative h-16 w-10 text-white/70" fill="none" aria-hidden="true">
+        <rect x="14" y="12" width="92" height="156" rx="14" stroke="currentColor" strokeWidth="8" />
+        <path d="M32 44h56M32 72h40M32 100h56M32 128h30" stroke="currentColor" strokeWidth="8" strokeLinecap="round" />
+      </svg>
+      <span className="absolute bottom-1.5 right-2 text-[10px] font-black tracking-[0.08em] text-white/65">CS</span>
+    </div>
+  );
+}
+
+function SafeImage({ src, alt, className = '', fallbackClassName = '' }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return <CardSilhouettePlaceholder className={fallbackClassName || className} label={alt || 'Card image unavailable'} />;
+  }
+
+  return <img src={src} alt={alt} className={className} onError={() => setFailed(true)} />;
+}
+
 function SwipeDeckIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
@@ -246,11 +277,13 @@ function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback }) {
     >
       <div className="relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d]" style={{ transform: side === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
         <div className="absolute inset-0 flex items-center justify-center [backface-visibility:hidden]">
-          {frontImageUrl ? <img src={frontImageUrl} alt={`${title || 'Card'} front`} className="h-full w-full object-contain" /> : <div className="text-6xl">{fallback || '🃏'}</div>}
+          {frontImageUrl
+            ? <SafeImage src={frontImageUrl} alt={`${title || 'Card'} front`} className="h-full w-full object-contain" fallbackClassName="h-full w-full" />
+            : <CardSilhouettePlaceholder className="h-full w-full" label={`${title || 'Card'} front placeholder`} />}
         </div>
         {canFlip && (
           <div className="absolute inset-0 flex items-center justify-center [backface-visibility:hidden]" style={{ transform: 'rotateY(180deg)' }}>
-            <img src={backImageUrl} alt={`${title || 'Card'} back`} className="h-full w-full object-contain" />
+            <SafeImage src={backImageUrl} alt={`${title || 'Card'} back`} className="h-full w-full object-contain" fallbackClassName="h-full w-full" />
           </div>
         )}
       </div>
@@ -5564,18 +5597,18 @@ export default function CardSwipersLanding() {
               </>
             )}
 
-            <div className={`w-full ${isNativeApp ? 'max-w-[480px] mx-auto' : 'max-w-[460px]'} bg-white text-[#111827] ${isNativeApp ? 'rounded-[32px] p-4.5 sm:p-5' : 'rounded-[26px] p-6 sm:p-7'} shadow-[0_20px_45px_rgba(0,0,0,0.14)] border border-black/5 relative z-10`}>
+            <div className="relative z-10 mx-auto w-11/12 max-w-md overflow-y-auto rounded-[26px] border border-white/[0.12] bg-[rgba(18,18,24,0.90)] px-6 py-6 text-white shadow-[0_20px_45px_rgba(0,0,0,0.35)] backdrop-blur-[16px]">
               <div className="space-y-2 text-center">
-                <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-[#111827]`}>
+                <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-white`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
                 </h1>
-                <p className={`${isNativeApp ? 'text-[11px]' : 'text-sm'} text-[#6B7280]`}>
+                <p className={`${isNativeApp ? 'text-[11px]' : 'text-sm'} text-slate-300`}>
                   {authMode === 'login' ? 'Enter your credentials to continue.' : 'Set up your account in less than a minute.'}
                 </p>
               </div>
 
               <form onSubmit={handleAuthSubmit} className={`mt-4 ${isNativeApp ? 'space-y-2.5' : 'space-y-3'} text-left`}>
-                <div className={`w-full grid grid-cols-2 rounded-2xl p-1 bg-[#F3F4F6] border border-[#E5E7EB] ${isNativeApp ? 'text-xs' : 'text-sm'}`}>
+                <div className={`w-full grid grid-cols-2 rounded-2xl border border-white/15 bg-white/5 p-1 ${isNativeApp ? 'text-xs' : 'text-sm'}`}>
                   <button
                     type="button"
                     onClick={() => {
@@ -5584,7 +5617,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-slate-300 hover:text-white'}`}
                   >
                     Log In
                   </button>
@@ -5596,7 +5629,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-[#6B7280] hover:text-[#111827]'}`}
+                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-slate-300 hover:text-white'}`}
                   >
                     Create Account
                   </button>
@@ -5608,11 +5641,11 @@ export default function CardSwipersLanding() {
                     value={authDisplayName}
                     onChange={(e) => setAuthDisplayName(e.target.value)}
                     placeholder="Display name"
-                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} rounded-2xl border border-white/15 bg-white/5 px-4 text-white placeholder-[#9CA3AF] focus:border-[#E60028]/40 focus:outline-none`}
                   />
                 )}
 
-                <label className={`w-full ${isNativeApp ? 'h-10' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3`}>
+                <label className={`flex w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 ${isNativeApp ? 'h-10' : 'h-14'}`}>
                   <svg viewBox="0 0 24 24" fill="none" className={`${isNativeApp ? 'w-4 h-4' : 'w-6 h-6'} text-[#E60028]`} aria-hidden="true">
                     <path d="M4 7.5h16v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-9Z" stroke="currentColor" strokeWidth="1.8" />
                     <path d="m5 8 7 5 7-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -5622,11 +5655,11 @@ export default function CardSwipersLanding() {
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                     placeholder="Email"
-                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
+                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-white placeholder-[#9CA3AF] focus:outline-none`}
                   />
                 </label>
 
-                <label className={`w-full ${isNativeApp ? 'h-10' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] flex items-center gap-3`}>
+                <label className={`flex w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 ${isNativeApp ? 'h-10' : 'h-14'}`}>
                   <svg viewBox="0 0 24 24" fill="none" className={`${isNativeApp ? 'w-4 h-4' : 'w-6 h-6'} text-[#E60028]`} aria-hidden="true">
                     <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
                     <path d="M8 10V8a4 4 0 1 1 8 0v2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -5636,12 +5669,12 @@ export default function CardSwipersLanding() {
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="Password"
-                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-[#111827] placeholder-[#9CA3AF] focus:outline-none`}
+                    className={`w-full bg-transparent ${isNativeApp ? 'text-sm' : 'text-base'} text-white placeholder-[#9CA3AF] focus:outline-none`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowAuthPassword((prev) => !prev)}
-                    className="text-[#9CA3AF] hover:text-[#6B7280]"
+                    className="text-[#9CA3AF] hover:text-white"
                     aria-label={showAuthPassword ? 'Hide password' : 'Show password'}
                   >
                     <svg viewBox="0 0 24 24" fill="none" className={`${isNativeApp ? 'w-4 h-4' : 'w-6 h-6'}`} aria-hidden="true">
@@ -5656,7 +5689,7 @@ export default function CardSwipersLanding() {
                     type="button"
                     onClick={handleForgotPassword}
                     disabled={isSendingReset}
-                    className={`${isNativeApp ? 'self-start text-[15px]' : 'self-start text-xs'} text-[#E60028] hover:text-[#B70A22] underline underline-offset-2 disabled:opacity-60`}
+                    className={`${isNativeApp ? 'self-start text-[15px]' : 'self-start text-xs'} text-[#E60028] hover:text-[#ff3b63] underline underline-offset-2 disabled:opacity-60`}
                   >
                     {isSendingReset ? 'Sending reset link...' : 'Forgot Password?'}
                   </button>
@@ -5668,19 +5701,19 @@ export default function CardSwipersLanding() {
                     value={authConfirmPassword}
                     onChange={(e) => setAuthConfirmPassword(e.target.value)}
                     placeholder="Confirm password"
-                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} px-4 rounded-2xl bg-white border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#E60028]/40`}
+                    className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14'} rounded-2xl border border-white/15 bg-white/5 px-4 text-white placeholder-[#9CA3AF] focus:border-[#E60028]/40 focus:outline-none`}
                   />
                 )}
 
                 {authMode === 'create' && (
-                  <label className="flex items-start gap-3 rounded-2xl border border-[#E5E7EB] bg-[#FFF7F8] px-4 py-3 text-left">
+                  <label className="flex items-start gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-left">
                     <input
                       type="checkbox"
                       checked={hasAcceptedEscrowTerms}
                       onChange={(event) => setHasAcceptedEscrowTerms(event.target.checked)}
                       className="mt-1 h-4 w-4 rounded border-[#D1D5DB] text-[#E60028]"
                     />
-                    <span className="text-xs leading-5 text-[#374151]">
+                    <span className="text-xs leading-5 text-slate-200">
                       {ESCROW_TERMS_LABEL}{' '}
                       <button
                         type="button"
@@ -5699,7 +5732,7 @@ export default function CardSwipersLanding() {
                       <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
                       <path d="M10 6.2v4.8M10 14h.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                     </svg>
-                    <p className="text-xs leading-5 text-red-600">{authError}</p>
+                    <p className="text-xs leading-5 text-red-200">{authError}</p>
                   </div>
                 )}
                 {authInfo && (
@@ -5708,7 +5741,7 @@ export default function CardSwipersLanding() {
                       <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
                       <path d="m7 10.1 2 2 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    <p className="text-xs leading-5 text-emerald-700">{authInfo}</p>
+                    <p className="text-xs leading-5 text-emerald-200">{authInfo}</p>
                   </div>
                 )}
 
@@ -5725,7 +5758,7 @@ export default function CardSwipersLanding() {
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={isAuthSubmitting || isGoogleRedirecting}
-                  className={`w-full ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-base'} px-6 rounded-2xl bg-white border border-[#D4D8DE] hover:border-[#BAC0C8] text-[#111827] font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2.5`}
+                  className={`flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/20 bg-white/10 px-6 font-semibold text-white transition-colors hover:bg-white/15 disabled:opacity-60 ${isNativeApp ? 'h-10 text-sm' : 'h-14 text-base'}`}
                 >
                   <span
                     className={`${isNativeApp ? 'text-base' : 'text-[22px]'} font-bold leading-none`}
@@ -5742,7 +5775,7 @@ export default function CardSwipersLanding() {
                 </button>
 
                 {isNativeApp && (
-                  <p className={`${isNativeApp ? 'text-[9px] leading-4' : 'text-[11px] leading-5'} text-[#6B7280]`}>
+                  <p className={`${isNativeApp ? 'text-[9px] leading-4' : 'text-[11px] leading-5'} text-slate-300`}>
                     On iPhone, Google sign-in may open Safari to finish authentication and return to the app.
                   </p>
                 )}
@@ -6252,7 +6285,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'post' && (
           <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
-            <div ref={postScrollRef} className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-36 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
+            <div ref={postScrollRef} className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-40 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -6655,13 +6688,13 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] pb-32 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <form
               onSubmit={(event) => {
                 event.preventDefault();
                 handleCreateClub();
               }}
-              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
+              className="mx-auto flex max-h-[80vh] min-h-full w-full max-w-2xl flex-col overflow-y-auto px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
             >
               <div className="relative flex items-center justify-center">
                 <button
@@ -6707,43 +6740,43 @@ export default function CardSwipersLanding() {
                 />
                 <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1 sm:mt-5">
                   <div className="grid grid-cols-3 gap-3 sm:gap-5">
-                  <button
-                    type="button"
-                    onClick={() => clubLogoInputRef.current?.click()}
-                    className={`aspect-square rounded-2xl border-2 border-dashed bg-[#161B22] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-[#30363D] hover:border-slate-500'}`}
-                  >
-                    {clubDraftLogoPreview ? (
-                      <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
-                    ) : (
-                      <span className="flex h-full flex-col items-center justify-center text-center text-white/80">
-                        <span className="text-4xl leading-none">↑</span>
-                        <span className="mt-3 text-sm font-medium">Add Image</span>
-                        <span className="mt-1 text-xs text-slate-400">640 x 640</span>
-                      </span>
-                    )}
-                  </button>
-                  {CLUB_LOGO_PRESETS.map((preset) => {
-                    const selected = clubDraftLogoId === preset.id;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
-                          setClubDraftLogoPreview('');
-                          setClubDraftLogoFile(null);
-                          setClubDraftLogoId(preset.id);
-                          setClubDraftError('');
-                        }}
-                        className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-[#30363D]'}`}
-                        aria-label={`Use ${preset.id} club logo`}
-                      >
-                        <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
-                        <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
-                        {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#0B0E14] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
-                      </button>
-                    );
-                  })}
+                    <button
+                      type="button"
+                      onClick={() => clubLogoInputRef.current?.click()}
+                      className={`aspect-square rounded-2xl border-2 border-dashed bg-[#161B22] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-[#30363D] hover:border-slate-500'}`}
+                    >
+                      {clubDraftLogoPreview ? (
+                        <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
+                      ) : (
+                        <span className="flex h-full flex-col items-center justify-center text-center text-white/80">
+                          <span className="text-4xl leading-none">↑</span>
+                          <span className="mt-3 text-sm font-medium">Add Image</span>
+                          <span className="mt-1 text-xs text-slate-400">640 x 640</span>
+                        </span>
+                      )}
+                    </button>
+                    {CLUB_LOGO_PRESETS.map((preset) => {
+                      const selected = clubDraftLogoId === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
+                            setClubDraftLogoPreview('');
+                            setClubDraftLogoFile(null);
+                            setClubDraftLogoId(preset.id);
+                            setClubDraftError('');
+                          }}
+                          className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-[#30363D]'}`}
+                          aria-label={`Use ${preset.id} club logo`}
+                        >
+                          <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
+                          <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
+                          {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#0B0E14] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -7248,7 +7281,7 @@ export default function CardSwipersLanding() {
                 {savedDrafts.length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No saved drafts yet.</p> : savedDrafts.map((draft) => (
                   <div key={draft.id} className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
                     <div className="flex items-center gap-3">
-                      {draft.frontPreview ? <img src={draft.frontPreview} alt="Draft front" className="h-16 w-12 rounded-lg object-cover" /> : <div className="flex h-16 w-12 items-center justify-center rounded-lg bg-[#0B0E14] text-xl">🃏</div>}
+                      <SafeImage src={draft.frontPreview || ''} alt="Draft front" className="h-16 w-12 rounded-lg object-cover" fallbackClassName="h-16 w-12" />
                       <div className="min-w-0 flex-1"><p className="truncate font-semibold">{draft.title || 'Untitled draft'}</p><p className="text-xs text-white/65">{draft.brand || 'No brand'} · {draft.updatedAt ? new Date(draft.updatedAt).toLocaleDateString() : 'Recently saved'}</p></div>
                     </div>
                     <div className="mt-3 flex gap-2"><button type="button" onClick={() => resumeDraft(draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-xs font-bold text-[#0B0E14]">Resume</button><button type="button" onClick={() => deleteDraft(draft.id)} className="min-h-11 rounded-xl border border-rose-300/50 px-4 text-xs font-semibold text-rose-100">Delete</button></div>
@@ -7259,31 +7292,28 @@ export default function CardSwipersLanding() {
               <div className="space-y-3">
                 {userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid && ['completed', 'released', 'fulfilled', 'shipped', 'payment_held', 'payment_pending'].includes(String(order.status || order.escrowStatus || '').toLowerCase())).length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No sales history yet.</p> : userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid).map((order) => <button key={order.id} type="button" onClick={() => setActiveReceipt({ ...order, isSeller: true, orderId: order.orderId || order.id, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#30363D] bg-[#161B22] p-3 text-left hover:border-[#FFD700]/60"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{order.cardTitle || 'Sold card'}</p><p className="mt-1 text-xs text-white/65">Order {order.orderId || order.id} · {order.status || order.escrowStatus || 'pending'}</p></div><span className="text-sm font-bold text-[#FFE66D]">{formatMoney(order.sellerNetPayout || order.sellerPayoutAmount || order.listingPrice || 0)}</span></button>)}</div>
             ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-              {myCollection.map((card) => (
-                <div
-                  key={card.id}
-                  className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group"
-                >
-                  <div className="absolute top-2 right-2 text-xs bg-white/20 px-2 py-0.5 rounded-md text-red-100 font-mono scale-90">
-                    {card.condition}
-                  </div>
-                  {card.imageUrl ? (
-                    <img
-                      src={card.imageUrl}
-                      alt={card.name}
-                      className="w-full h-20 object-cover rounded-lg border border-red-400/30"
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+                {myCollection.map((card) => (
+                  <div
+                    key={card.id}
+                    className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group"
+                  >
+                    <div className="absolute top-2 right-2 text-xs bg-white/20 px-2 py-0.5 rounded-md text-red-100 font-mono scale-90">
+                      {card.condition}
+                    </div>
+                    <SafeImage
+                      src={card.imageUrl || ''}
+                      alt={card.name || 'Binder card'}
+                      className="h-20 w-full rounded-lg border border-red-400/30 object-cover"
+                      fallbackClassName="mt-2 h-20 w-full rounded-lg border border-red-400/30"
                     />
-                  ) : (
-                    <div className="text-3xl mt-2">🃏</div>
-                  )}
-                  <div>
-                    <h4 className="font-bold text-sm leading-tight truncate">{card.name}</h4>
-                    <p className="text-[11px] text-[#E50914] font-medium mt-0.5">{card.brand}</p>
+                    <div>
+                      <h4 className="font-bold text-sm leading-tight truncate">{card.name}</h4>
+                      <p className="text-[11px] text-[#E50914] font-medium mt-0.5">{card.brand}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
             )}
           </div>
         )}
