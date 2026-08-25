@@ -53,6 +53,7 @@ const normalizeAuthEmail = (value) => value.trim().toLowerCase();
 const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/adminmanagement.html']);
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
 const STRIPE_PUBLISHABLE_KEY =
+  (typeof process !== 'undefined' ? process.env?.REACT_APP_STRIPE_PUBLISHABLE_KEY : '') ||
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
   (typeof window !== 'undefined' ? window.__CARDSWIPERS_STRIPE_PUBLISHABLE_KEY__ || '' : '');
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
@@ -6251,7 +6252,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'post' && (
           <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
-            <div ref={postScrollRef} className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-32 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
+            <div ref={postScrollRef} className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-36 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
             <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -8094,10 +8095,19 @@ export default function CardSwipersLanding() {
       )}
 
       {showDiscoverFilters && (
-        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
-          <div className="w-full max-w-md space-y-5 rounded-2xl border border-white/15 bg-[#0B0F19] p-5 text-white shadow-2xl">
+        <div className="fixed inset-0 z-[75] flex justify-end bg-black/70" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
+          <button
+            type="button"
+            onClick={() => setShowDiscoverFilters(false)}
+            className="h-full flex-1"
+            aria-label="Close filters"
+          />
+          <div className="h-full w-full max-w-md space-y-5 border-l border-white/15 bg-[#0B0F19] p-5 text-white shadow-2xl">
             <div className="flex items-center justify-between gap-3">
-              <div><p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p><h2 id="discover-filters-title" className="mt-1 text-xl font-bold">Filter Listings</h2></div>
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p>
+                <h2 id="discover-filters-title" className="mt-1 text-xl font-bold">Filter Listings</h2>
+              </div>
               <button type="button" onClick={() => setShowDiscoverFilters(false)} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-xl text-white/75 hover:bg-white/10" aria-label="Close filters">x</button>
             </div>
             <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label>

@@ -3,7 +3,6 @@ const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
-const Stripe = require('stripe');
 
 admin.initializeApp();
 
@@ -13,6 +12,7 @@ const stripeSecret = defineSecret('STRIPE_SECRET_KEY');
 const stripeWebhookSecret = defineSecret('STRIPE_WEBHOOK_SECRET');
 const shippoApiKey = defineSecret('SHIPPO_API_KEY');
 const shippingWebhookSecret = defineSecret('SHIPPING_WEBHOOK_SECRET');
+let stripeClient = null;
 
 const ORDERS_COLLECTION = 'orders';
 const PURCHASE_INTENTS_COLLECTION = 'purchaseIntents';
@@ -38,14 +38,16 @@ function sendJson(res, statusCode, payload) {
 }
 
 function getStripeClient() {
-  const secret = stripeSecret.value() || process.env.STRIPE_SECRET_KEY;
-  if (!secret) {
+  if (!process.env.STRIPE_SECRET_KEY) {
     throw new Error('Missing STRIPE_SECRET_KEY secret.');
   }
 
-  return new Stripe(secret, {
-    apiVersion: '2024-06-20'
-  });
+  if (!stripeClient) {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    stripeClient = stripe;
+  }
+
+  return stripeClient;
 }
 
 function assertMethod(req, methods) {
@@ -1303,3 +1305,6 @@ exports.autoReleaseDeliveredOrders = onSchedule({ schedule: 'every 15 minutes', 
 
 exports.createPaymentIntent = exports.createOrderPaymentIntent;
 exports.releaseSellerFunds = exports.acceptDelivery;
+exports.stripeCreateCheckoutSession = exports.createOrderPaymentIntent;
+exports.stripeCreatePortalSession = exports.createSellerPayoutAccount;
+exports.stripeWebhook = exports.stripeEscrowWebhook;
