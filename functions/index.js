@@ -6,7 +6,19 @@ const { defineSecret } = require('firebase-functions/params');
 
 admin.initializeApp();
 
-const db = admin.firestore();
+let db = null;
+
+function getDb() {
+  if (!db) {
+    db = admin.firestore();
+  }
+
+  return db;
+}
+
+function getAuth() {
+  return admin.auth();
+}
 
 const stripeSecret = defineSecret('STRIPE_SECRET_KEY');
 const stripeWebhookSecret = defineSecret('STRIPE_WEBHOOK_SECRET');
@@ -17,6 +29,7 @@ let stripeClient = null;
 const ORDERS_COLLECTION = 'orders';
 const PURCHASE_INTENTS_COLLECTION = 'purchaseIntents';
 const USERS_COLLECTION = 'users';
+const WEBHOOK_EVENTS_COLLECTION = 'webhookEvents';
 const DEFAULT_CURRENCY = 'usd';
 const PLATFORM_FEE_RATE = 0.05;
 const STANDARD_SHIPPING_FEE_CENTS = 599;
@@ -60,6 +73,39 @@ function assertMethod(req, methods) {
   }
 
   return null;
+}
+
+async function markWebhookEventProcessed(eventId, eventType, payload = {}) {
+  if (!eventId) {
+    return false;
+  }
+
+  const eventRef = getDb().collection(WEBHOOK_EVENTS_COLLECTION).doc(eventId);
+  let shouldProcess = false;
+
+  await getDb().runTransaction(async (transaction) => {
+    const snap = await transaction.get(eventRef);
+    if (snap.exists) {
+      shouldProcess = false;
+      return;
+    }
+
+    shouldProcess = true;
+    transaction.set(eventRef, {
+      eventId,
+      eventType,
+      processedAt: serverTimestamp(),
+      payloadSummary: {
+        type: payload?.type || eventType || null,
+        object: payload?.data?.object?.id || payload?.id || null,
+        status: payload?.data?.object?.status || null
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  });
+
+  return shouldProcess;
 }
 
 function toCents(value, fieldName = 'amount') {
@@ -125,7 +171,7 @@ async function requireAuth(req) {
     throw new Error('Missing bearer token.');
   }
 
-  return admin.auth().verifyIdToken(token);
+  return getAuth().verifyIdToken(token);
 }
 
 function getAdminEmails() {
@@ -137,11 +183,16 @@ function getAdminEmails() {
   );
 }
 
+function hasAdminRole(decodedToken) {
+  const adminEmails = getAdminEmails();
+  const role = String(decodedToken?.role || '').trim().toLowerCase();
+  const email = String(decodedToken?.email || '').trim().toLowerCase();
+  return role === 'admin' || (email && adminEmails.has(email));
+}
+
 async function requireAdmin(req) {
   const decodedToken = await requireAuth(req);
-  const adminEmails = getAdminEmails();
-  const email = String(decodedToken.email || '').toLowerCase();
-  if (!email || !adminEmails.has(email)) {
+  if (!hasAdminRole(decodedToken)) {
     throw new Error('Admin access required.');
   }
 
@@ -150,7 +201,7 @@ async function requireAdmin(req) {
 
 async function getUserProfile(userId) {
   if (!userId) return null;
-  const snap = await db.collection(USERS_COLLECTION).doc(userId).get();
+  const snap = await getDb().collection(USERS_COLLECTION).doc(userId).get();
   return snap.exists ? snap.data() : null;
 }
 
@@ -237,7 +288,7 @@ async function syncPurchaseIntentMirror(orderId, orderData) {
 
 async function notifyUser(userId, type, message, data = {}) {
   if (!userId) return;
-  await db.collection('notifications').add({
+  await getDb().collection('notifications').add({
     userId,
     type,
     message,
@@ -248,7 +299,7 @@ async function notifyUser(userId, type, message, data = {}) {
 }
 
 async function getOrderOrThrow(orderId) {
-  const orderRef = db.collection(ORDERS_COLLECTION).doc(orderId);
+  const orderRef = getDb().collection(ORDERS_COLLECTION).doc(orderId);
   const orderSnap = await orderRef.get();
   if (!orderSnap.exists) {
     throw new Error('Order not found.');
@@ -954,7 +1005,7 @@ exports.shippingWebhook = onRequest({ secrets: [shippingWebhookSecret] }, async 
   }
 });
 
-exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookSecret] }, async (req, res) => {
+exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookSecret], rawBody: true }, async (req, res) => {
   setCorsHeaders(res);
 
   if (assertMethod(req, ['POST']) === 'options') {
@@ -969,13 +1020,22 @@ exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookS
 
     const stripe = getStripeClient();
     const signature = req.headers['stripe-signature'];
-    const event = stripe.webhooks.constructEvent(req.rawBody, signature, secret);
+    if (!signature) {
+      return sendJson(res, 400, { error: 'Missing Stripe signature header.' });
+    }
+
+    const rawBody = req.rawBody || Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
+    const event = stripe.webhooks.constructEvent(rawBody, signature, secret);
+    const shouldProcess = await markWebhookEventProcessed(event.id, event.type, event);
+    if (!shouldProcess) {
+      return res.status(200).json({ ok: true, duplicate: true, eventId: event.id, type: event.type });
+    }
 
     if (event.type === 'identity.verification_session.verified') {
       const verificationSession = event.data.object;
       const userId = String(verificationSession.metadata?.userId || '').trim();
       if (userId) {
-        await db.collection(USERS_COLLECTION).doc(userId).set({
+        await getDb().collection(USERS_COLLECTION).doc(userId).set({
           isVerified: true,
           is_verified: true,
           verificationStatus: 'verified',
@@ -999,7 +1059,7 @@ exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookS
       await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
       await Promise.all([
         notifyUser(order.buyer_id, 'payout_released', `Funds were released for ${order.card_title || 'your order'}.`, { orderId }),
-        notifyUser(order.seller_user_id, 'payout_released', `Your payout was released for ${order.card_title || 'your sale'}.`, { orderId, transferId: transfer.id })
+        notifyUser(order.seller_user_id, 'payout_released', `Your payout was released for ${order.card_title || 'your sale'}.`, { orderId, transferId: order.stripe_transfer_id || null })
       ]);
     }
 
@@ -1016,10 +1076,10 @@ exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookS
       await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
     }
 
-    return res.status(200).send('ok');
+    return res.status(200).json({ ok: true, eventId: event.id, type: event.type });
   } catch (error) {
     console.error('stripeEscrowWebhook failed:', error);
-    return res.status(400).send(`Webhook Error: ${error.message}`);
+    return res.status(500).json({ error: `Webhook Error: ${error.message}` });
   }
 });
 
