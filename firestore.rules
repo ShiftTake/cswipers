@@ -45,19 +45,20 @@ service cloud.firestore {
     match /users/{userId} {
       allow create: if isSelf(userId);
       allow read: if isSelf(userId) || isAdmin();
-      allow update: if isAdmin() || (
-        isSelf(userId) &&
+      allow update: if isSelf(userId) &&
         request.resource.data.uid == resource.data.uid &&
         request.resource.data.role == resource.data.role &&
-        request.resource.data.status == resource.data.status
-      );
+        request.resource.data.status == resource.data.status;
       allow delete: if false;
     }
 
     match /cards/{cardId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update, delete: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow update: if signedIn() &&
+        resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /purchaseIntents/{purchaseId} {
@@ -87,9 +88,7 @@ service cloud.firestore {
 
     match /subscriptions/{subscriptionId} {
       allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
-      allow delete: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     match /sellerVerifications/{verificationId} {
@@ -104,12 +103,7 @@ service cloud.firestore {
         resource.data.fromUserId == request.auth.uid ||
         resource.data.toUserId == request.auth.uid
       ));
-      allow create: if signedIn() && request.resource.data.fromUserId == request.auth.uid;
-      allow update: if isAdmin() || (signedIn() && (
-        resource.data.fromUserId == request.auth.uid ||
-        resource.data.toUserId == request.auth.uid
-      ));
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /reviews/{reviewId} {
