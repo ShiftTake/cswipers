@@ -103,6 +103,18 @@
         "function": "resolveAdminDispute"
       },
       {
+        "source": "/api/admin/block-user",
+        "function": "adminBlockUser"
+      },
+      {
+        "source": "/api/admin/approve-seller",
+        "function": "adminApproveSeller"
+      },
+      {
+        "source": "/api/admin/delete-card",
+        "function": "adminDeleteCard"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

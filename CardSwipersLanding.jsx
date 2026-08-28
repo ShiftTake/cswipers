@@ -1087,8 +1087,7 @@ export default function CardSwipersLanding() {
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
   const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
-  const isConfiguredAdminUser = ADMIN_EMAILS.includes((firebaseUser?.email || '').toLowerCase());
-  const hasAdminAccess = isAdmin || isConfiguredAdminUser || import.meta.env.DEV;
+  const hasAdminAccess = isAdmin;
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
   const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
   const selectedClubRole = selectedClubMembership?.role || '';
@@ -1517,8 +1516,8 @@ export default function CardSwipersLanding() {
       }
 
       const userRef = doc(db, 'users', firebaseUser.uid);
-      const configuredAdmin = ADMIN_EMAILS.includes((firebaseUser.email || '').toLowerCase());
-      const declaredAdmin = configuredAdmin;
+      const tokenResult = await firebaseUser.getIdTokenResult();
+      const declaredAdmin = tokenResult.claims.admin === true;
       if (declaredAdmin) {
         setIsAdmin(true);
       }
@@ -1578,6 +1577,8 @@ export default function CardSwipersLanding() {
         }
       } else {
         const profile = existing?.data?.() || {};
+        const hasAdminIdentity = declaredAdmin || profile.isAdmin === true;
+        setIsAdmin(hasAdminIdentity);
         setCurrentUserProfile({
           uid: profile.uid || firebaseUser.uid,
           email: profile.email || firebaseUser.email || '',
@@ -1610,9 +1611,9 @@ export default function CardSwipersLanding() {
           lastLoginAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         };
-        if (declaredAdmin && profile.role !== 'admin') {
+        if (hasAdminIdentity && profile.role !== 'admin') {
           payload.role = 'admin';
-        } else if (!declaredAdmin && profile.role === 'admin') {
+        } else if (!hasAdminIdentity && profile.role === 'admin') {
           payload.role = 'user';
         }
         try {
@@ -1628,7 +1629,7 @@ export default function CardSwipersLanding() {
         const profile = snapshot.exists() ? snapshot.data() : null;
         if (!isMounted) return;
         setCurrentUserProfile(profile);
-        setIsAdmin(Boolean(declaredAdmin));
+        setIsAdmin(Boolean(declaredAdmin || profile?.isAdmin === true));
 
         if (profile?.status === 'deactivated') {
           setAuthError('Your account has been deactivated. Contact support for assistance.');
@@ -1966,7 +1967,7 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     const index = clubs.findIndex((club) => club.id === selectedClubId);
-    if (index >= 0) setSelectedClubCarouselIndex(index);
+    if (index >= 0) setSelectedClubCarouselIndex(index + 1);
   }, [clubs, selectedClubId]);
 
   useEffect(() => {
@@ -3777,35 +3778,32 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const callAdminFunction = async (path, body) => {
+    if (!firebaseUser) throw new Error('Administrator authentication is required.');
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+      },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Administrator action failed.');
+    return payload;
+  };
+
   const handleAdminReviewVerification = async (record, decision) => {
     if (!firebaseUser || !record?.id || !record?.userId) return;
 
     const normalizedDecision = String(decision || '').toLowerCase();
     if (normalizedDecision !== 'verified' && normalizedDecision !== 'rejected') return;
 
-    const requestedTypes = Array.isArray(record.verificationTypes) ? record.verificationTypes : [];
-    const nextSellerStatus =
-      requestedTypes.includes('seller')
-        ? normalizedDecision
-        : (record.sellerStatus || 'not_requested');
-    const overallStatus = nextSellerStatus === 'verified' ? 'verified' : normalizedDecision;
-
     try {
-      await updateDoc(doc(db, 'sellerVerifications', record.id), {
-        status: normalizedDecision,
-        buyerStatus: 'not_requested',
-        sellerStatus: nextSellerStatus,
-        reviewedBy: firebaseUser.uid,
-        reviewerEmail: firebaseUser.email || '',
-        reviewedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      await updateDoc(doc(db, 'users', record.userId), {
-        verificationStatus: overallStatus,
-        sellerVerificationStatus: nextSellerStatus,
-        verificationReviewedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+      await callAdminFunction('/api/admin/approve-seller', {
+        verificationId: record.id,
+        decision: normalizedDecision,
+        reason: `Seller verification ${normalizedDecision}`
       });
     } catch (error) {
       console.error('Failed to review verification request:', error);
@@ -4479,7 +4477,7 @@ export default function CardSwipersLanding() {
   const handleEnterClub = (club) => {
     if (!club?.id) return;
     setSelectedClubId(club.id);
-    setSelectedClubCarouselIndex(filteredClubs.findIndex((entry) => entry.id === club.id));
+    setSelectedClubCarouselIndex(filteredClubs.findIndex((entry) => entry.id === club.id) + 1);
   };
 
   const handleApproveClubJoinRequest = async (request) => {
@@ -5136,11 +5134,10 @@ export default function CardSwipersLanding() {
 
     setAdminActionUserId(userRecord.uid);
     try {
-      await updateDoc(doc(db, 'users', userRecord.uid), {
+      await callAdminFunction('/api/admin/block-user', {
+        userId: userRecord.uid,
         status: nextStatus,
-        blockedAt: nextStatus === 'deactivated' ? serverTimestamp() : null,
-        blockedBy: nextStatus === 'deactivated' ? firebaseUser.uid : null,
-        updatedAt: serverTimestamp()
+        reason: nextStatus === 'deactivated' ? 'Admin account block' : 'Admin account unblock'
       });
     } catch (error) {
       console.error('Failed to update user status:', error);
@@ -5180,11 +5177,10 @@ export default function CardSwipersLanding() {
 
     setAdminActionUserId(report.reportedUserId);
     try {
-      await updateDoc(doc(db, 'users', report.reportedUserId), {
+      await callAdminFunction('/api/admin/block-user', {
+        userId: report.reportedUserId,
         status: 'deactivated',
-        blockedAt: serverTimestamp(),
-        blockedBy: firebaseUser?.uid || null,
-        updatedAt: serverTimestamp()
+        reason: `Chat report ${report.id}`
       });
       await updateDoc(doc(db, 'chatReports', report.id), {
         status: 'actioned',
@@ -5232,8 +5228,11 @@ export default function CardSwipersLanding() {
     if (!confirmed) return;
 
     try {
-      await deleteDoc(doc(db, 'flaggedCards', flagId));
-      await deleteDoc(doc(db, 'cards', cardId));
+      await callAdminFunction('/api/admin/delete-card', {
+        cardId,
+        flagId,
+        reason: `Flagged card report ${flagId}`
+      });
       setFlaggedCards(flaggedCards.filter(f => f.id !== flagId));
     } catch (error) {
       console.error('Failed to delete flagged card:', error);
@@ -7013,44 +7012,48 @@ export default function CardSwipersLanding() {
                   />
                 </div>
 
-                <div className="w-full max-w-[296px] mx-auto flex flex-col items-center gap-2.5">
-                  <div className="rounded-2xl border border-white/10 bg-[#0D1117] overflow-hidden w-full shadow-[0_14px_28px_rgba(0,0,0,0.24)]">
-                    <div className="relative w-full aspect-square bg-[#0A0D13] overflow-hidden">
-                      <img
-                        src={authHeroImage}
-                        alt="Create a club"
-                        className="w-full h-full object-cover opacity-80"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="w-12 h-12 rounded-2xl bg-[#22C55E] flex items-center justify-center shadow-[0_8px_20px_rgba(34,197,94,0.35)] border border-white/10">
-                    <CardClubsIcon />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={openCreateClub}
-                    className="w-full py-2.5 rounded-xl text-sm font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed text-white shadow-[0_6px_18px_rgba(34,197,94,0.35)] transition-colors"
-                  >
-                    Create Club
-                  </button>
-                </div>
-
                 <div
                   ref={clubCarouselRef}
                   onScroll={(event) => {
                     const container = event.currentTarget;
-                    const cardWidth = container.clientWidth * 0.85 + 16;
-                    const nextIndex = cardWidth ? Math.round(container.scrollLeft / cardWidth) : 0;
-                    setSelectedClubCarouselIndex(Math.max(0, Math.min(filteredClubs.length - 1, nextIndex)));
+                    const cardWidth = container.clientWidth * 0.8 + 16;
+                    const nextIndex = cardWidth ? Math.round((container.scrollLeft - 20) / cardWidth) : 0;
+                    setSelectedClubCarouselIndex(Math.max(0, Math.min(filteredClubs.length, nextIndex)));
                   }}
                   className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
-                  {filteredClubs.length === 0 ? (
-                    <p className="w-full shrink-0 snap-center px-1 py-6 text-sm text-white/65">No clubs match your search yet.</p>
-                  ) : (
-                    filteredClubs.map((club) => {
+                  {[
+                    { id: 'create-club', isCreateClub: true },
+                    ...filteredClubs
+                  ].map((club) => {
+                    if (club.isCreateClub) {
+                      return (
+                        <article
+                          key={club.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={openCreateClub}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              openCreateClub();
+                            }
+                          }}
+                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#0D1117] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-emerald-300/60 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+                        >
+                          <div className="relative aspect-square w-full bg-[#0A0D13]">
+                            <img src={authHeroImage} alt="Create a club" className="h-full w-full object-cover opacity-80" />
+                          </div>
+                          <div className="relative flex flex-1 flex-col items-center px-4 pb-5 text-center">
+                            <div className="-mt-6 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-[#22C55E] shadow-[0_8px_20px_rgba(34,197,94,0.35)]">
+                              <CardClubsIcon />
+                            </div>
+                            <h3 className="mt-3 text-lg font-black uppercase tracking-[0.08em] text-white">Create Club</h3>
+                            <p className="mt-2 text-xs leading-relaxed text-white/65">Start a private card-trading community and build your own club.</p>
+                          </div>
+                        </article>
+                      );
+                    }
                       const logoPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === club.logoPresetId);
                       return (
                         <article
@@ -7064,7 +7067,7 @@ export default function CardSwipersLanding() {
                               handleEnterClub(club);
                             }
                           }}
-                          className="flex min-w-[85%] basis-[85%] snap-center flex-col rounded-2xl border border-white/10 bg-[#0D1117] p-4 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                          className="flex min-w-[80%] basis-[80%] snap-center flex-col rounded-2xl border border-white/10 bg-[#0D1117] p-4 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex min-w-0 items-center gap-3">
@@ -7092,19 +7095,22 @@ export default function CardSwipersLanding() {
                           </div>
                         </article>
                       );
-                    })
-                  )}
+                  })}
                 </div>
-                {filteredClubs.length > 0 && (
+                {(
+                  filteredClubs.length > 0 || clubSearchQuery.trim() === ''
+                ) && (
                   <div className="flex items-center justify-center gap-1.5" aria-label="Club carousel pagination">
-                    {filteredClubs.map((club, index) => (
+                    {[{ id: 'create-club', name: 'Create Club' }, ...filteredClubs].map((club, index) => (
                       <button
                         key={club.id}
                         type="button"
                         aria-label={`Show ${club.name || 'club'} ${index + 1}`}
                         onClick={() => {
-                          clubCarouselRef.current?.scrollTo({ left: clubCarouselRef.current.clientWidth * index, behavior: 'smooth' });
-                          setSelectedClubId(club.id);
+                          const cardWidth = clubCarouselRef.current ? clubCarouselRef.current.clientWidth * 0.8 + 16 : 0;
+                          clubCarouselRef.current?.scrollTo({ left: 20 + cardWidth * index, behavior: 'smooth' });
+                          if (club.id === 'create-club') openCreateClub();
+                          else handleEnterClub(club);
                         }}
                         className={`h-2.5 rounded-full transition-all ${selectedClubCarouselIndex === index ? 'w-7 bg-[#FFD700]' : 'w-2.5 bg-white/25'}`}
                       />

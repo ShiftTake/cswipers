@@ -6,8 +6,7 @@ import {
   getDoc,
   getDocs,
   orderBy,
-  query,
-  updateDoc
+  query
 } from 'firebase/firestore';
 import {
   onAuthStateChanged,
@@ -47,7 +46,8 @@ function Login({ onLogin }) {
     try {
       const credential = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
       const profile = (await getDoc(doc(firestore, 'users', credential.user.uid))).data();
-      if (profile?.isAdmin !== true) {
+      const token = await credential.user.getIdTokenResult();
+      if (profile?.isAdmin !== true && token.claims.admin !== true) {
         await signOut(firebaseAuth);
         throw new Error('This account does not have administrator access.');
       }
@@ -96,9 +96,10 @@ function App() {
     const nextOrders = orderSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
     setUsers(nextUsers); setOrders(nextOrders); setDisputes(nextOrders.filter((order) => order.status === 'disputed'));
   };
-  useEffect(() => onAuthStateChanged(firebaseAuth, async (user) => { if (!user) { setLoading(false); return; } const profile = (await getDoc(doc(firestore, 'users', user.uid))).data(); if (profile?.isAdmin === true) { setAdmin(profile); await loadData(); } else await signOut(firebaseAuth); setLoading(false); }), []);
+  useEffect(() => onAuthStateChanged(firebaseAuth, async (user) => { if (!user) { setLoading(false); return; } const profile = (await getDoc(doc(firestore, 'users', user.uid))).data(); const token = await user.getIdTokenResult(); if (profile?.isAdmin === true || token.claims.admin === true) { setAdmin(profile || { uid: user.uid }); await loadData(); } else await signOut(firebaseAuth); setLoading(false); }), []);
   const stats = useMemo(() => { const completed = orders.filter((order) => ['completed', 'released', 'fulfilled'].includes(order.status)); const gmv = completed.reduce((sum, order) => sum + Number(order.total_paid || order.amount_charged || 0) / (order.total_paid ? 100 : 1), 0); const escrow = orders.filter((order) => ['payment_held', 'shipped', 'delivered'].includes(order.status)).reduce((sum, order) => sum + Number(order.amount_base || order.escrowAmount || 0) / (order.amount_base ? 100 : 1), 0); const monthly = Array(12).fill(0); completed.forEach((order) => { const date = toDate(order.created_at || order.createdAt); if (date) monthly[date.getMonth()] += Number(order.total_paid || order.amount_charged || 0) / (order.total_paid ? 100 : 1); }); return { gmv, netRevenue: completed.reduce((sum, order) => sum + Number(order.service_fee || order.marketplaceFeeAmount || 0) / (order.service_fee ? 100 : 1), 0), orders: orders.length, activeUsers: users.filter((user) => user.status !== 'deactivated').length, escrow, monthly }; }, [orders, users]);
-  const toggleUser = async (user) => { await updateDoc(doc(firestore, 'users', user.id), { status: user.status === 'deactivated' ? 'active' : 'deactivated' }); await loadData(); };
+  const callAdminFunction = async (path, body) => { const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await firebaseAuth.currentUser.getIdToken()}` }, body: JSON.stringify(body) }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || 'Administrator action failed.'); return payload; };
+  const toggleUser = async (user) => { await callAdminFunction('/api/admin/block-user', { userId: user.id, status: user.status === 'deactivated' ? 'active' : 'deactivated', reason: user.status === 'deactivated' ? 'Admin account unblock' : 'Admin account block' }); await loadData(); };
   const resolveDispute = async (dispute, action) => { const endpoint = action === 'refund_buyer' ? '/api/admin/disputes/resolve' : '/api/admin/disputes/resolve'; const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await firebaseAuth.currentUser.getIdToken()}` }, body: JSON.stringify({ orderId: dispute.order_id || dispute.id, action }) }); if (!response.ok) throw new Error('Unable to resolve dispute.'); await loadData(); };
   if (loading) return <div className="loading-screen">Loading admin console...</div>;
   if (!admin) return <Login onLogin={setAdmin} />;

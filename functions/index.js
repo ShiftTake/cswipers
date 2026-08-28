@@ -184,19 +184,27 @@ function getAdminEmails() {
 }
 
 function hasAdminRole(decodedToken) {
-  const adminEmails = getAdminEmails();
-  const role = String(decodedToken?.role || '').trim().toLowerCase();
-  const email = String(decodedToken?.email || '').trim().toLowerCase();
-  return role === 'admin' || (email && adminEmails.has(email));
+  return decodedToken?.admin === true;
 }
 
 async function requireAdmin(req) {
   const decodedToken = await requireAuth(req);
-  if (!hasAdminRole(decodedToken)) {
-    throw new Error('Admin access required.');
-  }
+  if (hasAdminRole(decodedToken)) return decodedToken;
 
-  return decodedToken;
+  const profile = await getUserProfile(decodedToken.uid);
+  if (profile?.isAdmin === true) return decodedToken;
+
+  throw new Error('Admin access required.');
+}
+
+async function writeAdminLog(adminUid, actionType, targetId, reason = '') {
+  await getDb().collection('adminLogs').add({
+    adminUid,
+    actionType,
+    targetId,
+    reason: String(reason || '').trim(),
+    timestamp: serverTimestamp()
+  });
 }
 
 async function getUserProfile(userId) {
@@ -1130,6 +1138,107 @@ exports.resolveAdminDispute = onRequest({ secrets: [stripeSecret] }, async (req,
   } catch (error) {
     console.error('resolveAdminDispute failed:', error);
     return sendJson(res, 400, { error: error.message || 'Unable to resolve dispute.' });
+  }
+});
+
+exports.adminBlockUser = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const admin = await requireAdmin(req);
+    const userId = String(req.body?.userId || '').trim();
+    const status = String(req.body?.status || '').trim().toLowerCase();
+    const reason = String(req.body?.reason || '').trim();
+    if (!userId || !['active', 'deactivated'].includes(status)) {
+      return sendJson(res, 400, { error: 'userId and a valid status are required.' });
+    }
+    if (userId === admin.uid) return sendJson(res, 400, { error: 'Administrators cannot change their own status.' });
+
+    await getDb().collection(USERS_COLLECTION).doc(userId).set({
+      status,
+      blockedAt: status === 'deactivated' ? serverTimestamp() : null,
+      blockedBy: status === 'deactivated' ? admin.uid : null,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    await writeAdminLog(admin.uid, 'admin_block_user', userId, reason || `${status} account`);
+    return sendJson(res, 200, { ok: true, userId, status });
+  } catch (error) {
+    console.error('adminBlockUser failed:', error);
+    return sendJson(res, 403, { error: error.message || 'Unable to update account status.' });
+  }
+});
+
+exports.adminApproveSeller = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const admin = await requireAdmin(req);
+    const verificationId = String(req.body?.verificationId || '').trim();
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    const reason = String(req.body?.reason || '').trim();
+    if (!verificationId || !['verified', 'rejected'].includes(decision)) {
+      return sendJson(res, 400, { error: 'verificationId and a valid decision are required.' });
+    }
+
+    const verificationRef = getDb().collection('sellerVerifications').doc(verificationId);
+    const verificationSnapshot = await verificationRef.get();
+    if (!verificationSnapshot.exists) return sendJson(res, 404, { error: 'Verification request not found.' });
+    const verification = verificationSnapshot.data();
+    const userId = String(verification.userId || '').trim();
+    if (!userId) return sendJson(res, 400, { error: 'Verification request has no user ID.' });
+    const requestedTypes = Array.isArray(verification.verificationTypes) ? verification.verificationTypes : [];
+    const sellerStatus = requestedTypes.includes('seller') ? decision : (verification.sellerStatus || 'not_requested');
+    const overallStatus = sellerStatus === 'verified' ? 'verified' : decision;
+
+    await getDb().runTransaction(async (transaction) => {
+      transaction.update(verificationRef, {
+        status: decision,
+        buyerStatus: 'not_requested',
+        sellerStatus,
+        reviewedBy: admin.uid,
+        reviewerEmail: admin.email || '',
+        reviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      transaction.set(getDb().collection(USERS_COLLECTION).doc(userId), {
+        verificationStatus: overallStatus,
+        sellerVerificationStatus: sellerStatus,
+        verificationReviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    });
+    await writeAdminLog(admin.uid, 'admin_approve_seller', verificationId, reason || decision);
+    return sendJson(res, 200, { ok: true, verificationId, userId, decision });
+  } catch (error) {
+    console.error('adminApproveSeller failed:', error);
+    return sendJson(res, 403, { error: error.message || 'Unable to review seller verification.' });
+  }
+});
+
+exports.adminDeleteCard = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const admin = await requireAdmin(req);
+    const cardId = String(req.body?.cardId || '').trim();
+    const flagId = String(req.body?.flagId || '').trim();
+    const reason = String(req.body?.reason || '').trim();
+    if (!cardId) return sendJson(res, 400, { error: 'cardId is required.' });
+
+    const cardRef = getDb().collection('cards').doc(cardId);
+    const flagRef = flagId ? getDb().collection('flaggedCards').doc(flagId) : null;
+    await getDb().runTransaction(async (transaction) => {
+      transaction.delete(cardRef);
+      if (flagRef) transaction.delete(flagRef);
+    });
+    await writeAdminLog(admin.uid, 'admin_delete_card', cardId, reason || (flagId ? `Deleted from flag ${flagId}` : 'Admin moderation'));
+    return sendJson(res, 200, { ok: true, cardId, flagId: flagId || null });
+  } catch (error) {
+    console.error('adminDeleteCard failed:', error);
+    return sendJson(res, 403, { error: error.message || 'Unable to delete card.' });
   }
 });
 
