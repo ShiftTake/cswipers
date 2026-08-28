@@ -27,6 +27,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -944,6 +945,7 @@ export default function CardSwipersLanding() {
   const cardImageTouchStartXRef = useRef(0);
   const [chatDraft, setChatDraft] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
+  const [activeDealOfferId, setActiveDealOfferId] = useState('');
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [walletAddress, setWalletAddress] = useState({ street: '', city: '', state: '', zip: '', country: 'US' });
   const [walletBusy, setWalletBusy] = useState(false);
@@ -1009,6 +1011,10 @@ export default function CardSwipersLanding() {
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
   const clubCarouselRef = useRef(null);
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
+  const [selectedClubJoinRequests, setSelectedClubJoinRequests] = useState([]);
+  const [selectedClubMessages, setSelectedClubMessages] = useState([]);
+  const [clubMessageDraft, setClubMessageDraft] = useState('');
+  const [clubMessageBusy, setClubMessageBusy] = useState(false);
   const [selectedClubEvents, setSelectedClubEvents] = useState([]);
   const [selectedClubPosts, setSelectedClubPosts] = useState([]);
   const [selectedClubReports, setSelectedClubReports] = useState([]);
@@ -1229,6 +1235,7 @@ export default function CardSwipersLanding() {
     setClubModerationBadgeCount(0);
     setSelectedClubId('');
     setSelectedClubMembers([]);
+    setSelectedClubMessages([]);
     setSelectedClubPosts([]);
     setSelectedClubReports([]);
     setSelectedClubBanRecord(null);
@@ -1965,6 +1972,8 @@ export default function CardSwipersLanding() {
   useEffect(() => {
     if (!selectedClubId) {
       setSelectedClubMembers([]);
+      setSelectedClubJoinRequests([]);
+      setSelectedClubMessages([]);
       setSelectedClubEvents([]);
       setSelectedClubPosts([]);
       setSelectedClubReports([]);
@@ -1975,6 +1984,8 @@ export default function CardSwipersLanding() {
     }
 
     const membersRef = collection(doc(db, 'clubs', selectedClubId), 'members');
+    const joinRequestsRef = collection(doc(db, 'clubs', selectedClubId), 'joinRequests');
+    const clubMessagesRef = collection(doc(db, 'clubs', selectedClubId), 'messages');
     const eventsRef = collection(doc(db, 'clubs', selectedClubId), 'events');
     const postsRef = collection(doc(db, 'clubs', selectedClubId), 'posts');
     const reportsRef = collection(doc(db, 'clubs', selectedClubId), 'reports');
@@ -1994,6 +2005,38 @@ export default function CardSwipersLanding() {
         console.error('Failed loading club members:', error);
       }
     );
+
+    let unsubJoinRequests = () => {};
+    if (canModerateClubPosts) {
+      unsubJoinRequests = onSnapshot(
+        query(joinRequestsRef, where('status', '==', 'pending'), orderBy('requestedAt', 'desc'), limit(100)),
+        (snapshot) => {
+          setSelectedClubJoinRequests(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+        },
+        (error) => {
+          console.error('Failed loading club join requests:', error);
+          setSelectedClubJoinRequests([]);
+        }
+      );
+    } else {
+      setSelectedClubJoinRequests([]);
+    }
+
+    let unsubscribeClubMessages = () => {};
+    if (selectedClubMembership || hasAdminAccess) {
+      unsubscribeClubMessages = onSnapshot(
+        query(clubMessagesRef, orderBy('createdAt', 'asc'), limit(200)),
+        (snapshot) => {
+          setSelectedClubMessages(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+        },
+        (error) => {
+          console.error('Failed loading club messages:', error);
+          setSelectedClubMessages([]);
+        }
+      );
+    } else {
+      setSelectedClubMessages([]);
+    }
 
     const unsubPosts = onSnapshot(
       query(postsRef, orderBy('createdAt', 'desc'), limit(200)),
@@ -2040,12 +2083,14 @@ export default function CardSwipersLanding() {
 
     return () => {
       unsubMembers();
+      unsubJoinRequests();
+      unsubscribeClubMessages();
       unsubEvents();
       unsubPosts();
       unsubReports();
       unsubBan();
     };
-  }, [selectedClubId, firebaseUser]);
+  }, [selectedClubId, firebaseUser, canModerateClubPosts, selectedClubMembership?.uid, selectedClubMembership?.status, hasAdminAccess]);
 
   useEffect(() => {
     if (!selectedClubId || !canModerateClubPosts) {
@@ -2416,6 +2461,7 @@ export default function CardSwipersLanding() {
     if (!activeChat?.id) {
       setChatMessages([]);
       setChatOffers([]);
+      setActiveDealOfferId('');
       return;
     }
 
@@ -2426,9 +2472,13 @@ export default function CardSwipersLanding() {
       }).catch(() => {});
     }
 
+    if (!activeDealOfferId) {
+      setChatMessages([]);
+      return;
+    }
+
     const messagesQuery = query(
-      collection(db, 'messages'),
-      where('matchId', '==', activeChat.id),
+      collection(db, 'offers', activeDealOfferId, 'messages'),
       orderBy('createdAt', 'asc'),
       limit(120)
     );
@@ -2444,7 +2494,7 @@ export default function CardSwipersLanding() {
     });
 
     return () => unsubscribe();
-  }, [activeChat, firebaseUser]);
+  }, [activeChat, activeDealOfferId, firebaseUser]);
 
   useEffect(() => {
     if (!activeChat?.id) {
@@ -2467,6 +2517,11 @@ export default function CardSwipersLanding() {
           return aSec - bSec;
         });
       setChatOffers(offers);
+      setActiveDealOfferId((currentOfferId) => (
+        currentOfferId && offers.some((offer) => offer.id === currentOfferId)
+          ? currentOfferId
+          : offers[offers.length - 1]?.id || ''
+      ));
     });
 
     return () => unsubscribe();
@@ -3768,6 +3823,10 @@ export default function CardSwipersLanding() {
       setAuthError('No active chat selected. Please select a match to message.');
       return;
     }
+    if (!activeDealOfferId) {
+      setAuthError('Send or select an offer before starting a deal chat.');
+      return;
+    }
     if (!trimmedMessage) {
       setAuthError('Please enter a message before sending.');
       return;
@@ -3778,8 +3837,8 @@ export default function CardSwipersLanding() {
     }
 
     try {
-      await addDoc(collection(db, 'messages'), {
-        matchId: activeChat.id,
+      await addDoc(collection(db, 'offers', activeDealOfferId, 'messages'), {
+        offerId: activeDealOfferId,
         fromUserId: firebaseUser.uid,
         fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
         text: trimmedMessage,
@@ -3843,7 +3902,7 @@ export default function CardSwipersLanding() {
     setOfferBusy(true);
     setAuthError('');
     try {
-      await addDoc(collection(db, 'offers'), {
+      const offerRef = await addDoc(collection(db, 'offers'), {
         matchId: activeChat.id,
         cardId: activeChat.cardId || null,
         cardTitle: activeChat.cardTitle || '',
@@ -3871,6 +3930,14 @@ export default function CardSwipersLanding() {
       const summaryMessage = offerDealType === 'pure_trade'
         ? 'Trade-only offer sent'
         : `Hybrid offer sent: ${formatMoney(amount)} cash`;
+      await addDoc(collection(db, 'offers', offerRef.id, 'messages'), {
+        offerId: offerRef.id,
+        fromUserId,
+        fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
+        text: `${summaryMessage}.`,
+        createdAt: serverTimestamp()
+      });
+      setActiveDealOfferId(offerRef.id);
       await updateDoc(doc(db, 'matches', activeChat.id), {
         lastMessage: summaryMessage,
         unreadBy: [toUserId],
@@ -4279,6 +4346,7 @@ export default function CardSwipersLanding() {
         accessMode: 'private',
         creditHierarchy: 'owner→agent→member',
         ownerUid: firebaseUser.uid,
+        ownerId: firebaseUser.uid,
         ownerEmail: firebaseUser.email || '',
         ownerName,
         createdAt: serverTimestamp(),
@@ -4389,6 +4457,7 @@ export default function CardSwipersLanding() {
       await addDoc(collection(db, 'clubs', clubDoc.id, 'joinRequests'), {
         userId: firebaseUser.uid,
         userName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        userEmail: firebaseUser.email || '',
         role: 'member',
         status: 'pending',
         requestedAt: serverTimestamp(),
@@ -4404,6 +4473,135 @@ export default function CardSwipersLanding() {
       setClubError('Unable to join that club right now.');
     } finally {
       setClubJoinBusy(false);
+    }
+  };
+
+  const handleEnterClub = (club) => {
+    if (!club?.id) return;
+    setSelectedClubId(club.id);
+    setSelectedClubCarouselIndex(filteredClubs.findIndex((entry) => entry.id === club.id));
+  };
+
+  const handleApproveClubJoinRequest = async (request) => {
+    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || !request?.id || clubActionBusyId) return;
+
+    setClubActionBusyId(`join-approve-${request.id}`);
+    setClubError('');
+    setClubInfo('');
+    try {
+      await runTransaction(db, async (transaction) => {
+        const clubRef = doc(db, 'clubs', selectedClubId);
+        const requestRef = doc(clubRef, 'joinRequests', request.id);
+        const memberRef = doc(clubRef, 'members', request.userId);
+        const [clubSnapshot, requestSnapshot, memberSnapshot] = await Promise.all([
+          transaction.get(clubRef),
+          transaction.get(requestRef),
+          transaction.get(memberRef)
+        ]);
+        if (!clubSnapshot.exists() || !requestSnapshot.exists()) throw new Error('This join request is no longer available.');
+
+        const requestData = requestSnapshot.data();
+        if (requestData.status !== 'pending' || !requestData.userId) throw new Error('This join request is no longer pending.');
+        if (memberSnapshot.exists()) {
+          transaction.delete(requestRef);
+          return;
+        }
+        const clubData = clubSnapshot.data();
+        transaction.set(memberRef, {
+          uid: requestData.userId,
+          displayName: requestData.userName || 'Collector',
+          email: requestData.userEmail || '',
+          role: 'member',
+          joinedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          credits: 0,
+          creditLimit: 0,
+          escrowHeld: 0,
+          status: 'active'
+        }, { merge: true });
+        transaction.update(clubRef, {
+          memberCount: Number(clubData.memberCount || 0) + 1,
+          updatedAt: serverTimestamp()
+        });
+        transaction.delete(requestRef);
+      });
+      setClubInfo(`${request.userName || 'Member'} was approved for the club.`);
+    } catch (error) {
+      console.error('Failed approving club join request:', error);
+      setClubError(error.message || 'Could not approve that join request.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleRejectClubJoinRequest = async (request) => {
+    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || !request?.id || clubActionBusyId) return;
+
+    setClubActionBusyId(`join-reject-${request.id}`);
+    setClubError('');
+    setClubInfo('');
+    try {
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'joinRequests', request.id));
+      setClubInfo('Join request rejected.');
+    } catch (error) {
+      console.error('Failed rejecting club join request:', error);
+      setClubError(error.message || 'Could not reject that join request.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleLeaveClub = async () => {
+    if (!firebaseUser || !selectedClubId || !selectedClubMembership || selectedClubRole === 'owner' || clubActionBusyId) return;
+
+    setClubActionBusyId('leave-club');
+    setClubError('');
+    setClubInfo('');
+    try {
+      const response = await fetch('/api/clubs/leave', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({ clubId: selectedClubId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Could not leave this club.');
+      setSelectedClubId('');
+      setClubInfo('You left the club.');
+    } catch (error) {
+      console.error('Failed leaving club:', error);
+      setClubError(error.message || 'Could not leave this club.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleSendClubMessage = async () => {
+    const text = clubMessageDraft.trim();
+    if (!firebaseUser || !selectedClubId || !selectedClubMembership || isSelectedClubBanned || clubMessageBusy) return;
+    if (!text || text.length > 1000) {
+      setClubError(text ? 'Club messages are limited to 1,000 characters.' : 'Enter a message before sending.');
+      return;
+    }
+
+    setClubMessageBusy(true);
+    setClubError('');
+    try {
+      await addDoc(collection(db, 'clubs', selectedClubId, 'messages'), {
+        clubId: selectedClubId,
+        fromUserId: firebaseUser.uid,
+        fromUserName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        text,
+        createdAt: serverTimestamp()
+      });
+      setClubMessageDraft('');
+    } catch (error) {
+      console.error('Failed sending club message:', error);
+      setClubError('Could not send the club message right now.');
+    } finally {
+      setClubMessageBusy(false);
     }
   };
 
@@ -6843,11 +7041,11 @@ export default function CardSwipersLanding() {
                   ref={clubCarouselRef}
                   onScroll={(event) => {
                     const container = event.currentTarget;
-                    const cardWidth = container.clientWidth;
+                    const cardWidth = container.clientWidth * 0.85 + 16;
                     const nextIndex = cardWidth ? Math.round(container.scrollLeft / cardWidth) : 0;
                     setSelectedClubCarouselIndex(Math.max(0, Math.min(filteredClubs.length - 1, nextIndex)));
                   }}
-                  className="flex w-full snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {filteredClubs.length === 0 ? (
                     <p className="w-full shrink-0 snap-center px-1 py-6 text-sm text-white/65">No clubs match your search yet.</p>
@@ -6857,7 +7055,16 @@ export default function CardSwipersLanding() {
                       return (
                         <article
                           key={club.id}
-                          className="w-full min-w-full snap-center rounded-2xl border border-white/10 bg-[#0D1117] p-4 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)]"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleEnterClub(club)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              handleEnterClub(club);
+                            }
+                          }}
+                          className="flex min-w-[85%] basis-[85%] snap-center flex-col rounded-2xl border border-white/10 bg-[#0D1117] p-4 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex min-w-0 items-center gap-3">
@@ -6883,7 +7090,6 @@ export default function CardSwipersLanding() {
                               <p className="mt-1 text-xl font-bold capitalize text-white">{club.role || 'Member'}</p>
                             </div>
                           </div>
-                          <button type="button" onClick={() => setSelectedClubId(club.id)} className="mt-4 min-h-11 w-full rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Enter Club</button>
                         </article>
                       );
                     })
@@ -6918,7 +7124,59 @@ export default function CardSwipersLanding() {
                         </div>
                         <span className="px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.15em] border border-white/20 bg-white/10">Code {selectedClub.code || '------'}</span>
                       </div>
+                      {selectedClubRole && selectedClubRole !== 'owner' && (
+                        <button
+                          type="button"
+                          onClick={handleLeaveClub}
+                          disabled={clubActionBusyId === 'leave-club'}
+                          className="mt-3 rounded-lg border border-red-300/30 bg-red-900/35 px-3 py-2 text-xs font-semibold text-red-100 hover:bg-red-900/55 disabled:opacity-60"
+                        >
+                          {clubActionBusyId === 'leave-club' ? 'Leaving...' : 'Leave Club'}
+                        </button>
+                      )}
                     </div>
+
+                    <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Club Chat</p>
+                          <p className="mt-1 text-xs text-white/60">Conversation shared by active club members.</p>
+                        </div>
+                        <span className="text-[11px] text-white/50">{selectedClubMessages.length} messages</span>
+                      </div>
+                      <div className="mt-3 max-h-48 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/25 p-2">
+                        {selectedClubMessages.length === 0 ? (
+                          <p className="px-2 py-3 text-xs text-white/60">No club messages yet.</p>
+                        ) : selectedClubMessages.map((message) => (
+                          <div key={message.id} className={`max-w-[85%] rounded-xl px-3 py-2 text-xs ${message.fromUserId === firebaseUser?.uid ? 'ml-auto bg-[#E11D48]/25 text-white' : 'bg-white/[0.06] text-white/85'}`}>
+                            <p className="text-[10px] font-semibold text-white/55">{message.fromUserName || 'Member'}</p>
+                            <p className="mt-0.5">{message.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          type="text"
+                          value={clubMessageDraft}
+                          maxLength={1000}
+                          onChange={(event) => setClubMessageDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') handleSendClubMessage();
+                          }}
+                          placeholder={selectedClubMembership ? 'Message the club' : 'Join the club to chat'}
+                          disabled={!selectedClubMembership || isSelectedClubBanned || clubMessageBusy}
+                          className="min-h-11 flex-1 rounded-xl border border-white/15 bg-black/20 px-3 text-base text-white focus:outline-none focus:border-white/35 disabled:opacity-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSendClubMessage}
+                          disabled={!selectedClubMembership || isSelectedClubBanned || clubMessageBusy || !clubMessageDraft.trim()}
+                          className="min-h-11 rounded-xl bg-[#E11D48] px-3 text-xs font-bold hover:bg-[#BE123C] disabled:opacity-50"
+                        >
+                          {clubMessageBusy ? 'Sending...' : 'Send'}
+                        </button>
+                      </div>
+                    </section>
 
                     <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -7177,8 +7435,36 @@ export default function CardSwipersLanding() {
                           <span className="text-[11px] text-white/65">Open: {openSelectedClubReports.length}</span>
                         </div>
                         <div className="mt-2 space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {selectedClubJoinRequests.map((request) => (
+                            <div key={request.id} className="rounded-xl border border-amber-300/20 bg-amber-500/[0.06] px-3 py-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-semibold">Join Request: {request.userName || request.userEmail || request.userId}</p>
+                                  <p className="text-[11px] text-white/55">{request.userEmail || request.userId}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveClubJoinRequest(request)}
+                                    disabled={Boolean(clubActionBusyId)}
+                                    className="rounded-lg bg-emerald-500/80 px-2.5 py-1 text-[11px] font-bold text-black hover:bg-emerald-400 disabled:opacity-60"
+                                  >
+                                    {clubActionBusyId === `join-approve-${request.id}` ? 'Approving...' : 'Approve'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRejectClubJoinRequest(request)}
+                                    disabled={Boolean(clubActionBusyId)}
+                                    className="rounded-lg bg-red-900/45 px-2.5 py-1 text-[11px] font-semibold text-red-100 hover:bg-red-900/65 disabled:opacity-60"
+                                  >
+                                    {clubActionBusyId === `join-reject-${request.id}` ? 'Rejecting...' : 'Reject'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                           {openSelectedClubReports.length === 0 ? (
-                            <p className="text-xs text-white/60">No open reports in this club.</p>
+                            selectedClubJoinRequests.length === 0 && <p className="text-xs text-white/60">No open reports or pending join requests.</p>
                           ) : (
                             openSelectedClubReports.map((report) => (
                               <div key={report.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 space-y-2">
@@ -7781,7 +8067,16 @@ export default function CardSwipersLanding() {
                         return (
                           <div
                             key={offer.id}
-                            className={`rounded-xl border px-3 py-2 text-xs ${fromSelf ? 'bg-[#E50914]/20 border-[#E50914]/40' : 'bg-black/25 border-white/15'}`}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setActiveDealOfferId(offer.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setActiveDealOfferId(offer.id);
+                              }
+                            }}
+                            className={`rounded-xl border px-3 py-2 text-xs transition-colors ${activeDealOfferId === offer.id ? 'border-[#FFD700]/70 ring-1 ring-[#FFD700]/40' : 'border-white/15'} ${fromSelf ? 'bg-[#E50914]/20' : 'bg-black/25'}`}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <p className="font-semibold">

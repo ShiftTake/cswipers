@@ -1285,6 +1285,53 @@ exports.registerTradeNight = onRequest(async (req, res) => {
   }
 });
 
+exports.leaveClub = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    if (!clubId) throw new Error('clubId is required.');
+
+    await getDb().runTransaction(async (transaction) => {
+      const clubRef = getDb().collection('clubs').doc(clubId);
+      const memberRef = clubRef.collection('members').doc(user.uid);
+      const [clubSnapshot, memberSnapshot] = await Promise.all([
+        transaction.get(clubRef),
+        transaction.get(memberRef)
+      ]);
+      if (!clubSnapshot.exists || !memberSnapshot.exists) throw new Error('Club membership was not found.');
+
+      const member = memberSnapshot.data();
+      if (String(member.role || '').toLowerCase() === 'owner') {
+        throw new Error('The club owner cannot leave the club. Transfer ownership or delete the club instead.');
+      }
+      if (Number(member.escrowHeld || 0) > 0) {
+        throw new Error('You cannot leave while credits are held in trade-night escrow.');
+      }
+
+      const club = clubSnapshot.data();
+      const ledger = club.creditLedger || {};
+      const memberBalances = { ...(ledger.memberBalances || {}) };
+      delete memberBalances[user.uid];
+      transaction.delete(memberRef);
+      transaction.update(clubRef, {
+        memberCount: Math.max(0, Number(club.memberCount || 0) - 1),
+        creditLedger: { ...ledger, memberBalances },
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    return sendJson(res, 200, { ok: true, clubId });
+  } catch (error) {
+    console.error('leaveClub failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Could not leave the club.' });
+  }
+});
+
 exports.autoRefundUnshippedOrders = onSchedule({ schedule: 'every 15 minutes', secrets: [stripeSecret] }, async () => {
   const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 5 * 24 * 60 * 60 * 1000);
   const snapshot = await db.collection(ORDERS_COLLECTION).where('status', '==', 'payment_held').limit(200).get();

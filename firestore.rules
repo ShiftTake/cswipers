@@ -104,6 +104,21 @@ service cloud.firestore {
         resource.data.toUserId == request.auth.uid
       ));
       allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAdmin() || (signedIn() && (
+          get(/databases/$(database)/documents/offers/$(offerId)).data.buyerUid == request.auth.uid ||
+          get(/databases/$(database)/documents/offers/$(offerId)).data.sellerUid == request.auth.uid
+        ));
+        allow create: if signedIn() &&
+          request.resource.data.fromUserId == request.auth.uid &&
+          request.resource.data.text.size() <= 1000 &&
+          (
+            get(/databases/$(database)/documents/offers/$(offerId)).data.buyerUid == request.auth.uid ||
+            get(/databases/$(database)/documents/offers/$(offerId)).data.sellerUid == request.auth.uid
+          );
+        allow update, delete: if false;
+      }
     }
 
     match /reviews/{reviewId} {
@@ -169,7 +184,35 @@ service cloud.firestore {
     match /clubs/{clubId} {
       allow read: if isAdmin() || (signedIn() && !isClubBanned(clubId));
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update, delete: if isAdmin() || isClubOwner(clubId);
+      allow update: if isAdmin() || (
+        isClubOwner(clubId) &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null)
+      );
+      allow delete: if isAdmin() || isClubOwner(clubId);
+
+      match /joinRequests/{requestId} {
+        allow create: if signedIn() &&
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.status == 'pending';
+        allow read, update, delete: if isAdmin() || isClubModerator(clubId);
+      }
+
+      match /messages/{messageId} {
+        allow read: if isAdmin() || (
+          signedIn() &&
+          exists(clubMemberPath(clubId, request.auth.uid)) &&
+          get(clubMemberPath(clubId, request.auth.uid)).data.status == 'active' &&
+          !isClubBanned(clubId)
+        );
+        allow create: if signedIn() &&
+          exists(clubMemberPath(clubId, request.auth.uid)) &&
+          get(clubMemberPath(clubId, request.auth.uid)).data.status == 'active' &&
+          !isClubBanned(clubId) &&
+          request.resource.data.fromUserId == request.auth.uid &&
+          request.resource.data.text.size() <= 1000;
+        allow update, delete: if false;
+      }
 
       match /members/{memberId} {
         allow read: if isAdmin() || (signedIn() && !isClubBanned(clubId));
@@ -178,6 +221,10 @@ service cloud.firestore {
           memberId == request.auth.uid &&
           !isClubBanned(clubId) &&
           request.resource.data.uid == request.auth.uid
+        ) || (
+          isClubModerator(clubId) &&
+          request.resource.data.uid == memberId &&
+          request.resource.data.role == 'member'
         );
         allow update: if isAdmin() || isClubOwner(clubId);
         allow delete: if isAdmin() || isClubModerator(clubId) || (signedIn() && memberId == request.auth.uid);

@@ -55,6 +55,10 @@
         "function": "registerTradeNight"
       },
       {
+        "source": "/api/clubs/leave",
+        "function": "leaveClub"
+      },
+      {
         "source": "/release-seller-funds",
         "function": "releaseSellerFunds"
       },
