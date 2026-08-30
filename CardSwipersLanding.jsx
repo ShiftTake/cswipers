@@ -5740,7 +5740,7 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-24 md:pb-28' : ''}`}`}
+        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-28 md:pb-32' : 'pb-24 md:pb-28'}`}`}
       >
         <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full max-w-full flex flex-col min-h-0 overflow-x-hidden`}>
         {currentTab === 'landing' && (
@@ -7029,7 +7029,7 @@ export default function CardSwipersLanding() {
                 event.preventDefault();
                 handleCreateClub();
               }}
-              className="mx-auto flex max-h-[80vh] min-h-full w-full max-w-2xl flex-col overflow-y-auto px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
+              className="mx-auto flex max-h-[80vh] min-h-full w-full max-w-2xl flex-col overflow-y-auto px-5 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
             >
               <div className="relative flex items-center justify-center">
                 <button
@@ -7073,7 +7073,7 @@ export default function CardSwipersLanding() {
                   onChange={handleClubLogoFileChange}
                   className="hidden"
                 />
-                <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1 sm:mt-5">
+                <div className="mt-4 max-h-[60vh] overflow-y-auto pb-24 pr-1 sm:mt-5">
                   <div className="grid grid-cols-3 gap-3 sm:gap-5">
                     <button
                       type="button"
@@ -7156,13 +7156,13 @@ export default function CardSwipersLanding() {
                     const container = event.currentTarget;
                     const cardWidth = container.clientWidth * 0.8 + 16;
                     const nextIndex = cardWidth ? Math.round((container.scrollLeft - 20) / cardWidth) : 0;
-                    setSelectedClubCarouselIndex(Math.max(0, Math.min(filteredClubs.length, nextIndex)));
+                    setSelectedClubCarouselIndex(Math.max(0, Math.min(Math.max(filteredClubs.length, 0), nextIndex)));
                   }}
                   className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {[
                     { id: 'create-club', isCreateClub: true },
-                    ...filteredClubs
+                    ...(filteredClubs || [])
                   ].map((club) => {
                     if (club.isCreateClub) {
                       return (
@@ -7244,10 +7244,10 @@ export default function CardSwipersLanding() {
                   })}
                 </div>
                 {(
-                  filteredClubs.length > 0 || clubSearchQuery.trim() === ''
+                  (filteredClubs && filteredClubs.length > 0) || clubSearchQuery.trim() === ''
                 ) && (
                   <div className="flex items-center justify-center gap-1.5" aria-label="Club carousel pagination">
-                    {[{ id: 'create-club', name: 'Create Club' }, ...filteredClubs].map((club, index) => (
+                    {[{ id: 'create-club', name: 'Create Club' }, ...(filteredClubs || [])].map((club, index) => (
                       <button
                         key={club.id}
                         type="button"
@@ -7695,7 +7695,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'collection' && (
-          <div className="min-h-0 space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pr-1">
+          <div className="min-h-0 space-y-3 py-1.5 max-w-4xl mx-auto w-full flex flex-col overflow-y-auto overscroll-y-contain pb-24 md:pb-28 pr-1">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg sm:text-2xl font-black">My Trading Binder</h2>
@@ -7766,7 +7766,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'wallet' && (
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-32 pr-1">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-40 md:pb-44 pr-1">
             <div className="mx-auto w-full max-w-4xl space-y-4 py-2">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -7923,7 +7923,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'messages' && (
-          <div className="space-y-3 py-1.5 min-h-0 flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pr-1">
+          <div className="space-y-3 py-1.5 min-h-0 flex flex-col max-w-3xl mx-auto w-full overflow-y-auto overscroll-y-contain pb-24 md:pb-28 pr-1">
             {!activeChat ? (
               <div className="space-y-3">
                 <div>
