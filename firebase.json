@@ -19,6 +19,10 @@
         "destination": "/terms.html"
       },
       {
+        "source": "/terms-of-service",
+        "destination": "/terms.html"
+      },
+      {
         "source": "/admin",
         "destination": "/admin.html"
       },

@@ -1,51 +1,45 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>CardSwipers Terms of Service & EULA</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
-      rel="stylesheet"
-    />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      html, body {
-        width: 100%;
-        min-height: 100%;
-        margin: 0;
-        padding: 0;
-        background-color: #0B0E14;
-      }
-    </style>
-  </head>
-  <body class="bg-[#0B0E14] text-white antialiased" style="font-family: Inter, sans-serif;">
-    <main class="max-w-4xl mx-auto px-5 py-12 sm:py-16 space-y-8">
-      <header class="border-b border-white/10 pb-6 space-y-2">
-        <p class="text-xs uppercase tracking-[0.25em] text-[#FFD700] font-bold">CardSwipers Legal & Compliance</p>
-        <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-white">Terms of Service & EULA</h1>
-        <p class="text-sm text-white/60">Version 1.2 · Effective August 2026</p>
+import React from 'react';
+
+export default function TermsOfService({ onClose, isModal = false }) {
+  const content = (
+    <div className="space-y-6 text-white text-left">
+      <header className="border-b border-white/10 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[#FFD700] font-bold">CardSwipers Legal & Compliance</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">Terms of Service & EULA</h1>
+            <p className="text-xs text-white/60 mt-0.5">Version 1.2 · Effective August 2026</p>
+          </div>
+          {isModal && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/80 hover:text-white transition-colors"
+              aria-label="Close Terms of Service"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </header>
 
-      <section class="space-y-3 rounded-3xl border border-white/10 bg-[#161B22]/80 p-6 sm:p-7 shadow-lg">
-        <h2 class="text-xl font-bold text-[#FFE66D] flex items-center gap-2">
+      <section className="space-y-3 rounded-2xl border border-white/10 bg-[#161B22]/70 p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#FFE66D] flex items-center gap-2">
           <span>1.</span> Acceptance & Platform Overview
         </h2>
-        <p class="text-sm leading-7 text-white/80">
+        <p className="text-xs sm:text-sm leading-relaxed text-white/80">
           Welcome to <strong>CardSwipers</strong>. By creating an account, downloading the mobile application from the Apple App Store or Google Play Store, or accessing our web platform, you agree to be bound by these Terms of Service, our Privacy Policy, and any community guidelines incorporated herein. If you do not agree to all terms, do not access or use the application.
         </p>
-        <p class="text-sm leading-7 text-white/80">
+        <p className="text-xs sm:text-sm leading-relaxed text-white/80">
           CardSwipers is a peer-to-peer card trading, social discovery, and collector community platform. CardSwipers provides software and facilitation tools—including swipe-based discovery, private messaging, Card Clubs, and escrow-backed checkout—to enable collectors to discover, negotiate, and execute card trades and sales.
         </p>
       </section>
 
-      <section class="space-y-3 rounded-3xl border border-white/10 bg-[#161B22]/80 p-6 sm:p-7 shadow-lg">
-        <h2 class="text-xl font-bold text-[#FFE66D] flex items-center gap-2">
+      <section className="space-y-3 rounded-2xl border border-white/10 bg-[#161B22]/70 p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#FFE66D] flex items-center gap-2">
           <span>2.</span> Escrow System & Marketplace Rules
         </h2>
-        <div class="space-y-3 text-sm leading-7 text-white/80">
+        <div className="space-y-2 text-xs sm:text-sm leading-relaxed text-white/80">
           <p>
             <strong>2.1 Payment Flow:</strong> CardSwipers utilizes Stripe Connect Separate Charges and Transfers to process payments and hold transaction funds on behalf of buyers and sellers during shipment and inspection. CardSwipers is not a bank, depository institution, or licensed escrow company; all payment facilitation is automated via integrated payment processors.
           </p>
@@ -61,11 +55,11 @@
         </div>
       </section>
 
-      <section class="space-y-3 rounded-3xl border border-white/10 bg-[#161B22]/80 p-6 sm:p-7 shadow-lg">
-        <h2 class="text-xl font-bold text-[#FFE66D] flex items-center gap-2">
+      <section className="space-y-3 rounded-2xl border border-white/10 bg-[#161B22]/70 p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#FFE66D] flex items-center gap-2">
           <span>3.</span> Disputes, Authenticity & Card Verification
         </h2>
-        <div class="space-y-3 text-sm leading-7 text-white/80">
+        <div className="space-y-2 text-xs sm:text-sm leading-relaxed text-white/80">
           <p>
             <strong>3.1 Dispute Categories:</strong> Disputes may only be raised for: (a) Item Not Received (tracking missing or invalid destination); (b) Significant Misrepresentation of condition (severe flaws omitted from listing); or (c) Counterfeit or Altered card without disclosure.
           </p>
@@ -78,13 +72,13 @@
         </div>
       </section>
 
-      <section class="space-y-3 rounded-3xl border border-white/10 bg-[#161B22]/80 p-6 sm:p-7 shadow-lg">
-        <h2 class="text-xl font-bold text-[#FFE66D] flex items-center gap-2">
+      <section className="space-y-3 rounded-2xl border border-white/10 bg-[#161B22]/70 p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#FFE66D] flex items-center gap-2">
           <span>4.</span> User-Generated Content & Prohibited Conduct
         </h2>
-        <div class="space-y-3 text-sm leading-7 text-white/80">
+        <div className="space-y-2 text-xs sm:text-sm leading-relaxed text-white/80">
           <p>Users are solely responsible for all listings, images, chat messages, and club posts. You strictly agree NOT to:</p>
-          <ul class="list-disc pl-5 space-y-1.5 text-white/75">
+          <ul className="list-disc pl-5 space-y-1 text-white/75">
             <li>List counterfeit, reprinted, forged, trimmed, re-colored, or altered cards without clear and conspicuous disclosure;</li>
             <li>Submit fraudulent tracking numbers or manipulate carrier delivery scans;</li>
             <li>Harass, intimidate, defame, impersonate, or abuse other collectors or administrators;</li>
@@ -95,11 +89,11 @@
         </div>
       </section>
 
-      <section class="space-y-3 rounded-3xl border border-white/10 bg-[#161B22]/80 p-6 sm:p-7 shadow-lg">
-        <h2 class="text-xl font-bold text-[#FFE66D] flex items-center gap-2">
+      <section className="space-y-3 rounded-2xl border border-white/10 bg-[#161B22]/70 p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#FFE66D] flex items-center gap-2">
           <span>5.</span> Account Termination & Apple Guideline 5.1.1(v) Deletion
         </h2>
-        <div class="space-y-3 text-sm leading-7 text-white/80">
+        <div className="space-y-2 text-xs sm:text-sm leading-relaxed text-white/80">
           <p>
             <strong>5.1 Self-Service Account Deletion:</strong> In compliance with Apple App Store Review Guideline 5.1.1(v) and global data privacy standards (GDPR, CCPA), users may permanently delete their account at any time directly within the application via <em>Settings → Delete Account Permanently</em>.
           </p>
@@ -112,11 +106,11 @@
         </div>
       </section>
 
-      <section class="space-y-3 rounded-3xl border border-white/10 bg-[#161B22]/80 p-6 sm:p-7 shadow-lg">
-        <h2 class="text-xl font-bold text-[#FFE66D] flex items-center gap-2">
+      <section className="space-y-3 rounded-2xl border border-white/10 bg-[#161B22]/70 p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#FFE66D] flex items-center gap-2">
           <span>6.</span> Apple App Store & Google Play Standard EULA
         </h2>
-        <div class="space-y-3 text-sm leading-7 text-white/80">
+        <div className="space-y-2 text-xs sm:text-sm leading-relaxed text-white/80">
           <p>
             <strong>6.1 Scope of License:</strong> CardSwipers grants you a revocable, non-exclusive, non-transferable license to use the CardSwipers app on Apple-branded or Android products that you own or control, as permitted by the Usage Rules set forth in the Apple Media Services Terms and Conditions and Google Play Terms of Service.
           </p>
@@ -132,11 +126,11 @@
         </div>
       </section>
 
-      <section class="space-y-3 rounded-3xl border border-white/10 bg-[#161B22]/80 p-6 sm:p-7 shadow-lg">
-        <h2 class="text-xl font-bold text-[#FFE66D] flex items-center gap-2">
+      <section className="space-y-3 rounded-2xl border border-white/10 bg-[#161B22]/70 p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#FFE66D] flex items-center gap-2">
           <span>7.</span> Disclaimers, Limitation of Liability & Arbitration
         </h2>
-        <div class="space-y-3 text-sm leading-7 text-white/80">
+        <div className="space-y-2 text-xs sm:text-sm leading-relaxed text-white/80">
           <p>
             <strong>7.1 As-Is Disclaimers:</strong> CardSwipers is provided on an &quot;AS IS&quot; and &quot;AS AVAILABLE&quot; basis without warranties of any kind. CardSwipers does not guarantee card market value stability, liquidity, or condition accuracy.
           </p>
@@ -149,10 +143,35 @@
         </div>
       </section>
 
-      <footer class="border-t border-white/10 pt-6 text-center text-xs text-white/50 space-y-1">
+      <footer className="border-t border-white/10 pt-4 text-center text-xs text-white/50 space-y-1">
         <p>CardSwipers Inc. · All rights reserved.</p>
-        <p>Questions or legal inquiries: <a href="mailto:help@cardswipers.com" class="text-[#FFD700] underline hover:text-[#FFE66D]">help@cardswipers.com</a></p>
+        <p>Questions or legal inquiries: <a href="mailto:help@cardswipers.com" className="text-[#FFD700] underline">help@cardswipers.com</a></p>
       </footer>
+    </div>
+  );
+
+  if (isModal) {
+    return (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-3 sm:p-5 overflow-y-auto" role="dialog" aria-modal="true">
+        <div className="relative w-full max-w-3xl max-h-[88vh] overflow-y-auto rounded-3xl border border-[#30363D] bg-[#0D1117] p-5 sm:p-8 shadow-2xl [scrollbar-width:thin]">
+          {content}
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-11 rounded-xl bg-[#FFD700] px-6 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] transition-colors"
+            >
+              I Understand & Agree
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="max-w-4xl mx-auto px-4 py-10 sm:py-16">
+      {content}
     </main>
-  </body>
-</html>
+  );
+}
