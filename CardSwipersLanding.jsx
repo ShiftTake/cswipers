@@ -7132,7 +7132,7 @@ export default function CardSwipersLanding() {
         {currentTab === 'onboarding' && (
           <div className="max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
             <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1">
-              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-between">
+              <section className={`rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-center ${!selectedClub ? 'xl:col-span-2 mx-auto w-full max-w-xl' : ''}`}>
                 {/* Search Club bar — full-width pill with magnifying glass */}
                 <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
@@ -7265,9 +7265,9 @@ export default function CardSwipersLanding() {
                 )}
               </section>
 
+              {selectedClub && (
               <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
-                {selectedClub ? (
-                  <>
+                <>
                     <div className="rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
@@ -7681,15 +7681,8 @@ export default function CardSwipersLanding() {
                       </div>
                     )}
                   </>
-                ) : (
-                  <div className="h-full min-h-0 flex items-center justify-center text-center">
-                    <div>
-                      <p className="text-lg font-bold">No club selected</p>
-                      <p className="text-sm text-white/60 mt-1">Create a club or pick one from the list.</p>
-                    </div>
-                  </div>
-                )}
               </section>
+              )}
             </div>
           </div>
         )}
