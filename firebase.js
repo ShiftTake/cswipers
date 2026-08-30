@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAnalytics, isSupported } from 'firebase/analytics';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { Capacitor } from '@capacitor/core';
 import { initializeFirestore, memoryLocalCache, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
 import { browserLocalPersistence, getAuth, indexedDBLocalPersistence, initializeAuth, setPersistence } from 'firebase/auth';
@@ -17,6 +18,35 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const isNativeApp = Capacitor.isNativePlatform();
+
+let appCheck = null;
+
+if (typeof window !== 'undefined') {
+  const appCheckDebugToken =
+    import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN ||
+    (import.meta.env.DEV ? true : undefined);
+
+  if (appCheckDebugToken) {
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = appCheckDebugToken;
+  }
+
+  const recaptchaEnterpriseKey =
+    import.meta.env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY ||
+    import.meta.env.VITE_RECAPTCHA_SITE_KEY ||
+    (typeof window !== 'undefined' ? window.__CARDSWIPERS_RECAPTCHA_KEY__ : '') ||
+    '';
+
+  if (recaptchaEnterpriseKey) {
+    try {
+      appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(recaptchaEnterpriseKey),
+        isTokenAutoRefreshEnabled: true
+      });
+    } catch (appCheckError) {
+      console.warn('Firebase App Check initialization failed:', appCheckError);
+    }
+  }
+}
 
 const db = initializeFirestore(
   app,
@@ -70,4 +100,4 @@ if (typeof window !== 'undefined') {
     });
 }
 
-export { app, analytics, db, auth, storage };
+export { app, appCheck, analytics, db, auth, storage };

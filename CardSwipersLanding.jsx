@@ -1059,6 +1059,7 @@ export default function CardSwipersLanding() {
   const [verificationError, setVerificationError] = useState('');
   const [verificationInfo, setVerificationInfo] = useState('');
   const [verificationSessionBusy, setVerificationSessionBusy] = useState(false);
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [showDiscoverFilters, setShowDiscoverFilters] = useState(false);
   const [discoverFilters, setDiscoverFilters] = useState({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' });
   const verificationDocInputRef = useRef(null);
@@ -3778,6 +3779,42 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    if (!firebaseUser || deleteAccountBusy) return;
+
+    const confirmed = await requestConfirmation(
+      'Delete Account',
+      'Are you sure you want to permanently delete your CardSwipers account and all associated binder listings? This action is immediate and cannot be undone (Apple Guideline 5.1.1(v)).',
+      'Delete Account'
+    );
+    if (!confirmed) return;
+
+    setDeleteAccountBusy(true);
+    setAuthError('');
+    try {
+      const response = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to delete account.');
+      }
+      await signOut(auth);
+      setCurrentTab(isNativeApp ? 'auth' : 'landing');
+      setAccountMenuOpen(false);
+      setAuthInfo('Your account and all associated data have been permanently deleted.');
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+      setAuthError(error.message || 'Unable to delete account right now.');
+    } finally {
+      setDeleteAccountBusy(false);
+    }
+  };
+
   const callAdminFunction = async (path, body) => {
     if (!firebaseUser) throw new Error('Administrator authentication is required.');
     const response = await fetch(path, {
@@ -4469,6 +4506,88 @@ export default function CardSwipersLanding() {
     } catch (error) {
       console.error('Failed joining club:', error);
       setClubError('Unable to join that club right now.');
+    } finally {
+      setClubJoinBusy(false);
+    }
+  };
+
+  const handleJoinSpecificClub = async (clubTarget) => {
+    const target = clubTarget || selectedClub;
+    if (!firebaseUser || !target?.id || clubJoinBusy) return;
+
+    const clubAccessMode = getClubAccessMode(target);
+    if (clubAccessMode === 'public') {
+      setClubJoinBusy(true);
+      setClubError('');
+      setClubInfo('');
+      try {
+        const banSnapshot = await getDoc(doc(db, 'clubs', target.id, 'bans', firebaseUser.uid));
+        if (banSnapshot.exists()) {
+          setClubError('You have been blocked from this club by its moderators.');
+          return;
+        }
+        const memberProfile = {
+          uid: firebaseUser.uid,
+          displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+          email: firebaseUser.email || '',
+          role: 'member',
+          joinedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          credits: 0,
+          creditLimit: 0,
+          escrowHeld: 0,
+          status: 'active'
+        };
+        await setDoc(doc(db, 'clubs', target.id, 'members', firebaseUser.uid), memberProfile, { merge: true });
+        setSelectedClubId(target.id);
+        setClubInfo(`Joined ${target.name || 'club'}. Welcome!`);
+      } catch (err) {
+        console.error('Failed joining club directly:', err);
+        setClubError('Could not join this club right now.');
+      } finally {
+        setClubJoinBusy(false);
+      }
+      return;
+    }
+
+    const enteredCode = window.prompt(`Enter access code for ${target.name || 'this club'}:`, '');
+    if (enteredCode === null) return;
+    const normalized = enteredCode.trim().toUpperCase();
+    if (!normalized) {
+      setClubError('A valid club access code is required.');
+      return;
+    }
+    setClubJoinCode(normalized);
+    setClubJoinBusy(true);
+    setClubError('');
+    setClubInfo('');
+    try {
+      const clubSnapshot = await getDocs(query(collection(db, 'clubs'), where('code', '==', normalized), limit(1)));
+      if (clubSnapshot.empty || clubSnapshot.docs[0].id !== target.id) {
+        setClubError('The entered code does not match this club.');
+        return;
+      }
+      const clubDoc = clubSnapshot.docs[0];
+      const banSnapshot = await getDoc(doc(clubDoc.ref, 'bans', firebaseUser.uid));
+      if (banSnapshot.exists()) {
+        setClubError('You have been blocked from this club by its moderators.');
+        return;
+      }
+      await addDoc(collection(db, 'clubs', target.id, 'joinRequests'), {
+        userId: firebaseUser.uid,
+        userName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        userEmail: firebaseUser.email || '',
+        role: 'member',
+        status: 'pending',
+        requestedAt: serverTimestamp(),
+        creditRequest: 0,
+        requestType: 'member-join'
+      });
+      setSelectedClubId(target.id);
+      setClubInfo(`Join request submitted to ${target.name || 'the club'}. Awaiting owner approval.`);
+    } catch (err) {
+      console.error('Failed submitting join request:', err);
+      setClubError('Could not submit join request right now.');
     } finally {
       setClubJoinBusy(false);
     }
@@ -5590,6 +5709,14 @@ export default function CardSwipersLanding() {
                         type="button"
                       >
                         Log Out
+                      </button>
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={deleteAccountBusy}
+                        className="w-full text-left px-4 py-2.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-xs font-semibold disabled:opacity-60"
+                        type="button"
+                      >
+                        {deleteAccountBusy ? 'Deleting...' : 'Delete Account'}
                       </button>
                     </div>
                   )}
@@ -7067,30 +7194,38 @@ export default function CardSwipersLanding() {
                               handleEnterClub(club);
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col rounded-2xl border border-white/10 bg-[#0D1117] p-4 text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0D1117] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex min-w-0 items-center gap-3">
-                              {club.logoUrl ? (
-                                <img src={club.logoUrl} alt="" className="h-14 w-14 shrink-0 rounded-2xl object-cover" />
-                              ) : logoPreset ? (
-                                <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${logoPreset.className} text-3xl font-bold text-white`}>{logoPreset.symbol}</span>
-                              ) : null}
-                              <div className="min-w-0">
-                                <p className="truncate text-lg font-bold text-white">{club.name || 'Untitled Club'}</p>
-                                <p className="mt-1 text-xs text-white/65">{club.description || 'No description yet.'}</p>
+                          <div className="relative aspect-square w-full bg-[#0A0D13]">
+                            {club.logoUrl ? (
+                              <img src={club.logoUrl} alt={club.name || 'Club'} className="h-full w-full object-cover" />
+                            ) : logoPreset ? (
+                              <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${logoPreset.className}`}>
+                                <span className="text-6xl text-white drop-shadow-md">{logoPreset.symbol}</span>
                               </div>
-                            </div>
-                            <span className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/80">{club.code || '------'}</span>
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center bg-white/5">
+                                <span className="text-5xl">🃏</span>
+                              </div>
+                            )}
                           </div>
-                          <div className="mt-6 grid grid-cols-2 gap-3">
-                            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-white/55">Members</p>
-                              <p className="mt-1 text-xl font-bold text-white">{Number(club.membersCount || club.memberCount || 0).toLocaleString()}</p>
+                          <div className="flex flex-1 flex-col p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-base font-bold text-white">{club.name || 'Untitled Club'}</p>
+                                <p className="mt-0.5 line-clamp-1 text-xs text-white/65">{club.description || 'No description yet.'}</p>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-white/80">{club.code || '------'}</span>
                             </div>
-                            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-white/55">Your role</p>
-                              <p className="mt-1 text-xl font-bold capitalize text-white">{club.role || 'Member'}</p>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+                                <p className="text-[9px] uppercase tracking-[0.14em] text-white/55">Members</p>
+                                <p className="mt-0.5 text-sm font-bold text-white">{Number(club.membersCount || club.memberCount || 0).toLocaleString()}</p>
+                              </div>
+                              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+                                <p className="text-[9px] uppercase tracking-[0.14em] text-white/55">Your role</p>
+                                <p className="mt-0.5 text-sm font-bold capitalize text-white">{club.role || 'Member'}</p>
+                              </div>
                             </div>
                           </div>
                         </article>
@@ -7130,7 +7265,16 @@ export default function CardSwipersLanding() {
                         </div>
                         <span className="px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.15em] border border-white/20 bg-white/10">Code {selectedClub.code || '------'}</span>
                       </div>
-                      {selectedClubRole && selectedClubRole !== 'owner' && (
+                      {!selectedClubMembership ? (
+                        <button
+                          type="button"
+                          onClick={() => handleJoinSpecificClub(selectedClub)}
+                          disabled={clubJoinBusy || isSelectedClubBanned}
+                          className="mt-3 w-full rounded-xl bg-[#22C55E] px-4 py-2.5 text-xs font-bold text-black shadow-[0_4px_14px_rgba(34,197,94,0.3)] hover:bg-[#16A34A] disabled:opacity-60"
+                        >
+                          {clubJoinBusy ? 'Joining...' : isSelectedClubBanned ? 'Blocked From Club' : 'Join Club'}
+                        </button>
+                      ) : selectedClubRole && selectedClubRole !== 'owner' ? (
                         <button
                           type="button"
                           onClick={handleLeaveClub}
@@ -7139,7 +7283,7 @@ export default function CardSwipersLanding() {
                         >
                           {clubActionBusyId === 'leave-club' ? 'Leaving...' : 'Leave Club'}
                         </button>
-                      )}
+                      ) : null}
                     </div>
 
                     <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
@@ -7727,6 +7871,25 @@ export default function CardSwipersLanding() {
                   const draft = trackingDrafts[orderId] || { carrier: order.shippingCarrier || '', trackingNumber: order.trackingNumber || '', trackingUrl: order.trackingUrl || '' };
                   return <div key={order.id} className="rounded-xl border border-white/10 bg-[#0B0E14] p-3 space-y-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{order.cardTitle || 'Sale'} <span className="text-xs text-white/60">#{orderId}</span></p><StatusPill label={order.status || order.escrowStatus || 'pending'} status={order.status || 'pending'} tone={order.status === 'shipped' || order.status === 'delivered' ? 'success' : 'warning'} /></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><select value={draft.carrier} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, carrier: event.target.value } }))} className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={draft.trackingNumber} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, trackingNumber: event.target.value } }))} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /><button type="button" onClick={() => handleSubmitTrackingForOrder({ ...order, orderId, isSeller: true }, draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-3 text-xs font-bold text-[#0B0E14]">Submit Tracking</button><button type="button" onClick={() => setActiveReceipt({ ...order, orderId, isSeller: true, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white">View Receipt</button></div></div>;
                 })}
+              </section>
+
+              <section className="rounded-2xl border border-rose-900/40 bg-rose-950/20 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-rose-200">Account Safety & Data Privacy</h3>
+                    <p className="mt-1 text-xs text-white/65">
+                      Permanently delete your account, trading binder, and associated user data in compliance with Apple App Store Guideline 5.1.1(v).
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  disabled={deleteAccountBusy}
+                  className="min-h-11 rounded-xl border border-rose-400/40 bg-rose-900/30 px-4 py-2 text-xs font-bold text-rose-200 hover:bg-rose-900/60 hover:text-white disabled:opacity-60 transition-colors"
+                >
+                  {deleteAccountBusy ? 'Deleting Account...' : 'Delete Account Permanently'}
+                </button>
               </section>
             </div>
           </div>

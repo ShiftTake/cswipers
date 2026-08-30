@@ -1242,6 +1242,70 @@ exports.adminDeleteCard = onRequest(async (req, res) => {
   }
 });
 
+exports.deleteUserAccount = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const user = await requireAuth(req);
+    const uid = user.uid;
+    const firestoreDb = getDb();
+
+    const activeOrdersSnap = await firestoreDb.collection(ORDERS_COLLECTION)
+      .where('status', 'in', ['payment_held', 'shipped', 'disputed'])
+      .get();
+
+    const userHasActiveEscrow = activeOrdersSnap.docs.some((docSnap) => {
+      const data = docSnap.data() || {};
+      return data.buyer_id === uid || data.seller_user_id === uid || data.sellerUid === uid;
+    });
+
+    if (userHasActiveEscrow) {
+      return sendJson(res, 400, {
+        error: 'Cannot delete account while you have active escrow orders in progress. Please complete or resolve active transactions first.'
+      });
+    }
+
+    const userCardsSnap = await firestoreDb.collection('cards').where('ownerUid', '==', uid).get();
+    const batchPromises = [];
+    userCardsSnap.docs.forEach((cardDoc) => {
+      batchPromises.push(cardDoc.ref.delete());
+    });
+
+    const draftsSnap = await firestoreDb.collection('drafts').where('userId', '==', uid).get();
+    draftsSnap.docs.forEach((draftDoc) => {
+      batchPromises.push(draftDoc.ref.delete());
+    });
+
+    const notifsSnap = await firestoreDb.collection('notifications').where('userId', '==', uid).get();
+    notifsSnap.docs.forEach((notifDoc) => {
+      batchPromises.push(notifDoc.ref.delete());
+    });
+
+    const verifSnap = await firestoreDb.collection('sellerVerifications').where('userId', '==', uid).get();
+    verifSnap.docs.forEach((vDoc) => {
+      batchPromises.push(vDoc.ref.delete());
+    });
+
+    const clubMembersSnap = await firestoreDb.collectionGroup('members').where('uid', '==', uid).get();
+    clubMembersSnap.docs.forEach((memberDoc) => {
+      batchPromises.push(memberDoc.ref.delete());
+    });
+
+    batchPromises.push(firestoreDb.collection(USERS_COLLECTION).doc(uid).delete());
+
+    await Promise.all(batchPromises);
+
+    await getAuth().deleteUser(uid);
+    await writeAdminLog(uid, 'user_account_self_deleted', uid, 'User requested complete account deletion under App Store Guideline 5.1.1(v)');
+
+    return sendJson(res, 200, { ok: true, message: 'Account and associated data deleted successfully.' });
+  } catch (error) {
+    console.error('deleteUserAccount failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to delete account.' });
+  }
+});
+
 exports.allocateClubCredits = onRequest(async (req, res) => {
   if (req.method === 'OPTIONS') {
     return sendJson(res, 204, {});

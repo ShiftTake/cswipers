@@ -115,6 +115,10 @@
         "function": "adminDeleteCard"
       },
       {
+        "source": "/api/account/delete",
+        "function": "deleteUserAccount"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
