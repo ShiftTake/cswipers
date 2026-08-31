@@ -7023,13 +7023,13 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="min-h-0 flex-1 w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] pb-32 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex-1 h-full w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <form
               onSubmit={(event) => {
                 event.preventDefault();
                 handleCreateClub();
               }}
-              className="mx-auto flex max-h-[80vh] min-h-full w-full max-w-2xl flex-col overflow-y-auto px-5 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
+              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
             >
               <div className="relative flex items-center justify-center">
                 <button
@@ -7073,7 +7073,7 @@ export default function CardSwipersLanding() {
                   onChange={handleClubLogoFileChange}
                   className="hidden"
                 />
-                <div className="mt-4 max-h-[60vh] overflow-y-auto pb-24 pr-1 sm:mt-5">
+                <div className="mt-4 sm:mt-5">
                   <div className="grid grid-cols-3 gap-3 sm:gap-5">
                     <button
                       type="button"
