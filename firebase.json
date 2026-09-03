@@ -63,6 +63,10 @@
         "function": "leaveClub"
       },
       {
+        "source": "/api/clubs/resolve-authentication",
+        "function": "resolveCardAuthentication"
+      },
+      {
         "source": "/release-seller-funds",
         "function": "releaseSellerFunds"
       },
@@ -117,10 +121,6 @@
       {
         "source": "/api/admin/delete-card",
         "function": "adminDeleteCard"
-      },
-      {
-        "source": "/api/authentication/review",
-        "function": "reviewCardAuthentication"
       },
       {
         "source": "/api/account/delete",

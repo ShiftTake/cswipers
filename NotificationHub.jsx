@@ -23,59 +23,49 @@ function OfferStatusBadge({ status }) {
   );
 }
 
-const FULFILLMENT_STEPS = [
-  { key: 'accepted', label: 'Offer Accepted' },
-  { key: 'verification', label: 'In Verification' },
-  { key: 'shipped', label: 'Shipped' },
-  { key: 'completed', label: 'Completed / Payout' }
-];
+const ORDER_STEP_LABELS = ['Offer Accepted', 'In Verification', 'Shipped', 'Completed / Payout'];
 
-const FULFILLMENT_STAGE_RANK = { accepted: 0, in_verification: 1, verified: 2, shipped: 3, completed: 4 };
+function OfferProgressBar({ offer }) {
+  const needsVerification = Boolean(offer.requiresAuthentication);
+  const verified = offer.verificationStatus === 'verified';
+  const rejected = offer.verificationStatus === 'rejected';
+  const shipped = ['shipped', 'delivered'].includes(offer.shippingStatus);
+  const completed = offer.status === 'completed' || offer.shippingStatus === 'completed';
 
-function OrderProgressBar({ offer }) {
-  if (offer.status !== 'accepted') return null;
-
-  if (offer.fulfillmentStage === 'rejected') {
-    return (
-      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
-        Authentication failed — this item is being returned to the seller.
-      </div>
-    );
-  }
-
-  const steps = offer.requiresAuthentication
-    ? FULFILLMENT_STEPS
-    : FULFILLMENT_STEPS.filter((step) => step.key !== 'verification');
-  const rank = FULFILLMENT_STAGE_RANK[offer.fulfillmentStage || 'accepted'] ?? 0;
-  const completedCount = steps.reduce((count, step) => {
-    if (step.key === 'accepted' && rank >= 0) return count + 1;
-    if (step.key === 'verification' && rank >= 2) return count + 1;
-    if (step.key === 'shipped' && rank >= 3) return count + 1;
-    if (step.key === 'completed' && rank >= 4) return count + 1;
-    return count;
-  }, 0);
+  let currentStep = 0;
+  if (completed) currentStep = 3;
+  else if (shipped) currentStep = 2;
+  else if (needsVerification && !verified) currentStep = 1;
+  else currentStep = 2;
 
   return (
-    <div className="flex items-start gap-1 pt-1">
-      {steps.map((step, index) => {
-        const isComplete = index < completedCount;
-        const isCurrent = index === completedCount;
+    <div className="flex items-start pt-1">
+      {ORDER_STEP_LABELS.map((label, index) => {
+        const isVerificationStep = index === 1;
+        const isFailed = isVerificationStep && rejected;
+        const isSkipped = isVerificationStep && !needsVerification && index !== currentStep;
+        const isDone = !isFailed && !isSkipped && index < currentStep;
+        const isCurrent = !isFailed && !isSkipped && index === currentStep;
+        const dotClass = isFailed
+          ? 'bg-red-500 border-red-500'
+          : isSkipped
+          ? 'bg-white/10 border-white/20'
+          : isDone
+          ? 'bg-emerald-500 border-emerald-500'
+          : isCurrent
+          ? 'bg-[#E50914] border-[#E50914]'
+          : 'bg-white/10 border-white/20';
+
         return (
-          <React.Fragment key={step.key}>
-            <div className="flex flex-col items-center gap-1 flex-1">
-              <div
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                  isComplete ? 'bg-emerald-500 text-white' : isCurrent ? 'bg-yellow-500 text-black' : 'bg-white/10 text-white/40'
-                }`}
-              >
-                {isComplete ? '✓' : index + 1}
-              </div>
-              <span className={`text-[9px] text-center leading-tight ${isComplete || isCurrent ? 'text-white/80' : 'text-white/35'}`}>
-                {step.label}
+          <React.Fragment key={label}>
+            <div className="flex flex-col items-center gap-1" style={{ width: '25%' }}>
+              <span className={`w-2.5 h-2.5 rounded-full border ${dotClass}`} />
+              <span className={`text-[9px] text-center leading-tight ${isCurrent || isFailed ? 'text-white font-semibold' : 'text-white/50'}`}>
+                {isFailed ? 'Verification Failed' : label}
               </span>
             </div>
-            {index < steps.length - 1 && (
-              <div className={`h-0.5 flex-1 mt-2.5 ${index < completedCount ? 'bg-emerald-500' : 'bg-white/10'}`} />
+            {index < ORDER_STEP_LABELS.length - 1 && (
+              <span className={`flex-1 h-0.5 mt-[5px] ${index < currentStep ? 'bg-emerald-500' : 'bg-white/15'}`} />
             )}
           </React.Fragment>
         );
@@ -171,7 +161,7 @@ function SellingOfferCard({ offer, onAccept, onDecline, onCounter, busyOfferId }
         </div>
       )}
       {counterError && <p className="text-[11px] text-red-300">{counterError}</p>}
-      <OrderProgressBar offer={offer} />
+      {offer.status === 'accepted' && <OfferProgressBar offer={offer} />}
     </div>
   );
 }
@@ -213,7 +203,7 @@ function BuyingOfferCard({ offer, onAcceptCounter, onDecline, busyOfferId }) {
           </button>
         </div>
       )}
-      <OrderProgressBar offer={offer} />
+      {offer.status === 'accepted' && <OfferProgressBar offer={offer} />}
     </div>
   );
 }

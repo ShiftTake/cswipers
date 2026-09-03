@@ -198,14 +198,18 @@ async function requireAdmin(req) {
   throw new Error('Admin access required.');
 }
 
-async function requireAuthenticator(req) {
+async function requireVerifierOrAdmin(req) {
   const decodedToken = await requireAuth(req);
   if (hasAdminRole(decodedToken)) return decodedToken;
 
   const profile = await getUserProfile(decodedToken.uid);
-  if (profile?.isAdmin === true || profile?.isAuthenticator === true) return decodedToken;
+  if (profile?.isAdmin === true) return decodedToken;
 
-  throw new Error('Authenticator or admin access required.');
+  const memberSnap = await getDb().collectionGroup('members').where('uid', '==', decodedToken.uid).get();
+  const isVerifier = memberSnap.docs.some((docSnap) => String(docSnap.data()?.role || '').toLowerCase() === 'verifier');
+  if (isVerifier) return decodedToken;
+
+  throw new Error('Verifier or admin access required.');
 }
 
 async function writeAdminLog(adminUid, actionType, targetId, reason = '') {
@@ -1253,101 +1257,6 @@ exports.adminDeleteCard = onRequest(async (req, res) => {
   }
 });
 
-exports.reviewCardAuthentication = onRequest(async (req, res) => {
-  setCorsHeaders(res);
-  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
-
-  try {
-    const authenticator = await requireAuthenticator(req);
-    const cardId = String(req.body?.cardId || '').trim();
-    const decision = String(req.body?.decision || '').trim().toLowerCase();
-    const notes = String(req.body?.notes || '').trim();
-    if (!cardId || !['pass', 'reject'].includes(decision)) {
-      return sendJson(res, 400, { error: 'cardId and a valid decision (pass or reject) are required.' });
-    }
-
-    const cardRef = getDb().collection('cards').doc(cardId);
-    const cardSnap = await cardRef.get();
-    if (!cardSnap.exists) return sendJson(res, 404, { error: 'Card not found.' });
-    const card = cardSnap.data();
-    const offerId = String(card.lockedByOfferId || '').trim();
-    const offerRef = offerId ? getDb().collection('offers').doc(offerId) : null;
-    const offerSnap = offerRef ? await offerRef.get() : null;
-    const buyerId = offerSnap?.exists ? offerSnap.data().buyerId : null;
-
-    if (decision === 'pass') {
-      const certificateId = crypto.randomUUID();
-      await getDb().runTransaction(async (transaction) => {
-        transaction.update(cardRef, {
-          verificationStatus: 'verified',
-          requiresAuthentication: false,
-          authenticationCertificate: {
-            certificateId,
-            authenticatedBy: authenticator.uid,
-            authenticatedAt: serverTimestamp()
-          },
-          verificationNotes: notes,
-          updatedAt: serverTimestamp()
-        });
-        if (offerRef) {
-          transaction.update(offerRef, {
-            authenticationStatus: 'verified',
-            fulfillmentStage: 'verified',
-            updatedAt: serverTimestamp()
-          });
-        }
-      });
-
-      await Promise.all([
-        card.ownerUid
-          ? notifyUser(card.ownerUid, 'authentication_passed', `Your card "${card.name || cardId}" passed authentication. Certificate #${certificateId}.`, { cardId, certificateId })
-          : Promise.resolve(),
-        buyerId
-          ? notifyUser(buyerId, 'authentication_passed', 'The card you purchased passed authentication and is being prepared for shipment.', { cardId, offerId })
-          : Promise.resolve(),
-        writeAdminLog(authenticator.uid, 'authentication_pass', cardId, notes || 'Card passed authentication')
-      ]);
-
-      return sendJson(res, 200, { ok: true, cardId, decision, certificateId });
-    }
-
-    await getDb().runTransaction(async (transaction) => {
-      transaction.update(cardRef, {
-        verificationStatus: 'rejected',
-        requiresAuthentication: false,
-        returnRequired: true,
-        isLocked: false,
-        lockedForCheckout: false,
-        rejectionReason: notes || 'Failed authentication review.',
-        updatedAt: serverTimestamp()
-      });
-      if (offerRef) {
-        transaction.update(offerRef, {
-          authenticationStatus: 'rejected',
-          fulfillmentStage: 'rejected',
-          status: 'declined',
-          updatedAt: serverTimestamp()
-        });
-      }
-    });
-
-    await Promise.all([
-      card.ownerUid
-        ? notifyUser(card.ownerUid, 'authentication_failed', `Your card "${card.name || cardId}" failed authentication and will be returned. Reason: ${notes || 'Not specified.'}`, { cardId })
-        : Promise.resolve(),
-      buyerId
-        ? notifyUser(buyerId, 'authentication_failed', 'The card you purchased failed authentication. Your payment will be refunded.', { cardId })
-        : Promise.resolve(),
-      writeAdminLog(authenticator.uid, 'authentication_reject', cardId, notes || 'Card failed authentication')
-    ]);
-
-    return sendJson(res, 200, { ok: true, cardId, decision });
-  } catch (error) {
-    console.error('reviewCardAuthentication failed:', error);
-    return sendJson(res, 403, { error: error.message || 'Unable to submit authentication decision.' });
-  }
-});
-
 exports.deleteUserAccount = onRequest(async (req, res) => {
   setCorsHeaders(res);
   if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
@@ -1694,6 +1603,83 @@ exports.releaseSellerFunds = exports.acceptDelivery;
 exports.stripeCreateCheckoutSession = exports.createOrderPaymentIntent;
 exports.stripeCreatePortalSession = exports.createSellerPayoutAccount;
 exports.stripeWebhook = exports.stripeEscrowWebhook;
+
+exports.resolveCardAuthentication = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const verifier = await requireVerifierOrAdmin(req);
+    const cardId = String(req.body?.cardId || '').trim();
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    const reason = String(req.body?.reason || '').trim();
+    if (!cardId) throw new Error('cardId is required.');
+    if (!['pass', 'reject'].includes(decision)) throw new Error('decision must be pass or reject.');
+
+    const cardRef = getDb().collection('cards').doc(cardId);
+    const cardData = await getDb().runTransaction(async (transaction) => {
+      const cardSnap = await transaction.get(cardRef);
+      if (!cardSnap.exists) throw new Error('Card not found.');
+      const card = cardSnap.data();
+      const offerRef = card.lockedByOfferId ? getDb().collection('offers').doc(card.lockedByOfferId) : null;
+
+      if (decision === 'pass') {
+        const certificateId = `CERT-${cardId}-${Date.now()}`;
+        transaction.update(cardRef, {
+          verificationStatus: 'verified',
+          requiresAuthentication: false,
+          authenticationCertificate: {
+            certificateId,
+            verifiedAt: serverTimestamp(),
+            verifiedByUid: verifier.uid,
+            verifiedByName: verifier.name || verifier.email || 'Authenticator'
+          },
+          updatedAt: serverTimestamp()
+        });
+        if (offerRef) {
+          transaction.update(offerRef, { verificationStatus: 'verified', updatedAt: serverTimestamp() });
+        }
+      } else {
+        transaction.update(cardRef, {
+          verificationStatus: 'rejected',
+          requiresAuthentication: true,
+          isLocked: false,
+          lockedForCheckout: false,
+          flaggedForReturn: true,
+          rejectionReason: reason || 'Failed authentication review.',
+          updatedAt: serverTimestamp()
+        });
+        if (offerRef) {
+          transaction.update(offerRef, { verificationStatus: 'rejected', updatedAt: serverTimestamp() });
+        }
+      }
+
+      return card;
+    });
+
+    if (decision === 'reject') {
+      await notifyUser(cardData.ownerUid, 'authentication_rejected', 'Your card failed authentication review and has been flagged for return.', { cardId });
+    }
+
+    if (cardData.lockedByOfferId) {
+      const offerSnap = await getDb().collection('offers').doc(cardData.lockedByOfferId).get();
+      const offer = offerSnap.exists ? offerSnap.data() : {};
+      const buyerId = offer.buyerId || offer.buyerUid;
+      const message =
+        decision === 'pass'
+          ? 'Your card passed authentication. Checkout can proceed.'
+          : 'The card you purchased failed authentication. A dispute has been opened.';
+      await notifyUser(buyerId, decision === 'pass' ? 'authentication_passed' : 'authentication_disputed', message, { cardId });
+    }
+
+    return sendJson(res, 200, { ok: true, cardId, decision });
+  } catch (error) {
+    console.error('resolveCardAuthentication failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to resolve card authentication.' });
+  }
+});
 
 exports.notifyOnOfferStatusChange = onDocumentUpdated('offers/{offerId}', async (event) => {
   const before = event.data?.before?.data();

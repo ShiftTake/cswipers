@@ -951,7 +951,7 @@ export default function CardSwipersLanding() {
   const [showHelp, setShowHelp] = useState(false);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [showNotificationHub, setShowNotificationHub] = useState(false);
-  const [showAuthenticationQueue, setShowAuthenticationQueue] = useState(false);
+  const [showAuthQueue, setShowAuthQueue] = useState(false);
   const [pendingOfferOffers, setPendingOfferOffers] = useState({ buying: [], selling: [] });
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
@@ -1065,6 +1065,7 @@ export default function CardSwipersLanding() {
   const [clubInfo, setClubInfo] = useState('');
   const [clubError, setClubError] = useState('');
   const [moderatedClubIds, setModeratedClubIds] = useState([]);
+  const [verifierClubIds, setVerifierClubIds] = useState([]);
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
@@ -1151,7 +1152,7 @@ export default function CardSwipersLanding() {
     pendingOfferOffers.selling.filter((offer) => offer.status === 'pending').length +
     pendingOfferOffers.buying.filter((offer) => offer.status === 'countered').length;
   const hasAdminAccess = isAdmin;
-  const canAccessAuthenticationQueue = hasAdminAccess || currentUserProfile?.isAuthenticator === true;
+  const canAccessAuthQueue = isAdmin || verifierClubIds.length > 0;
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
   const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
   const selectedClubRole = selectedClubMembership?.role || '';
@@ -1958,6 +1959,7 @@ export default function CardSwipersLanding() {
   useEffect(() => {
     if (!firebaseUser) {
       setModeratedClubIds([]);
+      setVerifierClubIds([]);
       return;
     }
 
@@ -1965,16 +1967,16 @@ export default function CardSwipersLanding() {
     const unsubscribe = onSnapshot(
       membershipQuery,
       (snapshot) => {
-        const moderated = snapshot.docs
+        const memberships = snapshot.docs
           .map((docSnap) => {
             const data = docSnap.data() || {};
             const clubId = docSnap.ref.parent.parent?.id || '';
             return { clubId, role: data.role || '' };
           })
-          .filter((entry) => entry.clubId && isClubModeratorRole(entry.role))
-          .map((entry) => entry.clubId);
+          .filter((entry) => entry.clubId);
 
-        setModeratedClubIds(Array.from(new Set(moderated)));
+        setModeratedClubIds(Array.from(new Set(memberships.filter((entry) => isClubModeratorRole(entry.role)).map((entry) => entry.clubId))));
+        setVerifierClubIds(Array.from(new Set(memberships.filter((entry) => entry.role === 'verifier').map((entry) => entry.clubId))));
       },
       (error) => {
         console.error('Failed loading club moderation memberships:', error);
@@ -5806,10 +5808,10 @@ export default function CardSwipersLanding() {
                       >
                         Notifications{unreadNotificationCount > 0 ? ` (${unreadNotificationCount})` : ''}
                       </button>
-                      {canAccessAuthenticationQueue && (
+                      {canAccessAuthQueue && (
                         <button
                           onClick={() => {
-                            setShowAuthenticationQueue(true);
+                            setShowAuthQueue(true);
                             setAccountMenuOpen(false);
                           }}
                           className="w-full text-left px-4 py-3 text-white hover:bg-white/5 transition-colors text-sm"
@@ -8542,8 +8544,8 @@ export default function CardSwipersLanding() {
         <NotificationHub userId={firebaseUser.uid} onClose={() => setShowNotificationHub(false)} />
       )}
 
-      {showAuthenticationQueue && firebaseUser && canAccessAuthenticationQueue && (
-        <AuthenticationQueue firebaseUser={firebaseUser} onClose={() => setShowAuthenticationQueue(false)} />
+      {showAuthQueue && firebaseUser && canAccessAuthQueue && (
+        <AuthenticationQueue firebaseUser={firebaseUser} canAccess={canAccessAuthQueue} onClose={() => setShowAuthQueue(false)} />
       )}
 
       {showNotificationsPanel && (
