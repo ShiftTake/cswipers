@@ -119,6 +119,10 @@
         "function": "adminDeleteCard"
       },
       {
+        "source": "/api/authentication/review",
+        "function": "reviewCardAuthentication"
+      },
+      {
         "source": "/api/account/delete",
         "function": "deleteUserAccount"
       },

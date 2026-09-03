@@ -198,6 +198,16 @@ async function requireAdmin(req) {
   throw new Error('Admin access required.');
 }
 
+async function requireAuthenticator(req) {
+  const decodedToken = await requireAuth(req);
+  if (hasAdminRole(decodedToken)) return decodedToken;
+
+  const profile = await getUserProfile(decodedToken.uid);
+  if (profile?.isAdmin === true || profile?.isAuthenticator === true) return decodedToken;
+
+  throw new Error('Authenticator or admin access required.');
+}
+
 async function writeAdminLog(adminUid, actionType, targetId, reason = '') {
   await getDb().collection('adminLogs').add({
     adminUid,
@@ -1240,6 +1250,101 @@ exports.adminDeleteCard = onRequest(async (req, res) => {
   } catch (error) {
     console.error('adminDeleteCard failed:', error);
     return sendJson(res, 403, { error: error.message || 'Unable to delete card.' });
+  }
+});
+
+exports.reviewCardAuthentication = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const authenticator = await requireAuthenticator(req);
+    const cardId = String(req.body?.cardId || '').trim();
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    const notes = String(req.body?.notes || '').trim();
+    if (!cardId || !['pass', 'reject'].includes(decision)) {
+      return sendJson(res, 400, { error: 'cardId and a valid decision (pass or reject) are required.' });
+    }
+
+    const cardRef = getDb().collection('cards').doc(cardId);
+    const cardSnap = await cardRef.get();
+    if (!cardSnap.exists) return sendJson(res, 404, { error: 'Card not found.' });
+    const card = cardSnap.data();
+    const offerId = String(card.lockedByOfferId || '').trim();
+    const offerRef = offerId ? getDb().collection('offers').doc(offerId) : null;
+    const offerSnap = offerRef ? await offerRef.get() : null;
+    const buyerId = offerSnap?.exists ? offerSnap.data().buyerId : null;
+
+    if (decision === 'pass') {
+      const certificateId = crypto.randomUUID();
+      await getDb().runTransaction(async (transaction) => {
+        transaction.update(cardRef, {
+          verificationStatus: 'verified',
+          requiresAuthentication: false,
+          authenticationCertificate: {
+            certificateId,
+            authenticatedBy: authenticator.uid,
+            authenticatedAt: serverTimestamp()
+          },
+          verificationNotes: notes,
+          updatedAt: serverTimestamp()
+        });
+        if (offerRef) {
+          transaction.update(offerRef, {
+            authenticationStatus: 'verified',
+            fulfillmentStage: 'verified',
+            updatedAt: serverTimestamp()
+          });
+        }
+      });
+
+      await Promise.all([
+        card.ownerUid
+          ? notifyUser(card.ownerUid, 'authentication_passed', `Your card "${card.name || cardId}" passed authentication. Certificate #${certificateId}.`, { cardId, certificateId })
+          : Promise.resolve(),
+        buyerId
+          ? notifyUser(buyerId, 'authentication_passed', 'The card you purchased passed authentication and is being prepared for shipment.', { cardId, offerId })
+          : Promise.resolve(),
+        writeAdminLog(authenticator.uid, 'authentication_pass', cardId, notes || 'Card passed authentication')
+      ]);
+
+      return sendJson(res, 200, { ok: true, cardId, decision, certificateId });
+    }
+
+    await getDb().runTransaction(async (transaction) => {
+      transaction.update(cardRef, {
+        verificationStatus: 'rejected',
+        requiresAuthentication: false,
+        returnRequired: true,
+        isLocked: false,
+        lockedForCheckout: false,
+        rejectionReason: notes || 'Failed authentication review.',
+        updatedAt: serverTimestamp()
+      });
+      if (offerRef) {
+        transaction.update(offerRef, {
+          authenticationStatus: 'rejected',
+          fulfillmentStage: 'rejected',
+          status: 'declined',
+          updatedAt: serverTimestamp()
+        });
+      }
+    });
+
+    await Promise.all([
+      card.ownerUid
+        ? notifyUser(card.ownerUid, 'authentication_failed', `Your card "${card.name || cardId}" failed authentication and will be returned. Reason: ${notes || 'Not specified.'}`, { cardId })
+        : Promise.resolve(),
+      buyerId
+        ? notifyUser(buyerId, 'authentication_failed', 'The card you purchased failed authentication. Your payment will be refunded.', { cardId })
+        : Promise.resolve(),
+      writeAdminLog(authenticator.uid, 'authentication_reject', cardId, notes || 'Card failed authentication')
+    ]);
+
+    return sendJson(res, 200, { ok: true, cardId, decision });
+  } catch (error) {
+    console.error('reviewCardAuthentication failed:', error);
+    return sendJson(res, 403, { error: error.message || 'Unable to submit authentication decision.' });
   }
 });
 

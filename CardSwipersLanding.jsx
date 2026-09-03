@@ -46,6 +46,7 @@ import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 import TermsOfService from './TermsOfService.jsx';
 import NotificationHub from './NotificationHub.jsx';
+import AuthenticationQueue from './AuthenticationQueue.jsx';
 
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
@@ -950,6 +951,7 @@ export default function CardSwipersLanding() {
   const [showHelp, setShowHelp] = useState(false);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [showNotificationHub, setShowNotificationHub] = useState(false);
+  const [showAuthenticationQueue, setShowAuthenticationQueue] = useState(false);
   const [pendingOfferOffers, setPendingOfferOffers] = useState({ buying: [], selling: [] });
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
@@ -1149,6 +1151,7 @@ export default function CardSwipersLanding() {
     pendingOfferOffers.selling.filter((offer) => offer.status === 'pending').length +
     pendingOfferOffers.buying.filter((offer) => offer.status === 'countered').length;
   const hasAdminAccess = isAdmin;
+  const canAccessAuthenticationQueue = hasAdminAccess || currentUserProfile?.isAuthenticator === true;
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
   const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
   const selectedClubRole = selectedClubMembership?.role || '';
@@ -5803,6 +5806,18 @@ export default function CardSwipersLanding() {
                       >
                         Notifications{unreadNotificationCount > 0 ? ` (${unreadNotificationCount})` : ''}
                       </button>
+                      {canAccessAuthenticationQueue && (
+                        <button
+                          onClick={() => {
+                            setShowAuthenticationQueue(true);
+                            setAccountMenuOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-3 text-white hover:bg-white/5 transition-colors text-sm"
+                          type="button"
+                        >
+                          Authentication Queue
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setShowTermsOfService(true);
@@ -8525,6 +8540,10 @@ export default function CardSwipersLanding() {
 
       {showNotificationHub && firebaseUser && (
         <NotificationHub userId={firebaseUser.uid} onClose={() => setShowNotificationHub(false)} />
+      )}
+
+      {showAuthenticationQueue && firebaseUser && canAccessAuthenticationQueue && (
+        <AuthenticationQueue firebaseUser={firebaseUser} onClose={() => setShowAuthenticationQueue(false)} />
       )}
 
       {showNotificationsPanel && (

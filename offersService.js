@@ -112,6 +112,8 @@ export async function respondToOffer({ offerId, action, counterAmount }) {
     }
 
     if (normalizedAction === 'accept') {
+      const finalAmount = Number(offer.counterAmount ?? offer.offerAmount ?? offer.amount ?? 0);
+      const requiresAuth = requiresAuthenticationForAmount(finalAmount, clubRules);
       const listingId = String(offer.listingId || offer.cardId || '').trim();
       if (listingId) {
         const listingRef = doc(db, 'cards', listingId);
@@ -121,16 +123,25 @@ export async function respondToOffer({ offerId, action, counterAmount }) {
             isLocked: true,
             lockedForCheckout: true,
             lockedByOfferId: normalizedOfferId,
-            lockedAt: Timestamp.now()
+            lockedAt: Timestamp.now(),
+            requiresAuthentication: requiresAuth,
+            verificationStatus: requiresAuth ? 'pending_verification' : (listingSnap.data().verificationStatus || null)
           });
         }
       }
+
+      transaction.update(offerRef, {
+        status: 'accepted',
+        requiresAuthentication: requiresAuth,
+        fulfillmentStage: requiresAuth ? 'in_verification' : 'accepted',
+        updatedAt: Timestamp.now()
+      });
+      return;
     }
 
-    const finalAmount = Number(offer.counterAmount ?? offer.offerAmount ?? offer.amount ?? 0);
     transaction.update(offerRef, {
-      status: normalizedAction === 'accept' ? 'accepted' : 'declined',
-      requiresAuthentication: normalizedAction === 'accept' ? requiresAuthenticationForAmount(finalAmount, clubRules) : false,
+      status: 'declined',
+      requiresAuthentication: false,
       updatedAt: Timestamp.now()
     });
   });
