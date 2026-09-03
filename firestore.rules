@@ -108,9 +108,23 @@ service cloud.firestore {
     match /offers/{offerId} {
       allow read: if isAdmin() || (signedIn() && (
         resource.data.fromUserId == request.auth.uid ||
-        resource.data.toUserId == request.auth.uid
+        resource.data.toUserId == request.auth.uid ||
+        resource.data.buyerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
       ));
-      allow create, update, delete: if false;
+      allow create: if signedIn() &&
+        request.resource.data.buyerId == request.auth.uid &&
+        request.resource.data.fromUserId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.roundCount == 1;
+      allow update: if signedIn() && (
+        resource.data.buyerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid ||
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid ||
+        isAdmin()
+      ) && request.resource.data.roundCount <= 3;
+      allow delete: if false;
 
       match /messages/{messageId} {
         allow read: if isAdmin() || (signedIn() && (

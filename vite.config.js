@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
       'process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY': JSON.stringify(env.REACT_APP_STRIPE_PUBLISHABLE_KEY || '')
     },
     build: {
+      chunkSizeWarningLimit: 1600,
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),

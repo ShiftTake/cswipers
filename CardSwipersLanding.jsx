@@ -39,6 +39,7 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Script, TextRecognition } from '@capacitor-mlkit/text-recognition';
 import { auth, db, storage } from './firebase';
 import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
+import { createOffer } from './offersService';
 import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
@@ -382,6 +383,55 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
         </button>
       </div>
     </form>
+  );
+}
+
+function MakeOfferModal({ isOpen, listing, buyerId, isSubmitting, error, onClose, onSubmit }) {
+  const [offerAmount, setOfferAmount] = useState('');
+
+  useEffect(() => {
+    if (isOpen) setOfferAmount('');
+  }, [isOpen, listing?.id]);
+
+  if (!isOpen || !listing) return null;
+
+  return (
+    <div className="fixed inset-0 z-[66] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="make-offer-title">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#171A22] p-5 text-white shadow-2xl space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Offer</p>
+            <h3 id="make-offer-title" className="mt-1 text-lg font-bold">Make Offer</h3>
+          </div>
+          <button type="button" onClick={onClose} className="text-sm text-white/70 hover:text-white">Close</button>
+        </div>
+        <p className="text-sm text-white/70">Send a 24-hour offer for {listing.title || listing.name || 'this listing'}.</p>
+        <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-white/60">
+          Offer Amount
+          <div className="mt-2 flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-black/25 px-3 focus-within:border-[#FFD700]/70">
+            <span className="text-white/50">$</span>
+            <input
+              type="number"
+              min="1"
+              step="0.01"
+              value={offerAmount}
+              onChange={(event) => setOfferAmount(event.target.value)}
+              placeholder="250"
+              className="w-full bg-transparent text-base text-white placeholder:text-white/35 focus:outline-none"
+            />
+          </div>
+        </label>
+        {error && <p className="rounded-xl border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
+        <button
+          type="button"
+          disabled={isSubmitting || !buyerId || !offerAmount}
+          onClick={() => onSubmit(offerAmount)}
+          className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60"
+        >
+          {isSubmitting ? 'Sending...' : 'Submit Offer'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -968,6 +1018,9 @@ export default function CardSwipersLanding() {
   const [reviewDrafts, setReviewDrafts] = useState({});
   const [reviewBusyByPurchaseId, setReviewBusyByPurchaseId] = useState({});
   const [showInterestModal, setShowInterestModal] = useState(false);
+  const [showMakeOfferModal, setShowMakeOfferModal] = useState(false);
+  const [makeOfferBusy, setMakeOfferBusy] = useState(false);
+  const [makeOfferError, setMakeOfferError] = useState('');
   const [pendingInterestType, setPendingInterestType] = useState(MARKETPLACE_ACTION_TYPES[0]);
   const [pendingDealType, setPendingDealType] = useState('pure_trade');
   const [pendingCashAmount, setPendingCashAmount] = useState('');
@@ -3089,6 +3142,29 @@ export default function CardSwipersLanding() {
       setAuthError(errorMessage);
     } finally {
       setInterestBusy(false);
+    }
+  };
+
+  const handleSubmitMakeOffer = async (offerAmount) => {
+    if (!currentCard || !firebaseUser || makeOfferBusy) return;
+    setMakeOfferBusy(true);
+    setMakeOfferError('');
+
+    try {
+      await createOffer({
+        listingId: currentCard.id,
+        cardId: currentCard.id,
+        buyerId: firebaseUser.uid,
+        sellerId: currentCard.ownerUid || normalizeTag(currentCard.owner || 'unassigned-owner'),
+        offerAmount
+      });
+      setShowMakeOfferModal(false);
+      setAuthInfo(`Offer sent for ${currentCard.title || 'this listing'}. It expires in 24 hours.`);
+    } catch (error) {
+      console.error('Failed creating offer:', error);
+      setMakeOfferError(error.message || 'Unable to send offer right now.');
+    } finally {
+      setMakeOfferBusy(false);
     }
   };
 
@@ -6536,6 +6612,22 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
                     </button>
+                    <button
+                      onClick={() => {
+                        setMakeOfferError('');
+                        setShowMakeOfferModal(true);
+                      }}
+                      className="min-h-[60px] md:min-h-[68px] rounded-2xl bg-gradient-to-br from-[#FFD700]/20 to-[#F59E0B]/10 border border-[#FFD700]/40 text-white shadow-lg hover:border-[#FFD700]/70 hover:bg-[#FFD700]/10 transition-all px-3 py-2.5 md:px-4 md:py-3 text-left"
+                      type="button"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-[#FFD700]/20 border border-[#FFD700]/30 inline-flex items-center justify-center text-[#FFE66D] font-black">$</span>
+                        <div>
+                          <p className="font-semibold">Make Offer</p>
+                          <p className="text-xs text-[#FFE66D]/75">24-hour offer</p>
+                        </div>
+                      </div>
+                    </button>
                     {ENABLE_PAYMENT_PIPELINE && (
                       <button
                         onClick={() => handleInstantPurchase(currentCard, { advanceAfterPurchase: true })}
@@ -8607,6 +8699,19 @@ export default function CardSwipersLanding() {
           </div>
         </div>
       )}
+
+      <MakeOfferModal
+        isOpen={showMakeOfferModal}
+        listing={currentCard}
+        buyerId={firebaseUser?.uid || ''}
+        isSubmitting={makeOfferBusy}
+        error={makeOfferError}
+        onClose={() => {
+          setShowMakeOfferModal(false);
+          setMakeOfferError('');
+        }}
+        onSubmit={handleSubmitMakeOffer}
+      />
 
       {showDiscoverFilters && (
         <div className="fixed inset-0 z-[75] flex justify-end bg-black/70" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
