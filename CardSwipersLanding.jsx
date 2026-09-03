@@ -39,12 +39,13 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Script, TextRecognition } from '@capacitor-mlkit/text-recognition';
 import { auth, db, storage } from './firebase';
 import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
-import { createOffer } from './offersService';
+import { createOffer, getUserOffers } from './offersService';
 import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 import TermsOfService from './TermsOfService.jsx';
+import NotificationHub from './NotificationHub.jsx';
 
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
@@ -948,6 +949,8 @@ export default function CardSwipersLanding() {
   const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
+  const [showNotificationHub, setShowNotificationHub] = useState(false);
+  const [pendingOfferOffers, setPendingOfferOffers] = useState({ buying: [], selling: [] });
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [deck, setDeck] = useState(INITIAL_DECK);
   const [personalizedDeck, setPersonalizedDeck] = useState(INITIAL_DECK);
@@ -1142,6 +1145,9 @@ export default function CardSwipersLanding() {
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
   const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
+  const pendingOfferCount =
+    pendingOfferOffers.selling.filter((offer) => offer.status === 'pending').length +
+    pendingOfferOffers.buying.filter((offer) => offer.status === 'countered').length;
   const hasAdminAccess = isAdmin;
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
   const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
@@ -2386,6 +2392,15 @@ export default function CardSwipersLanding() {
       return prev >= rankedDeck.length ? 0 : prev;
     });
   }, [deck, currentUserProfile, outgoingInterests, matches]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setPendingOfferOffers({ buying: [], selling: [] });
+      return undefined;
+    }
+    const unsubscribe = getUserOffers(firebaseUser.uid, (offers) => setPendingOfferOffers(offers));
+    return unsubscribe;
+  }, [firebaseUser]);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -5725,6 +5740,19 @@ export default function CardSwipersLanding() {
                     </span>
                   )}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNotificationHub(true)}
+                  aria-label="Open offer notifications"
+                  className={`relative rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white ${isNativeCoreApp ? 'w-10 h-10' : 'w-11 h-11'}`}
+                >
+                  <BellIcon />
+                  {pendingOfferCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] text-[10px] leading-4 text-white font-bold text-center">
+                      {pendingOfferCount > 99 ? '99+' : pendingOfferCount}
+                    </span>
+                  )}
+                </button>
                 <div className="relative">
                   <button
                     type="button"
@@ -8494,6 +8522,10 @@ export default function CardSwipersLanding() {
         )}
         </div>
       </main>
+
+      {showNotificationHub && firebaseUser && (
+        <NotificationHub userId={firebaseUser.uid} onClose={() => setShowNotificationHub(false)} />
+      )}
 
       {showNotificationsPanel && (
         <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4">

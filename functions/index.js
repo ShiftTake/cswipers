@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 
 admin.initializeApp();
@@ -1588,3 +1589,26 @@ exports.releaseSellerFunds = exports.acceptDelivery;
 exports.stripeCreateCheckoutSession = exports.createOrderPaymentIntent;
 exports.stripeCreatePortalSession = exports.createSellerPayoutAccount;
 exports.stripeWebhook = exports.stripeEscrowWebhook;
+
+exports.notifyOnOfferStatusChange = onDocumentUpdated('offers/{offerId}', async (event) => {
+  const before = event.data?.before?.data();
+  const after = event.data?.after?.data();
+  if (!before || !after || before.status === after.status) return;
+
+  const buyerId = after.buyerId || after.buyerUid || after.fromUserId;
+  const cardLabel = after.cardId ? `card ${after.cardId}` : 'your card';
+
+  if (after.status === 'accepted') {
+    await notifyUser(buyerId, 'offer_accepted', `Your offer on ${cardLabel} was accepted! Complete checkout to finish the purchase.`, {
+      offerId: event.params.offerId
+    });
+  } else if (after.status === 'declined') {
+    await notifyUser(buyerId, 'offer_declined', `Your offer on ${cardLabel} was declined.`, {
+      offerId: event.params.offerId
+    });
+  } else if (after.status === 'countered') {
+    await notifyUser(buyerId, 'offer_countered', `The seller countered your offer on ${cardLabel} with $${after.counterAmount}.`, {
+      offerId: event.params.offerId
+    });
+  }
+});
