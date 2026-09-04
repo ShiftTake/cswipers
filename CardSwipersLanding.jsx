@@ -7268,7 +7268,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'onboarding' && (
           <div className="max-w-6xl mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
-            <div className={`grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1 ${!selectedClub ? 'content-center justify-items-center' : ''}`}>
+            <div className={`grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1 ${!selectedClub ? 'content-center justify-items-center pt-[56px] md:pt-[72px] pb-[72px] md:pb-[96px]' : ''}`}>
               <section className={`rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-center ${!selectedClub ? 'xl:col-span-2 mx-auto w-full max-w-xl' : ''}`}>
                 {/* Search Club bar — full-width pill with magnifying glass */}
                 <div className="relative w-full">
