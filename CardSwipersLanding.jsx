@@ -5739,22 +5739,9 @@ export default function CardSwipersLanding() {
                   className={`relative rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white ${isNativeCoreApp ? 'w-10 h-10' : 'w-11 h-11'}`}
                 >
                   <BellIcon />
-                  {unreadNotificationCount > 0 && (
+                  {(unreadNotificationCount + pendingOfferCount) > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] text-[10px] leading-4 text-white font-bold text-center">
-                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                    </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowNotificationHub(true)}
-                  aria-label="Open offer notifications"
-                  className={`relative rounded-full bg-white/10 hover:bg-white/20 transition-all flex items-center justify-center text-white ${isNativeCoreApp ? 'w-10 h-10' : 'w-11 h-11'}`}
-                >
-                  <BellIcon />
-                  {pendingOfferCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#E50914] text-[10px] leading-4 text-white font-bold text-center">
-                      {pendingOfferCount > 99 ? '99+' : pendingOfferCount}
+                      {(unreadNotificationCount + pendingOfferCount) > 99 ? '99+' : unreadNotificationCount + pendingOfferCount}
                     </span>
                   )}
                 </button>
@@ -7267,10 +7254,10 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="max-w-6xl mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
-            <div className={`grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1 ${!selectedClub ? 'content-center justify-items-center pt-[56px] md:pt-[72px] pb-[72px] md:pb-[96px]' : ''}`}>
-              <section className={`rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-center ${!selectedClub ? 'xl:col-span-2 mx-auto w-full max-w-xl' : ''}`}>
-                {/* Search Club bar — full-width pill with magnifying glass */}
+          <div className="max-w-6xl mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 py-6 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
+            <div className={`grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1 ${!selectedClub ? 'content-center justify-items-center' : ''}`}>
+              <section className={`flex flex-col gap-4 min-h-0 w-full ${!selectedClub ? 'xl:col-span-2 mx-auto max-w-xl items-center justify-center' : ''}`}>
+                {/* Search Club bar — floating above the card deck */}
                 <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
@@ -7283,7 +7270,7 @@ export default function CardSwipersLanding() {
                     value={clubSearchQuery}
                     onChange={(event) => setClubSearchQuery(event.target.value)}
                     placeholder="Search Club"
-                    className="w-full pl-9 pr-4 py-3 rounded-full bg-white text-[#111] placeholder-[#aaa] text-sm focus:outline-none shadow-sm"
+                    className="w-full pl-9 pr-4 py-3 rounded-xl bg-zinc-800 text-white placeholder-zinc-400 text-sm border border-white/10 focus:outline-none focus:border-white/30"
                   />
                 </div>
 
@@ -7314,12 +7301,12 @@ export default function CardSwipersLanding() {
                               openCreateClub();
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#0D1117] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-emerald-300/60 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 text-left transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/30"
                         >
-                          <div className="relative aspect-square w-full bg-[#0A0D13]">
+                          <div className="relative aspect-square w-full bg-black/40">
                             <img src={authHeroImage} alt="Create a club" className="h-full w-full object-cover opacity-80" />
                           </div>
-                          <div className="relative flex flex-1 flex-col items-center px-4 pb-5 text-center">
+                          <div className="relative flex flex-1 flex-col items-center justify-center px-4 pb-6 text-center">
                             <div className="-mt-6 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-[#22C55E] shadow-[0_8px_20px_rgba(34,197,94,0.35)]">
                               <CardClubsIcon />
                             </div>
@@ -7342,9 +7329,9 @@ export default function CardSwipersLanding() {
                               handleEnterClub(club);
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0D1117] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 text-left transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                         >
-                          <div className="relative aspect-square w-full bg-[#0A0D13]">
+                          <div className="relative aspect-square w-full bg-black/40">
                             {club.logoUrl ? (
                               <img src={club.logoUrl} alt={club.name || 'Club'} className="h-full w-full object-cover" />
                             ) : logoPreset ? (
@@ -9216,7 +9203,7 @@ export default function CardSwipersLanding() {
                 </span>
               )}
             </div>
-            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Imbox</span>
+            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Inbox</span>
             <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'messages' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
             </span>
           </button>
