@@ -7279,10 +7279,10 @@ export default function CardSwipersLanding() {
                   onScroll={(event) => {
                     const container = event.currentTarget;
                     const cardWidth = container.clientWidth * 0.8 + 16;
-                    const nextIndex = cardWidth ? Math.round((container.scrollLeft - 20) / cardWidth) : 0;
+                    const nextIndex = cardWidth ? Math.round(container.scrollLeft / cardWidth) : 0;
                     setSelectedClubCarouselIndex(Math.max(0, Math.min(Math.max(filteredClubs.length, 0), nextIndex)));
                   }}
-                  className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-[10%] pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {[
                     { id: 'create-club', isCreateClub: true },
@@ -7378,7 +7378,7 @@ export default function CardSwipersLanding() {
                         aria-label={`Show ${club.name || 'club'} ${index + 1}`}
                         onClick={() => {
                           const cardWidth = clubCarouselRef.current ? clubCarouselRef.current.clientWidth * 0.8 + 16 : 0;
-                          clubCarouselRef.current?.scrollTo({ left: 20 + cardWidth * index, behavior: 'smooth' });
+                          clubCarouselRef.current?.scrollTo({ left: cardWidth * index, behavior: 'smooth' });
                           if (club.id === 'create-club') openCreateClub();
                           else handleEnterClub(club);
                         }}
