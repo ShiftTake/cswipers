@@ -6789,19 +6789,19 @@ export default function CardSwipersLanding() {
                     <button
                       type="button"
                       onClick={() => postFrontImageInputRef.current?.click()}
-                      className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
+                      className="rounded-2xl border border-dashed border-zinc-700 hover:border-red-500 bg-zinc-900/60 transition-all aspect-square p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-xl overflow-hidden h-full bg-black/40 flex items-center justify-center relative group">
                         {postFrontImagePreview ? (
                           <img
                             src={postFrontImagePreview}
                             alt="Front card preview"
-                            className="w-full h-[104px] sm:h-[148px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
-                            <p className="mt-2 text-sm font-bold text-white">Take Front Photo</p>
+                            <p className="mt-2 text-sm font-bold text-white">Front Photo</p>
                             <p className="mt-1 text-[11px] text-white/55">Tap to choose from camera or library</p>
                           </div>
                         )}
@@ -6816,19 +6816,19 @@ export default function CardSwipersLanding() {
                       onClick={() => {
                         postBackImageInputRef.current?.click();
                       }}
-                      className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
+                      className="rounded-2xl border border-dashed border-zinc-700 hover:border-red-500 bg-zinc-900/60 transition-all aspect-square p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-xl overflow-hidden h-full bg-black/40 flex items-center justify-center relative group">
                         {postBackImagePreview ? (
                           <img
                             src={postBackImagePreview}
                             alt="Back card preview"
-                            className="w-full h-[104px] sm:h-[148px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="text-center px-4 py-5 sm:py-6">
                             <p className="text-3xl">📷</p>
-                            <p className="mt-2 text-sm font-bold text-white">Take Back Photo</p>
+                            <p className="mt-2 text-sm font-bold text-white">Back Photo</p>
                             <p className="mt-1 text-[11px] text-white/55">Tap to choose from camera or library</p>
                           </div>
                         )}
@@ -6837,33 +6837,6 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
                     </button>
-                  </div>
-
-                  <div className="rounded-[18px] border border-white/10 bg-[#0D1117] px-4 py-4 space-y-3">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">On-Device OCR Scanner</p>
-                    <div className="relative h-36 sm:h-44 rounded-[14px] bg-black/45 overflow-hidden">
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.12),transparent_70%)]" />
-                      <div className="absolute inset-4 sm:inset-6 rounded-xl border-2 border-dashed border-[#FB7185]/70" />
-                      <div className="absolute inset-x-0 bottom-2 text-center text-[11px] text-white/70 px-2">
-                        Align card inside the frame before capture
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleScanCardWithOcr}
-                        disabled={scannerBusy}
-                        className="px-4 py-2 rounded-full text-xs font-semibold bg-[#E11D48] hover:brightness-110 disabled:opacity-60"
-                      >
-                        {scannerBusy ? 'Scanning...' : 'Scan Card Text'}
-                      </button>
-                      {scannerInfo && <p className="text-xs text-white/70">{scannerInfo}</p>}
-                    </div>
-                    {scannerDetectedLines.length > 0 && (
-                      <p className="text-[11px] text-white/55">
-                        OCR lines: {scannerDetectedLines.join(' • ')}
-                      </p>
-                    )}
                   </div>
 
                   <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#0D1117] px-4 py-3">
@@ -7090,7 +7063,7 @@ export default function CardSwipersLanding() {
                 <button
                   type="submit"
                   disabled={isPostingCard}
-                  className="w-full h-[54px] md:h-[60px] bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-70 font-bold rounded-[20px] shadow-[0_16px_30px_rgba(225,29,72,0.26)] transition-all text-sm"
+                  className="w-full h-[54px] md:h-[60px] mb-24 bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-70 font-bold rounded-[20px] shadow-[0_16px_30px_rgba(225,29,72,0.26)] transition-all text-sm"
                 >
                   {isPostingCard ? 'Publishing...' : 'Publish Asset to Feed'}
                 </button>
@@ -8760,26 +8733,55 @@ export default function CardSwipersLanding() {
       />
 
       {showDiscoverFilters && (
-        <div className="fixed inset-0 z-[75] flex justify-end bg-black/70" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
+        <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
           <button
             type="button"
             onClick={() => setShowDiscoverFilters(false)}
-            className="h-full flex-1"
+            className="absolute inset-0"
             aria-label="Close filters"
           />
-          <div className="h-full w-full max-w-md space-y-5 border-l border-white/15 bg-[#0B0F19] p-5 text-white shadow-2xl">
-            <div className="flex items-center justify-between gap-3">
+          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-[#0B0F19] text-white shadow-2xl flex flex-col max-h-[86vh]">
+            <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p>
                 <h2 id="discover-filters-title" className="mt-1 text-xl font-bold">Filter Listings</h2>
               </div>
-              <button type="button" onClick={() => setShowDiscoverFilters(false)} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-xl text-white/75 hover:bg-white/10" aria-label="Close filters">x</button>
+              <button type="button" onClick={() => setDiscoverFilters({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' })} className="text-xs font-semibold text-red-400 hover:text-red-300">Reset All</button>
             </div>
-            <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label>
-            <div className="grid grid-cols-2 gap-3"><label className="text-sm font-semibold text-white/80">Min Price<input type="number" min="0" value={discoverFilters.minPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minPrice: event.target.value }))} placeholder="$0" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label><label className="text-sm font-semibold text-white/80">Max Price<input type="number" min="0" value={discoverFilters.maxPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, maxPrice: event.target.value }))} placeholder="$5,000" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label></div>
-            <label className="block text-sm font-semibold text-white/80">Year<input type="number" min="1880" max="2100" value={discoverFilters.year} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, year: event.target.value }))} placeholder="2024" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label>
-            <label className="block text-sm font-semibold text-white/80">Grade Status<select value={discoverFilters.gradeStatus} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, gradeStatus: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option value="all">All</option><option value="graded">Graded Only</option><option value="ungraded">Ungraded Only</option></select></label>
-            <div className="flex justify-end gap-3"><button type="button" onClick={() => setDiscoverFilters({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' })} className="min-h-11 rounded-xl border border-white/20 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Clear</button><button type="button" onClick={() => setShowDiscoverFilters(false)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Apply Filters</button></div>
+            <div className="overflow-y-auto px-5 space-y-5 flex-1 min-h-0">
+              <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm font-semibold text-white/80">Min Price<input type="number" min="0" value={discoverFilters.minPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minPrice: event.target.value }))} placeholder="$0" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
+                <label className="text-sm font-semibold text-white/80">Max Price<input type="number" min="0" value={discoverFilters.maxPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, maxPrice: event.target.value }))} placeholder="$5,000" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
+              </div>
+              <label className="block text-sm font-semibold text-white/80">Year<input type="number" min="1880" max="2100" value={discoverFilters.year} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, year: event.target.value }))} placeholder="2024" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
+              <div>
+                <p className="text-sm font-semibold text-white/80 mb-2">Grade Status</p>
+                <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {[
+                    { value: 'all', label: 'All' },
+                    { value: 'ungraded', label: 'Raw' },
+                    { value: 'graded', label: 'Graded' }
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setDiscoverFilters((previous) => ({ ...previous, gradeStatus: option.value }))}
+                      className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold border transition-colors ${
+                        discoverFilters.gradeStatus === option.value
+                          ? 'bg-red-600 border-red-600 text-white'
+                          : 'bg-zinc-900 border-white/10 text-white/80 hover:border-white/25'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-white/10">
+              <button type="button" onClick={() => setShowDiscoverFilters(false)} className="w-full py-3.5 bg-red-600 rounded-xl font-bold text-white shadow-lg shadow-red-600/30 hover:bg-red-500 transition-colors">Apply Filters</button>
+            </div>
           </div>
         </div>
       )}
@@ -9122,7 +9124,7 @@ export default function CardSwipersLanding() {
 
       {showPersistentMobileDock && (
       <footer
-        className={`fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none transition-transform duration-300 ease-out ${isDockCompact ? 'translate-y-7' : 'translate-y-0'}`}
+        className={`fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none transition-all duration-300 ease-out ${isDockCompact ? 'translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
       >
         <div className="max-w-lg mx-auto pointer-events-auto">
