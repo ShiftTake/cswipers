@@ -7278,11 +7278,11 @@ export default function CardSwipersLanding() {
                   ref={clubCarouselRef}
                   onScroll={(event) => {
                     const container = event.currentTarget;
-                    const cardWidth = container.clientWidth * 0.8 + 16;
+                    const cardWidth = container.clientWidth * 0.68 + 16;
                     const nextIndex = cardWidth ? Math.round(container.scrollLeft / cardWidth) : 0;
                     setSelectedClubCarouselIndex(Math.max(0, Math.min(Math.max(filteredClubs.length, 0), nextIndex)));
                   }}
-                  className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-[10%] pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-[16%] pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {[
                     { id: 'create-club', isCreateClub: true },
@@ -7301,7 +7301,7 @@ export default function CardSwipersLanding() {
                               openCreateClub();
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 text-left transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/30"
+                          className="flex min-w-[68%] basis-[68%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 text-left transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/30"
                         >
                           <div className="relative aspect-square w-full bg-black/40">
                             <img src={authHeroImage} alt="Create a club" className="h-full w-full object-cover opacity-80" />
@@ -7329,7 +7329,7 @@ export default function CardSwipersLanding() {
                               handleEnterClub(club);
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 text-left transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                          className="flex min-w-[68%] basis-[68%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 text-left transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                         >
                           <div className="relative aspect-square w-full bg-black/40">
                             {club.logoUrl ? (
@@ -7377,7 +7377,7 @@ export default function CardSwipersLanding() {
                         type="button"
                         aria-label={`Show ${club.name || 'club'} ${index + 1}`}
                         onClick={() => {
-                          const cardWidth = clubCarouselRef.current ? clubCarouselRef.current.clientWidth * 0.8 + 16 : 0;
+                          const cardWidth = clubCarouselRef.current ? clubCarouselRef.current.clientWidth * 0.68 + 16 : 0;
                           clubCarouselRef.current?.scrollTo({ left: cardWidth * index, behavior: 'smooth' });
                           if (club.id === 'create-club') openCreateClub();
                           else handleEnterClub(club);
