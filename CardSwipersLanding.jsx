@@ -660,6 +660,13 @@ const ESCROW_API_BASE = '/api';
 const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community marketplace rules.';
 
 const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const buildAgentRefCode = (clubCode, member) => {
+  const nameSlug = String(member?.displayName || member?.email || 'agent')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 8)
+    .toUpperCase() || 'AGENT';
+  return `${clubCode || 'CLUB'}-${nameSlug}`;
+};
 const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
 const CLUB_LOGO_PRESETS = [
   { id: 'baseball', symbol: '⚾', className: 'from-sky-900 via-blue-700 to-slate-950' },
@@ -4635,6 +4642,14 @@ export default function CardSwipersLanding() {
           escrowHeld: 0,
           status: 'active'
         };
+        const refInput = window.prompt('Agent referral code (optional):', '').trim().toUpperCase();
+        if (refInput) {
+          const agentSnap = await getDocs(query(collection(db, 'clubs', target.id, 'members'), where('agentRefCode', '==', refInput), where('role', '==', 'agent'), limit(1)));
+          if (!agentSnap.empty) {
+            memberProfile.referredByAgentId = agentSnap.docs[0].data().uid;
+            memberProfile.agentRefCode = refInput;
+          }
+        }
         await setDoc(doc(db, 'clubs', target.id, 'members', firebaseUser.uid), memberProfile, { merge: true });
         setSelectedClubId(target.id);
         setClubInfo(`Joined ${target.name || 'club'}. Welcome!`);
@@ -4670,7 +4685,7 @@ export default function CardSwipersLanding() {
         setClubError('You have been blocked from this club by its moderators.');
         return;
       }
-      await addDoc(collection(db, 'clubs', target.id, 'joinRequests'), {
+      const joinRequestPayload = {
         userId: firebaseUser.uid,
         userName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
         userEmail: firebaseUser.email || '',
@@ -4679,7 +4694,19 @@ export default function CardSwipersLanding() {
         requestedAt: serverTimestamp(),
         creditRequest: 0,
         requestType: 'member-join'
-      });
+      };
+      const refInput = window.prompt('Agent referral code (optional):', '');
+      if (refInput !== null) {
+        const normalizedRef = refInput.trim().toUpperCase();
+        if (normalizedRef) {
+          const agentSnap = await getDocs(query(collection(db, 'clubs', target.id, 'members'), where('agentRefCode', '==', normalizedRef), where('role', '==', 'agent'), limit(1)));
+          if (!agentSnap.empty) {
+            joinRequestPayload.referredByAgentId = agentSnap.docs[0].data().uid;
+            joinRequestPayload.agentRefCode = normalizedRef;
+          }
+        }
+      }
+      await addDoc(collection(db, 'clubs', target.id, 'joinRequests'), joinRequestPayload);
       setSelectedClubId(target.id);
       setClubInfo(`Join request submitted to ${target.name || 'the club'}. Awaiting owner approval.`);
     } catch (err) {
@@ -4731,7 +4758,8 @@ export default function CardSwipersLanding() {
           credits: 0,
           creditLimit: 0,
           escrowHeld: 0,
-          status: 'active'
+          status: 'active',
+          ...(requestData.referredByAgentId ? { referredByAgentId: requestData.referredByAgentId, agentRefCode: requestData.agentRefCode || null } : {})
         }, { merge: true });
         transaction.update(clubRef, {
           memberCount: Number(clubData.memberCount || 0) + 1,
@@ -5010,16 +5038,31 @@ export default function CardSwipersLanding() {
     setClubInfo('');
 
     try {
-      await setDoc(doc(db, 'clubs', selectedClubId, 'members', memberUid), {
-        role,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      const targetMember = selectedClubMembers.find((member) => member.uid === memberUid) || {};
+      const roleUpdate = { role, updatedAt: serverTimestamp() };
+      if (role === 'agent') {
+        roleUpdate.agentRefCode = targetMember.agentRefCode || buildAgentRefCode(selectedClub?.code, targetMember);
+      } else if (role === 'member') {
+        roleUpdate.agentRefCode = null;
+      }
+      await setDoc(doc(db, 'clubs', selectedClubId, 'members', memberUid), roleUpdate, { merge: true });
       setClubInfo('Member role updated.');
     } catch (error) {
       console.error('Failed updating club role:', error);
       setClubError('Could not update that member role.');
     } finally {
       setClubActionBusyId('');
+    }
+  };
+
+  const handleCopyClubId = async () => {
+    if (!selectedClub?.id) return;
+    try {
+      await navigator.clipboard.writeText(selectedClub.id);
+      setClubInfo('Club ID copied to clipboard.');
+    } catch (error) {
+      console.error('Failed copying club ID:', error);
+      setClubError('Could not copy the Club ID.');
     }
   };
 
@@ -7120,13 +7163,13 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="flex-1 h-full w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex-1 h-full w-full overflow-y-auto overscroll-y-contain bg-zinc-950 text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <form
               onSubmit={(event) => {
                 event.preventDefault();
                 handleCreateClub();
               }}
-              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
+              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-28 pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
             >
               <div className="relative flex items-center justify-center">
                 <button
@@ -7156,7 +7199,7 @@ export default function CardSwipersLanding() {
                   placeholder="Please enter your club name."
                   maxLength={20}
                   autoFocus
-                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#30363D] bg-[#161B22] px-5 text-base text-white placeholder:text-slate-500 focus:border-[#FFD700] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/20 sm:h-[94px] sm:px-6 sm:text-xl"
+                  className="mt-4 h-[76px] w-full rounded-xl border border-white/10 bg-zinc-900 px-5 text-base text-white placeholder:text-slate-500 focus:border-red-500 focus:outline-none sm:h-[94px] sm:px-6 sm:text-xl"
                 />
                 <p className="mt-2 text-right text-xs text-slate-400">{clubDraftName.trim().length}/20</p>
               </div>
@@ -7175,7 +7218,7 @@ export default function CardSwipersLanding() {
                     <button
                       type="button"
                       onClick={() => clubLogoInputRef.current?.click()}
-                      className={`aspect-square rounded-2xl border-2 border-dashed bg-[#161B22] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-[#30363D] hover:border-slate-500'}`}
+                      className={`aspect-square rounded-2xl border-2 border-dashed bg-zinc-900/80 p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-white/10 hover:border-slate-500'}`}
                     >
                       {clubDraftLogoPreview ? (
                         <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
@@ -7200,7 +7243,7 @@ export default function CardSwipersLanding() {
                             setClubDraftLogoId(preset.id);
                             setClubDraftError('');
                           }}
-                          className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-[#30363D]'}`}
+                          className={`relative aspect-square overflow-hidden rounded-2xl border bg-zinc-900/80 ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-white/10'}`}
                           aria-label={`Use ${preset.id} club logo`}
                         >
                           <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
@@ -7215,13 +7258,15 @@ export default function CardSwipersLanding() {
 
               {clubDraftError && <p className="mt-5 text-sm font-medium text-rose-300">{clubDraftError}</p>}
 
-              <button
-                type="submit"
-                disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
-                className="mt-8 min-h-14 w-full shrink-0 rounded-2xl bg-emerald-500 px-6 py-3 text-xl font-bold text-black shadow-[0_8px_18px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none sm:mt-auto sm:min-h-16 sm:py-4 sm:text-2xl"
-              >
-                {clubCreateBusy ? 'Creating...' : 'Confirm'}
-              </button>
+              <div className="sticky bottom-0 mt-8 -mx-5 bg-black/90 backdrop-blur-md px-5 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:-mx-10 sm:px-10">
+                <button
+                  type="submit"
+                  disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
+                  className="min-h-14 w-full shrink-0 rounded-2xl bg-emerald-500 px-6 py-3 text-xl font-bold text-black shadow-[0_8px_18px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none sm:min-h-16 sm:py-4 sm:text-2xl"
+                >
+                  {clubCreateBusy ? 'Creating...' : 'Confirm'}
+                </button>
+              </div>
             </form>
           </div>
         )}
@@ -7491,6 +7536,26 @@ export default function CardSwipersLanding() {
                     </section>
 
                     <div className="grid lg:grid-cols-2 gap-3 min-h-0">
+                      {(canManageClubMembers || canModerateClubPosts) && (
+                        <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Invite &amp; Share</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <code className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-xs font-mono text-white/85 select-all">
+                              {selectedClub?.id || '—'}
+                            </code>
+                            <button
+                              type="button"
+                              onClick={handleCopyClubId}
+                              className="px-3 py-2 rounded-lg text-xs font-bold bg-[#E11D48] hover:bg-[#BE123C] transition-colors"
+                            >
+                              Copy Club ID
+                            </button>
+                            {selectedClub?.code && (
+                              <span className="text-[11px] text-white/55">Access code: <span className="font-mono text-white/80">{selectedClub.code}</span></span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col">
                         <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
                         <div className="space-y-2 overflow-y-auto pr-1">
