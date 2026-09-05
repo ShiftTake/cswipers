@@ -203,7 +203,10 @@ service cloud.firestore {
     }
 
     match /clubs/{clubId} {
-      allow read: if isAdmin() || (signedIn() && !isClubBanned(clubId));
+      // Listing clubs (queries) can't run per-doc ban lookups, so allow any
+      // signed-in user to list; single-doc reads still enforce the ban check.
+      allow get: if isAdmin() || (signedIn() && !isClubBanned(clubId));
+      allow list: if signedIn();
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow update: if isAdmin() || (
         isClubOwner(clubId) &&
