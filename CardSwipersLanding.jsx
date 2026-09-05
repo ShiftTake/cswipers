@@ -7169,7 +7169,7 @@ export default function CardSwipersLanding() {
                 event.preventDefault();
                 handleCreateClub();
               }}
-              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-28 pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
+              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-36 pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
             >
               <div className="relative flex items-center justify-center">
                 <button
@@ -7257,17 +7257,19 @@ export default function CardSwipersLanding() {
               </div>
 
               {clubDraftError && <p className="mt-5 text-sm font-medium text-rose-300">{clubDraftError}</p>}
-
-              <div className="sticky bottom-0 mt-8 -mx-5 bg-black/90 backdrop-blur-md px-5 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:-mx-10 sm:px-10">
+            </form>
+            <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-xl border-t border-white/10 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <div className="mx-auto w-full max-w-2xl">
                 <button
                   type="submit"
+                  onClick={handleCreateClub}
                   disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
-                  className="min-h-14 w-full shrink-0 rounded-2xl bg-emerald-500 px-6 py-3 text-xl font-bold text-black shadow-[0_8px_18px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none sm:min-h-16 sm:py-4 sm:text-2xl"
+                  className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-black font-extrabold text-lg rounded-2xl shadow-lg shadow-emerald-500/25 transition-all disabled:opacity-50"
                 >
-                  {clubCreateBusy ? 'Creating...' : 'Confirm'}
+                  {clubCreateBusy ? 'Creating...' : 'Create Club'}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         )}
 
