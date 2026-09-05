@@ -4445,6 +4445,11 @@ export default function CardSwipersLanding() {
     if (!firebaseUser || clubCreateBusy) return;
     const ownerName = currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector';
     const clubName = clubDraftName.trim();
+    if (!clubName) {
+      setClubDraftError('Please enter a club name.');
+      addNotification({ title: 'Create Club', message: 'Please enter a club name.' });
+      return;
+    }
     if (clubName.length < 3 || clubName.length > 20) {
       setClubDraftError('Club names must be between 3 and 20 characters.');
       return;
@@ -4483,6 +4488,7 @@ export default function CardSwipersLanding() {
         logoPresetId: clubDraftLogoId === 'custom' ? null : clubDraftLogoId,
         logoUrl,
         accessMode: 'private',
+        accessType: 'private',
         creditHierarchy: 'owner→agent→member',
         ownerUid: firebaseUser.uid,
         ownerId: firebaseUser.uid,
@@ -4491,6 +4497,7 @@ export default function CardSwipersLanding() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         memberCount: 1,
+        membersCount: 1,
         activeTables: 0,
         totalEscrow: 0,
         creditLedger: {
@@ -4533,11 +4540,12 @@ export default function CardSwipersLanding() {
 
       setSelectedClubId(clubRef.id);
       setClubInfo('Club created. Owner-led credit hierarchy is active and agents can be assigned for trade nights.');
+      addNotification({ title: 'Club created', message: `${clubName} is live. You are the owner.` });
       resetClubDraft();
       setCurrentTab('onboarding');
     } catch (error) {
-      console.error('Failed creating club:', error);
-      setClubDraftError('Could not create club right now. Please try again.');
+      console.error('Failed to create club:', error);
+      setClubDraftError(`Failed to create club: ${error.message || 'Please try again.'}`);
     } finally {
       setClubCreateBusy(false);
     }
