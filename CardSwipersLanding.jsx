@@ -7254,9 +7254,9 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="max-w-6xl mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 py-6 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
-            <div className={`grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1 ${!selectedClub ? 'content-center justify-items-center' : ''}`}>
-              <section className={`flex flex-col gap-4 min-h-0 ${!selectedClub ? 'xl:col-span-2 mx-auto w-full max-w-xl items-center justify-center' : 'w-full'}`}>
+          <div className={`mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 overflow-y-auto overscroll-y-contain ${!selectedClub ? 'max-w-md justify-center py-6 pb-28 md:pb-32' : 'max-w-6xl py-6 pb-24 md:pb-28'}`}>
+            <div className={`gap-2.5 md:gap-4 min-h-0 ${!selectedClub ? 'flex flex-col items-center justify-center w-full' : 'grid xl:grid-cols-[0.96fr_1.04fr] flex-1'}`}>
+              <section className={`flex flex-col gap-4 min-h-0 ${!selectedClub ? 'mx-auto w-full max-w-xl items-center justify-center' : 'w-full'}`}>
                 {/* Search Club bar — floating above the card deck */}
                 <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
