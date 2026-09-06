@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as Sentry from '@sentry/react';
 import { Capacitor } from '@capacitor/core';
 import CardSwipersLanding from './CardSwipersLanding.jsx';
+import ErrorBoundary from './ErrorBoundary.jsx';
 
 const SENTRY_DSN =
   import.meta.env.VITE_SENTRY_DSN ||
@@ -34,6 +35,8 @@ if (SENTRY_DSN) {
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <CardSwipersLanding />
+    <ErrorBoundary>
+      <CardSwipersLanding />
+    </ErrorBoundary>
   </React.StrictMode>
 );

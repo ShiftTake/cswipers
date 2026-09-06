@@ -5774,6 +5774,11 @@ export default function CardSwipersLanding() {
           </div>
         </div>
       )}
+      {!showStartupSplash && authLoading && isNativeApp && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+        </div>
+      )}
       {isLandingScreen && (
         <>
           <div className="absolute -top-36 -left-20 w-[28rem] h-[28rem] rounded-full bg-[#D72638]/20 blur-3xl pointer-events-none" />
