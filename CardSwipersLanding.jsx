@@ -1200,6 +1200,9 @@ export default function CardSwipersLanding() {
     pendingOfferOffers.buying.filter((offer) => offer.status === 'countered').length;
   const hasAdminAccess = isAdmin;
   const canAccessAuthQueue = isAdmin || verifierClubIds.length > 0;
+  const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
+  const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
+  const selectedClubRole = selectedClubMembership?.role || '';
   const canViewClubFinances = hasAdminAccess || selectedClubRole === 'owner' || selectedClubRole === 'agent';
   const clubSuccessionCandidates = selectedClubMembers.filter(
     (member) => member.uid !== firebaseUser?.uid && member.status === 'active' && isClubModeratorRole(member.role)
@@ -1225,9 +1228,6 @@ export default function CardSwipersLanding() {
       };
     });
   })();
-  const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
-  const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
-  const selectedClubRole = selectedClubMembership?.role || '';
   const canManageClubMembers = selectedClubRole === 'owner';
   const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
   const isSelectedClubBanned = Boolean(selectedClubBanRecord);
