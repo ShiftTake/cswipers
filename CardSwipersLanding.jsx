@@ -323,6 +323,42 @@ function BellIcon() {
   );
 }
 
+function FinanceChart({ title, subtitle, data, valueKey, prefix = '', suffix = '', accent = '#34D399' }) {
+  const width = 320;
+  const height = 110;
+  const pad = 8;
+  const values = (data || []).map((point) => Number(point[valueKey] || 0));
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const span = max - min || 1;
+  const points = values.map((value, index) => {
+    const x = values.length <= 1 ? width / 2 : pad + (index / (values.length - 1)) * (width - pad * 2);
+    const y = height - pad - ((value - min) / span) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const latest = values.length ? values[values.length - 1] : 0;
+  const formatted = `${prefix}${latest >= 1000 && !suffix ? latest.toLocaleString(undefined, { maximumFractionDigits: 0 }) : latest.toFixed(suffix ? 1 : 2)}${suffix}`;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-white">{title}</p>
+          <p className="text-[10px] text-white/50 truncate">{subtitle}</p>
+        </div>
+        <p className="text-sm font-black" style={{ color: accent }}>{formatted}</p>
+      </div>
+      {values.length === 0 ? (
+        <p className="mt-4 text-center text-[11px] text-white/40">No ledger data in this range.</p>
+      ) : (
+        <svg viewBox={`0 0 ${width} ${height}`} className="mt-2 w-full">
+          <polyline fill="none" stroke={accent} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={points.join(' ')} />
+        </svg>
+      )}
+    </div>
+  );
+}
+
 function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -1085,6 +1121,10 @@ export default function CardSwipersLanding() {
   const [selectedClubEvents, setSelectedClubEvents] = useState([]);
   const [selectedClubPosts, setSelectedClubPosts] = useState([]);
   const [selectedClubReports, setSelectedClubReports] = useState([]);
+  const [selectedClubLedgers, setSelectedClubLedgers] = useState([]);
+  const [clubFinancesTimeframe, setClubFinancesTimeframe] = useState('1M');
+  const [showTransferOwnership, setShowTransferOwnership] = useState(false);
+  const [transferSuccessorUid, setTransferSuccessorUid] = useState('');
   const [selectedClubBanRecord, setSelectedClubBanRecord] = useState(null);
   const [clubPostDraft, setClubPostDraft] = useState({
     title: '',
@@ -1160,6 +1200,31 @@ export default function CardSwipersLanding() {
     pendingOfferOffers.buying.filter((offer) => offer.status === 'countered').length;
   const hasAdminAccess = isAdmin;
   const canAccessAuthQueue = isAdmin || verifierClubIds.length > 0;
+  const canViewClubFinances = hasAdminAccess || selectedClubRole === 'owner' || selectedClubRole === 'agent';
+  const clubSuccessionCandidates = selectedClubMembers.filter(
+    (member) => member.uid !== firebaseUser?.uid && member.status === 'active' && isClubModeratorRole(member.role)
+  );
+  const clubFinanceSeries = (() => {
+    const now = Date.now();
+    const rangeMs = { '1M': 30 * 864e5, '1Y': 365 * 864e5, ALL: Infinity }[clubFinancesTimeframe] || Infinity;
+    const filtered = selectedClubLedgers.filter((entry) => {
+      const created = entry.createdAt?.toMillis?.() || 0;
+      return rangeMs === Infinity || now - created <= rangeMs;
+    });
+    let cumulative = 0;
+    return filtered.map((entry, index) => {
+      const fee = Number(entry.ownerFee || 0) + Number(entry.agentFee || 0);
+      const gross = Number(entry.grossAmount || 0);
+      cumulative += fee;
+      return {
+        index,
+        label: new Date(entry.createdAt?.toMillis?.() || now).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+        feeIncome: fee / 100,
+        cumulativeFeeIncome: cumulative / 100,
+        captureRate: gross > 0 ? (fee / gross) * 100 : 0
+      };
+    });
+  })();
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
   const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
   const selectedClubRole = selectedClubMembership?.role || '';
@@ -2142,6 +2207,23 @@ export default function CardSwipersLanding() {
       }
     );
 
+    let unsubLedgers = () => {};
+    if (canModerateClubPosts || hasAdminAccess) {
+      const ledgersRef = collection(doc(db, 'clubs', selectedClubId), 'ledgers');
+      unsubLedgers = onSnapshot(
+        query(ledgersRef, orderBy('createdAt', 'asc'), limit(500)),
+        (snapshot) => {
+          setSelectedClubLedgers(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+        },
+        (error) => {
+          console.error('Failed loading club ledgers:', error);
+          setSelectedClubLedgers([]);
+        }
+      );
+    } else {
+      setSelectedClubLedgers([]);
+    }
+
     let unsubBan = () => {};
     if (firebaseUser?.uid) {
       unsubBan = onSnapshot(
@@ -2162,6 +2244,7 @@ export default function CardSwipersLanding() {
       unsubEvents();
       unsubPosts();
       unsubReports();
+      unsubLedgers();
       unsubBan();
     };
   }, [selectedClubId, firebaseUser, canModerateClubPosts, selectedClubMembership?.uid, selectedClubMembership?.status, hasAdminAccess]);
@@ -4801,8 +4884,8 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleLeaveClub = async () => {
-    if (!firebaseUser || !selectedClubId || !selectedClubMembership || selectedClubRole === 'owner' || clubActionBusyId) return;
+  const handleLeaveClub = async (successorUid = null) => {
+    if (!firebaseUser || !selectedClubId || !selectedClubMembership || clubActionBusyId) return;
 
     setClubActionBusyId('leave-club');
     setClubError('');
@@ -4814,11 +4897,13 @@ export default function CardSwipersLanding() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
-        body: JSON.stringify({ clubId: selectedClubId })
+        body: JSON.stringify({ clubId: selectedClubId, successorUid: successorUid || undefined })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Could not leave this club.');
       setSelectedClubId('');
+      setShowTransferOwnership(false);
+      setTransferSuccessorUid('');
       setClubInfo('You left the club.');
     } catch (error) {
       console.error('Failed leaving club:', error);
@@ -7446,11 +7531,19 @@ export default function CardSwipersLanding() {
                       ) : selectedClubRole && selectedClubRole !== 'owner' ? (
                         <button
                           type="button"
-                          onClick={handleLeaveClub}
+                          onClick={() => handleLeaveClub()}
                           disabled={clubActionBusyId === 'leave-club'}
                           className="mt-3 rounded-lg border border-red-300/30 bg-red-900/35 px-3 py-2 text-xs font-semibold text-red-100 hover:bg-red-900/55 disabled:opacity-60"
                         >
                           {clubActionBusyId === 'leave-club' ? 'Leaving...' : 'Leave Club'}
+                        </button>
+                      ) : selectedClubRole === 'owner' && Number(selectedClub.memberCount || 1) > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowTransferOwnership(true)}
+                          className="mt-3 rounded-lg border border-amber-300/30 bg-amber-900/25 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-900/45"
+                        >
+                          Transfer Ownership &amp; Leave
                         </button>
                       ) : null}
                     </div>
@@ -7563,6 +7656,32 @@ export default function CardSwipersLanding() {
                             {selectedClub?.code && (
                               <span className="text-[11px] text-white/55">Access code: <span className="font-mono text-white/80">{selectedClub.code}</span></span>
                             )}
+                          </div>
+                        </div>
+                      )}
+                      {canViewClubFinances && (
+                        <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Club Financials</p>
+                              <p className="mt-0.5 text-xs text-white/60">Fee income and trade capture from completed escrow trades.</p>
+                            </div>
+                            <div className="flex gap-1 rounded-lg border border-white/10 bg-black/30 p-0.5">
+                              {['1M', '1Y', 'ALL'].map((range) => (
+                                <button
+                                  key={range}
+                                  type="button"
+                                  onClick={() => setClubFinancesTimeframe(range)}
+                                  className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${clubFinancesTimeframe === range ? 'bg-[#E11D48] text-white' : 'text-white/60 hover:text-white'}`}
+                                >
+                                  {range}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="mt-3 grid sm:grid-cols-2 gap-3">
+                            <FinanceChart title="Fee Income" subtitle="Cumulative club + agent fees" data={clubFinanceSeries} valueKey="cumulativeFeeIncome" prefix="$" accent="#34D399" />
+                            <FinanceChart title="Trade Capture Rate" subtitle="Fee share of gross trade value" data={clubFinanceSeries} valueKey="captureRate" suffix="%" accent="#F5C542" />
                           </div>
                         </div>
                       )}
@@ -8587,6 +8706,51 @@ export default function CardSwipersLanding() {
 
       {showAuthQueue && firebaseUser && canAccessAuthQueue && (
         <AuthenticationQueue firebaseUser={firebaseUser} canAccess={canAccessAuthQueue} onClose={() => setShowAuthQueue(false)} />
+      )}
+
+      {showTransferOwnership && (
+        <div className="fixed inset-0 z-[69] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="transfer-ownership-title">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#171A22] p-5 space-y-4">
+            <div>
+              <h3 id="transfer-ownership-title" className="text-lg font-bold text-white">Transfer Ownership</h3>
+              <p className="mt-1 text-xs text-white/60">Select a successor. If left blank, ownership passes to the longest-tenured active agent.</p>
+            </div>
+            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+              {clubSuccessionCandidates.length === 0 ? (
+                <p className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">No active agents or moderators available. Promote an agent first.</p>
+              ) : (
+                clubSuccessionCandidates.map((member) => (
+                  <button
+                    key={member.uid}
+                    type="button"
+                    onClick={() => setTransferSuccessorUid(member.uid)}
+                    className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${transferSuccessorUid === member.uid ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-black/25 hover:border-white/25'}`}
+                  >
+                    <p className="text-sm font-semibold text-white">{member.displayName || member.email || member.uid}</p>
+                    <p className="text-[11px] text-white/55 capitalize">{member.role || 'member'}</p>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowTransferOwnership(false); setTransferSuccessorUid(''); }}
+                className="flex-1 rounded-xl border border-white/15 py-2.5 text-sm font-semibold text-white/80 hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLeaveClub(transferSuccessorUid || null)}
+                disabled={clubActionBusyId === 'leave-club'}
+                className="flex-1 rounded-xl bg-[#E11D48] py-2.5 text-sm font-bold text-white hover:bg-[#BE123C] disabled:opacity-60"
+              >
+                {clubActionBusyId === 'leave-club' ? 'Transferring...' : 'Transfer & Leave'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showNotificationsPanel && (

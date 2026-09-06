@@ -254,6 +254,13 @@ service cloud.firestore {
         allow delete: if isAdmin() || isClubModerator(clubId) || (signedIn() && memberId == request.auth.uid);
       }
 
+      match /ledgers/{txId} {
+        // Financial analytics are scoped to active owner/agent members; leaving
+        // the club revokes access because isClubModerator checks membership.
+        allow read: if isAdmin() || isClubModerator(clubId);
+        allow create, update, delete: if false;
+      }
+
       match /events/{eventId} {
         allow read: if isAdmin() || (isClubMember(clubId) && !isClubBanned(clubId));
         allow create: if isClubModerator(clubId) &&

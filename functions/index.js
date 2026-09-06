@@ -1494,20 +1494,50 @@ exports.leaveClub = onRequest(async (req, res) => {
       if (!clubSnapshot.exists || !memberSnapshot.exists) throw new Error('Club membership was not found.');
 
       const member = memberSnapshot.data();
-      if (String(member.role || '').toLowerCase() === 'owner') {
-        throw new Error('The club owner cannot leave the club. Transfer ownership or delete the club instead.');
-      }
-      if (Number(member.escrowHeld || 0) > 0) {
-        throw new Error('You cannot leave while credits are held in trade-night escrow.');
+      const isOwner = String(member.role || '').toLowerCase() === 'owner';
+      const club = clubSnapshot.data();
+      if (isOwner && Number(club?.memberCount || 0) <= 1) {
+        throw new Error('You are the only member. Delete the club instead of leaving.');
       }
 
-      const club = clubSnapshot.data();
       const ledger = club.creditLedger || {};
+
+      // All transaction reads must complete before any writes.
+      let successorUid = null;
+      let successorData = null;
+      if (isOwner) {
+        const requested = String(req.body?.successorUid || '').trim();
+        if (requested) {
+          const requestedSnap = await transaction.get(clubRef.collection('members').doc(requested));
+          if (!requestedSnap.exists) throw new Error('Selected successor is not a club member.');
+          successorUid = requested;
+          successorData = requestedSnap.data();
+        } else {
+          const agentsSnap = await transaction.get(
+            clubRef.collection('members').where('role', '==', 'agent').where('status', '==', 'active')
+          );
+          const agents = agentsSnap.docs
+            .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            .filter((entry) => entry.id !== user.uid)
+            .sort((a, b) => (a.joinedAt?.toMillis?.() || 0) - (b.joinedAt?.toMillis?.() || 0));
+          if (agents.length === 0) throw new Error('Assign a successor before leaving as owner.');
+          successorUid = agents[0].id;
+          successorData = agents[0];
+        }
+      }
+
       const memberBalances = { ...(ledger.memberBalances || {}) };
       delete memberBalances[user.uid];
+
+      if (isOwner && successorUid) {
+        transaction.update(clubRef.collection('members').doc(successorUid), { role: 'owner', updatedAt: serverTimestamp() });
+        memberBalances[successorUid] = { ...(memberBalances[successorUid] || {}), role: 'owner', status: 'active' };
+      }
+
       transaction.delete(memberRef);
       transaction.update(clubRef, {
         memberCount: Math.max(0, Number(club.memberCount || 0) - 1),
+        ...(isOwner && successorUid ? { ownerUid: successorUid, ownerId: successorUid } : {}),
         creditLedger: { ...ledger, memberBalances },
         updatedAt: serverTimestamp()
       });
@@ -1701,5 +1731,141 @@ exports.notifyOnOfferStatusChange = onDocumentUpdated('offers/{offerId}', async 
     await notifyUser(buyerId, 'offer_countered', `The seller countered your offer on ${cardLabel} with $${after.counterAmount}.`, {
       offerId: event.params.offerId
     });
+  }
+});
+
+const MAX_RAKE_PERCENT = 10;
+
+// Computes the club fee split for a completed escrow trade.
+function computeEscrowSplit(grossCents, club, agent) {
+  const grossAmount = Math.max(0, Math.round(Number(grossCents || 0)));
+  const rakePercent = Math.min(MAX_RAKE_PERCENT, Math.max(0, Number(club?.rakePercent || 0)));
+  const totalRake = Math.round((grossAmount * rakePercent) / 100);
+  const agentSplitPercent = agent ? Math.min(100, Math.max(0, Number(agent.agentSplitPercent || 0))) : 0;
+  const agentPayout = agent ? Math.round((totalRake * agentSplitPercent) / 100) : 0;
+  const ownerPayout = totalRake - agentPayout;
+  const sellerPayout = grossAmount - totalRake;
+  return { grossAmount, rakePercent, totalRake, agentPayout, ownerPayout, sellerPayout };
+}
+
+async function createStripeTransfer(amountCents, destinationAccountId, transferGroup, metadata) {
+  if (!amountCents || amountCents <= 0) return null;
+  if (!String(destinationAccountId || '').startsWith('acct_')) return null;
+  const stripe = getStripeClient();
+  const transfer = await stripe.transfers.create({
+    amount: amountCents,
+    currency: DEFAULT_CURRENCY,
+    destination: destinationAccountId,
+    transfer_group: transferGroup,
+    metadata
+  });
+  return transfer.id;
+}
+
+exports.releaseTradeEscrow = onRequest({ secrets: [stripeSecret] }, async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const admin = await requireAdmin(req);
+    const orderId = String(req.body?.orderId || '').trim();
+    if (!orderId) throw new Error('orderId is required.');
+
+    const firestore = getDb();
+    const orderRef = firestore.collection(ORDERS_COLLECTION).doc(orderId);
+    const orderSnap = await orderRef.get();
+    if (!orderSnap.exists) throw new Error('Order not found.');
+    const order = orderSnap.data();
+    if (String(order.status || '').toLowerCase() !== 'completed') {
+      throw new Error('Escrow can only be split for completed trades.');
+    }
+    if (order.escrow_split_at) {
+      return sendJson(res, 200, { ok: true, orderId, alreadySplit: true });
+    }
+
+    const grossAmount = Number(order.amount_base || order.total_paid || 0);
+    const clubId = String(order.club_id || order.clubId || '').trim();
+    let club = null;
+    let agent = null;
+    let ownerUid = null;
+
+    if (clubId) {
+      const clubSnap = await firestore.collection('clubs').doc(clubId).get();
+      if (clubSnap.exists) {
+        club = clubSnap.data();
+        ownerUid = club.ownerUid || club.ownerId || null;
+        const agentUid = order.referred_by_agent_id || order.referredByAgentId || null;
+        if (agentUid) {
+          const agentSnap = await firestore.collection('clubs').doc(clubId).collection('members').doc(agentUid).get();
+          if (agentSnap.exists && String(agentSnap.data()?.role || '').toLowerCase() === 'agent') {
+            agent = { uid: agentUid, ...agentSnap.data() };
+          }
+        }
+      }
+    }
+
+    const split = computeEscrowSplit(grossAmount, club, agent);
+
+    const transfers = {};
+    transfers.seller = await createStripeTransfer(
+      split.sellerPayout,
+      order.seller_id,
+      order.transfer_group,
+      { orderId, resolution: 'escrow_seller', actor: admin.uid }
+    );
+
+    if (split.ownerPayout > 0 && ownerUid) {
+      const ownerVerification = await firestore.collection('sellerVerifications').doc(ownerUid).get();
+      const ownerAccount = ownerVerification.exists
+        ? ownerVerification.data()?.stripeConnectedAccountId || ownerVerification.data()?.connectedAccountId
+        : null;
+      transfers.owner = await createStripeTransfer(split.ownerPayout, ownerAccount, order.transfer_group, { orderId, resolution: 'escrow_owner_rake', actor: admin.uid });
+    }
+
+    if (split.agentPayout > 0 && agent) {
+      const agentVerification = await firestore.collection('sellerVerifications').doc(agent.uid).get();
+      const agentAccount = agentVerification.exists
+        ? agentVerification.data()?.stripeConnectedAccountId || agentVerification.data()?.connectedAccountId
+        : null;
+      transfers.agent = await createStripeTransfer(split.agentPayout, agentAccount, order.transfer_group, { orderId, resolution: 'escrow_agent_rake', actor: admin.uid });
+    }
+
+    const txRef = clubId ? firestore.collection('clubs').doc(clubId).collection('ledgers').doc(orderId) : null;
+    if (txRef) {
+      await txRef.set({
+        orderId,
+        grossAmount,
+        sellerAmount: split.sellerPayout,
+        ownerFee: split.ownerPayout,
+        agentFee: split.agentPayout,
+        rakePercent: split.rakePercent,
+        agentId: agent?.uid || null,
+        ownerUid: ownerUid || null,
+        transfers,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    await orderRef.set({
+      escrow_split_at: serverTimestamp(),
+      escrow_split: {
+        grossAmount,
+        sellerPayout: split.sellerPayout,
+        ownerPayout: split.ownerPayout,
+        agentPayout: split.agentPayout,
+        rakePercent: split.rakePercent,
+        clubId: clubId || null,
+        agentId: agent?.uid || null
+      },
+      updated_at: serverTimestamp()
+    }, { merge: true });
+
+    return sendJson(res, 200, { ok: true, orderId, split, transfers });
+  } catch (error) {
+    console.error('releaseTradeEscrow failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to release trade escrow.' });
   }
 });

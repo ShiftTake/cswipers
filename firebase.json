@@ -67,6 +67,10 @@
         "function": "resolveCardAuthentication"
       },
       {
+        "source": "/api/escrow/release-trade",
+        "function": "releaseTradeEscrow"
+      },
+      {
         "source": "/release-seller-funds",
         "function": "releaseSellerFunds"
       },
