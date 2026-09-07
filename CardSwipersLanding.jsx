@@ -1127,6 +1127,8 @@ export default function CardSwipersLanding() {
   const [selectedClubReports, setSelectedClubReports] = useState([]);
   const [selectedClubLedgers, setSelectedClubLedgers] = useState([]);
   const [clubFinancesTimeframe, setClubFinancesTimeframe] = useState('1M');
+  const [showClubActionHub, setShowClubActionHub] = useState(false);
+  const [clubLobbyTick, setClubLobbyTick] = useState(() => Date.now());
   const [showTransferOwnership, setShowTransferOwnership] = useState(false);
   const [transferSuccessorUid, setTransferSuccessorUid] = useState('');
   const [selectedClubBanRecord, setSelectedClubBanRecord] = useState(null);
@@ -2071,6 +2073,13 @@ export default function CardSwipersLanding() {
 
     return () => unsubscribe();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    // Drives the live "closes in" countdown on trade-night lobby rows.
+    if (!selectedClubId) return undefined;
+    const intervalId = setInterval(() => setClubLobbyTick(Date.now()), 1000);
+    return () => clearInterval(intervalId);
+  }, [selectedClubId]);
 
   useEffect(() => {
     // Auto-focus the user's primary (most recently joined) club once, without
@@ -4844,8 +4853,17 @@ export default function CardSwipersLanding() {
 
   const handleEnterClub = (club) => {
     if (!club?.id) return;
+    setClubError('');
+    setClubInfo('');
     setSelectedClubId(club.id);
     setSelectedClubCarouselIndex(orderedClubs.findIndex((entry) => entry.id === club.id));
+  };
+
+  const handleExitClub = () => {
+    setSelectedClubId('');
+    setShowClubActionHub(false);
+    setClubError('');
+    setClubInfo('');
   };
 
   const handleApproveClubJoinRequest = async (request) => {
@@ -7406,9 +7424,10 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className={`mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 overflow-y-auto overscroll-y-contain ${!selectedClub ? 'max-w-md justify-center py-6 pb-28 md:pb-32' : 'max-w-6xl py-6 pb-24 md:pb-28'}`}>
-            <div className={`gap-2.5 md:gap-4 min-h-0 ${!selectedClub ? 'flex flex-col items-center justify-center w-full' : 'grid xl:grid-cols-[0.96fr_1.04fr] flex-1'}`}>
-              <section className={`flex flex-col gap-4 min-h-0 ${!selectedClub ? 'mx-auto w-full max-w-xl items-center justify-center' : 'w-full'}`}>
+          <div className={`mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 overflow-y-auto overscroll-y-contain ${!selectedClub ? 'max-w-md justify-center py-6 pb-28 md:pb-32' : 'max-w-3xl py-4 pb-28 md:pb-32'}`}>
+            <div className={`gap-2.5 md:gap-4 min-h-0 ${!selectedClub ? 'flex flex-col items-center justify-center w-full' : 'flex flex-col w-full flex-1'}`}>
+              {!selectedClub && (
+              <section className="flex flex-col gap-4 min-h-0 mx-auto w-full max-w-xl items-center justify-center">
                 {/* Search Club bar — floating above the card deck */}
                 <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
@@ -7546,10 +7565,25 @@ export default function CardSwipersLanding() {
                   </div>
                 )}
               </section>
+              )}
 
               {selectedClub && (
-              <section ref={selectedClubDetailRef} className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0 scroll-mt-4">
+              <section ref={selectedClubDetailRef} className="flex flex-col gap-3 min-h-0 w-full">
                 <>
+                    <div className="flex items-center gap-2 pb-1">
+                      <button
+                        type="button"
+                        onClick={handleExitClub}
+                        aria-label="Back to clubs"
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+                          <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <p className="flex-1 truncate text-center text-base font-black text-white">{selectedClub.name || 'Club'}</p>
+                      <span className="h-10 w-10 shrink-0" />
+                    </div>
                     <div className="rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
@@ -7587,50 +7621,6 @@ export default function CardSwipersLanding() {
                       ) : null}
                     </div>
 
-                    {selectedClubMembership && (
-                    <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Club Chat</p>
-                          <p className="mt-1 text-xs text-white/60">Conversation shared by active club members.</p>
-                        </div>
-                        <span className="text-[11px] text-white/50">{selectedClubMessages.length} messages</span>
-                      </div>
-                      <div className="mt-3 max-h-48 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/25 p-2">
-                        {selectedClubMessages.length === 0 ? (
-                          <p className="px-2 py-3 text-xs text-white/60">No club messages yet.</p>
-                        ) : selectedClubMessages.map((message) => (
-                          <div key={message.id} className={`max-w-[85%] rounded-xl px-3 py-2 text-xs ${message.fromUserId === firebaseUser?.uid ? 'ml-auto bg-[#E11D48]/25 text-white' : 'bg-white/[0.06] text-white/85'}`}>
-                            <p className="text-[10px] font-semibold text-white/55">{message.fromUserName || 'Member'}</p>
-                            <p className="mt-0.5">{message.text}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-2 flex gap-2">
-                        <input
-                          type="text"
-                          value={clubMessageDraft}
-                          maxLength={1000}
-                          onChange={(event) => setClubMessageDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') handleSendClubMessage();
-                          }}
-                          placeholder={selectedClubMembership ? 'Message the club' : 'Join the club to chat'}
-                          disabled={!selectedClubMembership || isSelectedClubBanned || clubMessageBusy}
-                          className="min-h-11 flex-1 rounded-xl border border-white/15 bg-black/20 px-3 text-base text-white focus:outline-none focus:border-white/35 disabled:opacity-50"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleSendClubMessage}
-                          disabled={!selectedClubMembership || isSelectedClubBanned || clubMessageBusy || !clubMessageDraft.trim()}
-                          className="min-h-11 rounded-xl bg-[#E11D48] px-3 text-xs font-bold hover:bg-[#BE123C] disabled:opacity-50"
-                        >
-                          {clubMessageBusy ? 'Sending...' : 'Send'}
-                        </button>
-                      </div>
-                    </section>
-                    )}
-
                     <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
@@ -7654,23 +7644,77 @@ export default function CardSwipersLanding() {
                         ) : (
                           selectedClubEvents.map((event) => {
                             const eventDate = toDateValue(event.scheduledFor);
-                            const registrationOpen = String(event.status || '').toLowerCase() === 'registration';
+                            const status = String(event.status || '').toLowerCase();
+                            const registrationOpen = status === 'registration';
+                            const windowMs = Math.max(1, Number(event.roundMinutes || 60)) * 60 * 1000;
+                            const startMs = eventDate ? eventDate.getTime() : 0;
+                            const closesInMs = startMs ? startMs - clubLobbyTick : 0;
+                            const isLive = startMs > 0 && clubLobbyTick >= startMs && clubLobbyTick <= startMs + windowMs;
+                            const countdown = closesInMs > 0
+                              ? `${String(Math.floor(closesInMs / 60000)).padStart(2, '0')}:${String(Math.floor((closesInMs % 60000) / 1000)).padStart(2, '0')}`
+                              : '';
+                            const minCardValue = Number(event.minCardValue || 0);
+                            const bestCardValue = myCollection.reduce(
+                              (max, card) => Math.max(max, parseDollarValue(card.tradeValue || card.value || card.avgMarketValue)),
+                              0
+                            );
+                            const meetsCriteria = minCardValue <= 0 || bestCardValue >= minCardValue;
+                            const badge = isLive
+                              ? { label: 'Live', className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
+                              : registrationOpen && countdown
+                                ? { label: `Closes in ${countdown}`, className: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
+                                : registrationOpen
+                                  ? { label: 'Registering', className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
+                                  : { label: String(event.status || 'Closed'), className: 'bg-white/10 text-white/60 border-white/15' };
+
                             return (
-                              <div key={event.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3 flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                  <p className="text-sm font-bold">{event.title || 'Trade Night'}</p>
-                                  <p className="mt-1 text-[11px] text-white/55">
-                                    {event.buyInCredits || 0} credits · {event.currentRegistrations || 0}/{event.capLimit || '∞'} registered
-                                    {eventDate ? ` · ${eventDate.toLocaleDateString()}` : ''}
-                                  </p>
+                              <div key={event.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-bold text-white">{event.title || 'Trade Night'}</p>
+                                    <p className="mt-1 text-[11px] text-white/55">
+                                      {event.buyInCredits || 0} credits · {eventDate ? eventDate.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Time TBA'}
+                                    </p>
+                                  </div>
+                                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}>{badge.label}</span>
                                 </div>
+
+                                <div className="mt-2.5 grid grid-cols-3 gap-2">
+                                  <div className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
+                                    <p className="text-[9px] uppercase tracking-[0.14em] text-white/45">Traders</p>
+                                    <p className="mt-0.5 text-sm font-bold text-white">{event.currentRegistrations || 0}/{event.capLimit || '∞'}</p>
+                                  </div>
+                                  <div className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
+                                    <p className="text-[9px] uppercase tracking-[0.14em] text-white/45">Window</p>
+                                    <p className="mt-0.5 text-sm font-bold text-white">{Math.round(windowMs / 60000)}m</p>
+                                  </div>
+                                  <div className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
+                                    <p className="text-[9px] uppercase tracking-[0.14em] text-white/45">Min Card</p>
+                                    <p className="mt-0.5 text-sm font-bold text-white">{minCardValue > 0 ? `$${minCardValue}` : 'Any'}</p>
+                                  </div>
+                                </div>
+
+                                {minCardValue > 0 && (
+                                  <p className={`mt-2 text-[11px] ${meetsCriteria ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                    {meetsCriteria
+                                      ? `Binder qualifies — best card $${bestCardValue.toFixed(0)}`
+                                      : `Add a card worth $${minCardValue}+ to your binder to enter.`}
+                                  </p>
+                                )}
+
                                 <button
                                   type="button"
                                   onClick={() => handleRegisterForTradeNight(event)}
-                                  disabled={!registrationOpen || !selectedClubMembership || isSelectedClubBanned || Boolean(clubEventBusyId)}
-                                  className="px-3 py-2 rounded-lg text-xs font-bold bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-55 disabled:cursor-not-allowed"
+                                  disabled={!registrationOpen || !selectedClubMembership || isSelectedClubBanned || !meetsCriteria || Boolean(clubEventBusyId)}
+                                  className="mt-2.5 w-full rounded-lg bg-[#E11D48] py-2 text-xs font-bold text-white hover:bg-[#BE123C] disabled:opacity-55 disabled:cursor-not-allowed"
                                 >
-                                  {clubEventBusyId === `register-${event.id}` ? 'Registering...' : registrationOpen ? 'Register' : String(event.status || 'closed')}
+                                  {clubEventBusyId === `register-${event.id}`
+                                    ? 'Registering...'
+                                    : !selectedClubMembership
+                                      ? 'Join Club To Enter'
+                                      : registrationOpen
+                                        ? 'Select Binder & Register'
+                                        : String(event.status || 'closed')}
                                 </button>
                               </div>
                             );
@@ -8022,6 +8066,22 @@ export default function CardSwipersLanding() {
               </section>
               )}
             </div>
+
+            {selectedClub && (
+              <button
+                type="button"
+                onClick={() => setShowClubActionHub(true)}
+                aria-label="Open club action hub"
+                className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#E11D48] shadow-[0_10px_28px_rgba(225,29,72,0.45)] hover:bg-[#BE123C] transition-colors"
+              >
+                <span className="grid grid-cols-2 gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                </span>
+              </button>
+            )}
           </div>
         )}
 
@@ -8747,6 +8807,87 @@ export default function CardSwipersLanding() {
 
       {showAuthQueue && firebaseUser && canAccessAuthQueue && (
         <AuthenticationQueue firebaseUser={firebaseUser} canAccess={canAccessAuthQueue} onClose={() => setShowAuthQueue(false)} />
+      )}
+
+      {showClubActionHub && selectedClub && (
+        <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="club-hub-title">
+          <button type="button" onClick={() => setShowClubActionHub(false)} className="absolute inset-0" aria-label="Close club hub" />
+          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-[#0B0F19] text-white shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">{selectedClubRole || 'member'}</p>
+                <h3 id="club-hub-title" className="mt-0.5 text-lg font-bold">{selectedClub.name || 'Club'} Hub</h3>
+              </div>
+              <button type="button" onClick={() => setShowClubActionHub(false)} className="text-sm text-white/70 hover:text-white">Close</button>
+            </div>
+
+            <div className="overflow-y-auto px-5 pb-6 space-y-4 flex-1 min-h-0">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Your Activity</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                    <p className="text-[9px] uppercase tracking-[0.14em] text-white/45">Active Swaps</p>
+                    <p className="mt-0.5 text-sm font-bold">{pendingOfferOffers.buying.filter((offer) => offer.status === 'accepted').length}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                    <p className="text-[9px] uppercase tracking-[0.14em] text-white/45">Trade History</p>
+                    <p className="mt-0.5 text-sm font-bold">{purchaseIntents.filter((record) => record.buyerUid === firebaseUser?.uid || record.sellerUid === firebaseUser?.uid).length}</p>
+                  </div>
+                </div>
+              </div>
+
+              {(selectedClubRole === 'agent' || selectedClubRole === 'owner') && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Agent Tools</p>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                      <span className="text-[11px] text-white/60">Sub-Referral Code</span>
+                      <code className="font-mono text-xs text-white/85 select-all">{selectedClubMembership?.agentRefCode || '—'}</code>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                      <span className="text-[11px] text-white/60">Referred Members</span>
+                      <span className="text-sm font-bold">{selectedClubMembers.filter((member) => member.referredByAgentId === firebaseUser?.uid).length}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                      <span className="text-[11px] text-white/60">Earned Fee Splits</span>
+                      <span className="text-sm font-bold text-emerald-300">
+                        ${(selectedClubLedgers.filter((entry) => entry.agentId === firebaseUser?.uid).reduce((sum, entry) => sum + Number(entry.agentFee || 0), 0) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedClubRole === 'owner' && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Owner Controls</p>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                      <span className="text-[11px] text-white/60">Club Rake</span>
+                      <span className="text-sm font-bold">{Number(selectedClub.rakePercent || 0)}%</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                      <span className="text-[11px] text-white/60">Ledger Entries</span>
+                      <span className="text-sm font-bold">{selectedClubLedgers.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
+                      <span className="text-[11px] text-white/60">Agents</span>
+                      <span className="text-sm font-bold">{selectedClubMembers.filter((member) => member.role === 'agent').length}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setShowClubActionHub(false); handleCreateTradeNight(); }}
+                      disabled={Boolean(clubEventBusyId)}
+                      className="w-full rounded-lg bg-[#22C55E] py-2.5 text-xs font-bold text-black hover:bg-[#16A34A] disabled:opacity-55"
+                    >
+                      {clubEventBusyId === 'create' ? 'Opening...' : 'Schedule Trade Night'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {showTransferOwnership && (
