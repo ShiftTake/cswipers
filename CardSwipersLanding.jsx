@@ -1109,6 +1109,9 @@ export default function CardSwipersLanding() {
   const [clubError, setClubError] = useState('');
   const [moderatedClubIds, setModeratedClubIds] = useState([]);
   const [verifierClubIds, setVerifierClubIds] = useState([]);
+  const [myClubIds, setMyClubIds] = useState([]);
+  const [primaryClubId, setPrimaryClubId] = useState('');
+  const hasAutoSelectedClubRef = useRef(false);
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
@@ -1239,6 +1242,11 @@ export default function CardSwipersLanding() {
     const haystack = `${club.name || ''} ${club.description || ''} ${club.code || ''}`.toLowerCase();
     return haystack.includes(searchTerm);
   });
+  const myClubIdSet = new Set(myClubIds);
+  const orderedClubs = [
+    ...filteredClubs.filter((club) => myClubIdSet.has(club.id)),
+    ...filteredClubs.filter((club) => !myClubIdSet.has(club.id))
+  ];
   const ratingStatsByUser = reviews.reduce((accumulator, review) => {
     const reviewedUid = review.reviewedUid;
     if (!reviewedUid) return accumulator;
@@ -2033,6 +2041,8 @@ export default function CardSwipersLanding() {
     if (!firebaseUser) {
       setModeratedClubIds([]);
       setVerifierClubIds([]);
+      setMyClubIds([]);
+      setPrimaryClubId('');
       return;
     }
 
@@ -2044,12 +2054,15 @@ export default function CardSwipersLanding() {
           .map((docSnap) => {
             const data = docSnap.data() || {};
             const clubId = docSnap.ref.parent.parent?.id || '';
-            return { clubId, role: data.role || '' };
+            return { clubId, role: data.role || '', joinedAt: data.joinedAt?.toMillis?.() || 0 };
           })
           .filter((entry) => entry.clubId);
 
         setModeratedClubIds(Array.from(new Set(memberships.filter((entry) => isClubModeratorRole(entry.role)).map((entry) => entry.clubId))));
         setVerifierClubIds(Array.from(new Set(memberships.filter((entry) => entry.role === 'verifier').map((entry) => entry.clubId))));
+        setMyClubIds(Array.from(new Set(memberships.map((entry) => entry.clubId))));
+        const mostRecent = [...memberships].sort((a, b) => b.joinedAt - a.joinedAt)[0];
+        setPrimaryClubId(mostRecent?.clubId || '');
       },
       (error) => {
         console.error('Failed loading club moderation memberships:', error);
@@ -2058,6 +2071,19 @@ export default function CardSwipersLanding() {
 
     return () => unsubscribe();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    // Auto-focus the user's primary (most recently joined) club once, without
+    // overriding a manual selection made before the membership data arrived.
+    if (hasAutoSelectedClubRef.current || selectedClubId) return;
+    if (!firebaseUser || clubs.length === 0) return;
+    const candidateId = primaryClubId || myClubIds[0] || '';
+    if (!candidateId || !clubs.some((club) => club.id === candidateId)) return;
+    hasAutoSelectedClubRef.current = true;
+    setSelectedClubId(candidateId);
+    const candidateIndex = orderedClubs.findIndex((entry) => entry.id === candidateId);
+    if (candidateIndex >= 0) setSelectedClubCarouselIndex(candidateIndex);
+  }, [firebaseUser, clubs, primaryClubId, myClubIds, selectedClubId, orderedClubs]);
 
   useEffect(() => {
     if (!firebaseUser || moderatedClubIds.length === 0) {
@@ -4819,7 +4845,7 @@ export default function CardSwipersLanding() {
   const handleEnterClub = (club) => {
     if (!club?.id) return;
     setSelectedClubId(club.id);
-    setSelectedClubCarouselIndex(filteredClubs.findIndex((entry) => entry.id === club.id) + 1);
+    setSelectedClubCarouselIndex(orderedClubs.findIndex((entry) => entry.id === club.id));
   };
 
   const handleApproveClubJoinRequest = async (request) => {
@@ -7408,14 +7434,14 @@ export default function CardSwipersLanding() {
                       ? container.firstElementChild.getBoundingClientRect().width + 16
                       : 0;
                     const nextIndex = cardStride ? Math.round(container.scrollLeft / cardStride) : 0;
-                    setSelectedClubCarouselIndex(Math.max(0, Math.min(Math.max(filteredClubs.length, 0), nextIndex)));
+                    setSelectedClubCarouselIndex(Math.max(0, Math.min(orderedClubs.length, nextIndex)));
                   }}
                   className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   style={{ paddingLeft: 'calc(50vw - 39vw)', paddingRight: 'calc(50vw - 39vw)' }}
                 >
                   {[
-                    { id: 'create-club', isCreateClub: true },
-                    ...(filteredClubs || [])
+                    ...(orderedClubs || []),
+                    { id: 'create-club', isCreateClub: true }
                   ].map((club) => {
                     if (club.isCreateClub) {
                       return (
@@ -7500,7 +7526,7 @@ export default function CardSwipersLanding() {
                   (filteredClubs && filteredClubs.length > 0) || clubSearchQuery.trim() === ''
                 ) && (
                   <div className="flex items-center justify-center gap-2 mt-4" aria-label="Club carousel pagination">
-                    {[{ id: 'create-club', name: 'Create Club' }, ...(filteredClubs || [])].map((club, index) => (
+                    {[...(orderedClubs || []), { id: 'create-club', name: 'Create Club' }].map((club, index) => (
                       <button
                         key={club.id}
                         type="button"
@@ -7561,6 +7587,7 @@ export default function CardSwipersLanding() {
                       ) : null}
                     </div>
 
+                    {selectedClubMembership && (
                     <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -7602,6 +7629,7 @@ export default function CardSwipersLanding() {
                         </button>
                       </div>
                     </section>
+                    )}
 
                     <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
