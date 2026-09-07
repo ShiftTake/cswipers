@@ -710,6 +710,8 @@ const CLUB_ROLE_LABELS = { owner: 'Owner', super_agent: 'Super Agent', agent: 'A
 const TRADE_NIGHT_CATEGORIES = ['Baseball', 'Basketball', 'Football', 'Pokémon', 'Magic', 'Other'];
 const TRADE_NIGHT_CAPACITIES = [8, 16, 32, 64];
 const TRADER_IDLE_TIMEOUT_MS = 120 * 1000;
+const CLUB_TOTAL_FEE_PERCENT = 10;
+const CLUB_DEFAULT_AGENT_FEE_PERCENT = 3;
 
 /** Formats a countdown as "XD XXh" beyond a day, otherwise "HH:MM:SS". */
 const formatCountdown = (millis) => {
@@ -1159,6 +1161,7 @@ export default function CardSwipersLanding() {
   const [clubMemberRoleFilter, setClubMemberRoleFilter] = useState('all');
   const [clubMemberSearch, setClubMemberSearch] = useState('');
   const [showClubAdminView, setShowClubAdminView] = useState(false);
+  const [showClubInboxView, setShowClubInboxView] = useState(false);
   const [showTradeNightForm, setShowTradeNightForm] = useState(false);
   const [activeTradeNightId, setActiveTradeNightId] = useState('');
   const [tradeNightRegistrations, setTradeNightRegistrations] = useState([]);
@@ -1281,6 +1284,39 @@ export default function CardSwipersLanding() {
   const canManageTraders = isClubSeniorRole(selectedClubRole) || hasAdminAccess;
   const isSelectedClubBanned = Boolean(selectedClubBanRecord);
   const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
+  const clubActivityFeed = [
+    ...selectedClubLedgers.map((entry) => ({
+      id: `ledger-${entry.id}`,
+      kind: 'trade',
+      title: 'Trade completed',
+      detail: `$${(Number(entry.grossAmount || 0) / 100).toFixed(2)} gross · $${((Number(entry.ownerFee || 0) + Number(entry.agentFee || 0)) / 100).toFixed(2)} club fee`,
+      at: entry.createdAt?.toMillis?.() || 0
+    })),
+    ...selectedClubEvents.map((entry) => ({
+      id: `event-${entry.id}`,
+      kind: 'event',
+      title: entry.title || 'Trade Night',
+      detail: `${String(entry.status || 'scheduled')} · ${entry.currentRegistrations || 0} traders`,
+      at: entry.createdAt?.toMillis?.() || 0
+    })),
+    ...selectedClubJoinRequests.map((entry) => ({
+      id: `join-${entry.id}`,
+      kind: 'member',
+      title: 'Join request',
+      detail: `${entry.userName || 'Collector'} is awaiting approval`,
+      at: entry.requestedAt?.toMillis?.() || 0
+    })),
+    ...(canModerateClubPosts
+      ? openSelectedClubReports.map((entry) => ({
+          id: `report-${entry.id}`,
+          kind: 'alert',
+          title: 'Moderation report',
+          detail: entry.reason || 'A member filed a report',
+          at: entry.createdAt?.toMillis?.() || 0
+        }))
+      : [])
+  ].sort((a, b) => b.at - a.at);
+  const clubInboxBadgeCount = selectedClubJoinRequests.length + (canModerateClubPosts ? openSelectedClubReports.length : 0);
   const filteredClubs = clubs.filter((club) => {
     const searchTerm = clubSearchQuery.trim().toLowerCase();
     if (!searchTerm) return true;
@@ -4720,6 +4756,8 @@ export default function CardSwipersLanding() {
         displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
         email: firebaseUser.email || '',
         role: 'owner',
+        referralCode: buildAgentRefCode(clubCode, { displayName: ownerName, email: firebaseUser.email }),
+        agentFeePercent: 0,
         joinedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         status: 'active'
@@ -4832,10 +4870,10 @@ export default function CardSwipersLanding() {
         };
         const refInput = window.prompt('Agent referral code (optional):', '').trim().toUpperCase();
         if (refInput) {
-          const agentSnap = await getDocs(query(collection(db, 'clubs', target.id, 'members'), where('agentRefCode', '==', refInput), where('role', '==', 'agent'), limit(1)));
+          const agentSnap = await getDocs(query(collection(db, 'clubs', target.id, 'members'), where('referralCode', '==', refInput), where('role', 'in', ['owner', 'super_agent', 'agent']), limit(1)));
           if (!agentSnap.empty) {
             memberProfile.referredByAgentId = agentSnap.docs[0].data().uid;
-            memberProfile.agentRefCode = refInput;
+            memberProfile.referralCode = refInput;
           }
         }
         await setDoc(doc(db, 'clubs', target.id, 'members', firebaseUser.uid), memberProfile, { merge: true });
@@ -4886,10 +4924,10 @@ export default function CardSwipersLanding() {
       if (refInput !== null) {
         const normalizedRef = refInput.trim().toUpperCase();
         if (normalizedRef) {
-          const agentSnap = await getDocs(query(collection(db, 'clubs', target.id, 'members'), where('agentRefCode', '==', normalizedRef), where('role', '==', 'agent'), limit(1)));
+          const agentSnap = await getDocs(query(collection(db, 'clubs', target.id, 'members'), where('referralCode', '==', normalizedRef), where('role', 'in', ['owner', 'super_agent', 'agent']), limit(1)));
           if (!agentSnap.empty) {
             joinRequestPayload.referredByAgentId = agentSnap.docs[0].data().uid;
-            joinRequestPayload.agentRefCode = normalizedRef;
+            joinRequestPayload.referralCode = normalizedRef;
           }
         }
       }
@@ -4917,6 +4955,7 @@ export default function CardSwipersLanding() {
     setShowClubActionHub(false);
     setShowClubMembersView(false);
     setShowClubAdminView(false);
+    setShowClubInboxView(false);
     setClubLobbyTab('all');
     setClubError('');
     setClubInfo('');
@@ -4973,7 +5012,7 @@ export default function CardSwipersLanding() {
           joinedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           status: 'active',
-          ...(requestData.referredByAgentId ? { referredByAgentId: requestData.referredByAgentId, agentRefCode: requestData.agentRefCode || null } : {})
+          ...(requestData.referredByAgentId ? { referredByAgentId: requestData.referredByAgentId, referralCode: requestData.referralCode || null } : {})
         }, { merge: true });
         transaction.update(clubRef, {
           memberCount: Number(clubData.memberCount || 0) + 1,
@@ -5291,6 +5330,56 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const handleDeleteTradeNight = async (event) => {
+    if (!firebaseUser || !selectedClubId || !event?.id || !canManageTraders) return;
+    if (String(event.status || '').toLowerCase() !== 'registration') return;
+
+    const confirmed = await requestConfirmation(
+      'Delete Trade Night',
+      `Delete "${event.title || 'this Trade Night'}"? All pending registrations will be dropped. This cannot be undone.`,
+      'Delete Event'
+    );
+    if (!confirmed) return;
+
+    setClubEventBusyId(`delete-${event.id}`);
+    setClubError('');
+    setClubInfo('');
+    try {
+      const eventRef = doc(db, 'clubs', selectedClubId, 'events', event.id);
+      const registrationsSnap = await getDocs(collection(eventRef, 'registrations'));
+      await Promise.all(registrationsSnap.docs.map((docSnap) => deleteDoc(docSnap.ref)));
+      await deleteDoc(eventRef);
+      setActiveTradeNightId((prev) => (prev === event.id ? '' : prev));
+      setClubInfo('Trade night deleted.');
+    } catch (error) {
+      console.error('Failed deleting trade night:', error);
+      setClubError('Could not delete that trade night.');
+    } finally {
+      setClubEventBusyId('');
+    }
+  };
+
+  const handleUpdateAgentSplit = async (member, percent) => {
+    if (!firebaseUser || !selectedClubId || !member?.uid || !canManageClubMembers) return;
+    const normalized = Math.min(CLUB_TOTAL_FEE_PERCENT, Math.max(0, Number(percent)));
+    if (!Number.isFinite(normalized)) return;
+
+    setClubActionBusyId(`split-${member.uid}`);
+    setClubError('');
+    try {
+      await setDoc(doc(db, 'clubs', selectedClubId, 'members', member.uid), {
+        agentFeePercent: normalized,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setClubInfo(`${member.displayName || 'Agent'} now earns ${normalized}% of each trade.`);
+    } catch (error) {
+      console.error('Failed updating agent split:', error);
+      setClubError('Could not update that fee split.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
   const handleUpdateClubMemberRole = async (memberUid, role) => {
     if (!firebaseUser || !selectedClubId || !canManageClubMembers) return;
     if (memberUid === firebaseUser.uid) return;
@@ -5302,9 +5391,16 @@ export default function CardSwipersLanding() {
       const targetMember = selectedClubMembers.find((member) => member.uid === memberUid) || {};
       const roleUpdate = { role: normalizeClubRole(role), updatedAt: serverTimestamp() };
       if (roleUpdate.role === 'agent' || roleUpdate.role === 'super_agent') {
-        roleUpdate.agentRefCode = targetMember.agentRefCode || buildAgentRefCode(selectedClub?.code, targetMember);
+        const referralCode = targetMember.referralCode || targetMember.agentRefCode || buildAgentRefCode(selectedClub?.code, targetMember);
+        roleUpdate.referralCode = referralCode;
+        roleUpdate.agentRefCode = referralCode;
+        roleUpdate.agentFeePercent = Number.isFinite(Number(targetMember.agentFeePercent))
+          ? Number(targetMember.agentFeePercent)
+          : CLUB_DEFAULT_AGENT_FEE_PERCENT;
       } else if (roleUpdate.role === 'member') {
+        roleUpdate.referralCode = null;
         roleUpdate.agentRefCode = null;
+        roleUpdate.agentFeePercent = 0;
       }
       await setDoc(doc(db, 'clubs', selectedClubId, 'members', memberUid), roleUpdate, { merge: true });
       setClubInfo('Member role updated.');
@@ -7720,133 +7816,26 @@ export default function CardSwipersLanding() {
                       </button>
 
                       <div className="flex-1" />
+                    </div>
 
+                    {!selectedClubMembership ? (
                       <button
                         type="button"
-                        onClick={() => setShowNotificationHub(true)}
-                        aria-label="Club alerts"
-                        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+                        onClick={() => handleJoinSpecificClub(selectedClub)}
+                        disabled={clubJoinBusy || isSelectedClubBanned}
+                        className="w-full rounded-xl bg-[#10B981] px-4 py-2.5 text-xs font-bold text-black shadow-[0_4px_14px_rgba(16,185,129,0.3)] hover:bg-emerald-400 disabled:opacity-60"
                       >
-                        <BellIcon />
-                        {clubModerationBadgeCount > 0 && (
-                          <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#EF4444] text-[10px] leading-4 text-white font-bold text-center">
-                            {clubModerationBadgeCount > 99 ? '99+' : clubModerationBadgeCount}
-                          </span>
-                        )}
+                        {clubJoinBusy ? 'Joining...' : isSelectedClubBanned ? 'Blocked From Club' : 'Join Club'}
                       </button>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-zinc-900 p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="relative shrink-0">
-                          <div className="h-16 w-16 overflow-hidden rounded-2xl border-2 border-[#10B981] bg-zinc-800">
-                            {selectedClub.logoUrl ? (
-                              <img src={selectedClub.logoUrl} alt={selectedClub.name || 'Club'} className="h-full w-full object-cover" />
-                            ) : (
-                              (() => {
-                                const avatarPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === selectedClub.logoPresetId);
-                                return avatarPreset ? (
-                                  <span className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${avatarPreset.className} text-3xl`}>{avatarPreset.symbol}</span>
-                                ) : (
-                                  <span className="flex h-full w-full items-center justify-center text-3xl">🃏</span>
-                                );
-                              })()
-                            )}
-                          </div>
-                          {canManageClubMembers && (
-                            <button
-                              type="button"
-                              onClick={openCreateClub}
-                              aria-label="Edit club avatar"
-                              className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-zinc-900 bg-[#10B981] text-black"
-                            >
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3" aria-hidden="true">
-                                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <h2 className="truncate text-lg font-black text-white">{selectedClub.name || 'Club'}</h2>
-                          <div className="mt-0.5 flex items-center gap-1.5">
-                            <p className="truncate text-xs text-white/50">(ID: {selectedClub.code || selectedClub.id})</p>
-                            <button
-                              type="button"
-                              onClick={handleCopyClubId}
-                              aria-label="Share club ID"
-                              className="text-white/50 hover:text-white"
-                            >
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5" aria-hidden="true">
-                                <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                                <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" strokeLinecap="round" />
-                              </svg>
-                            </button>
-                          </div>
-
-                          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                            <span className="flex items-center gap-1 text-white/80">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5 text-white/50" aria-hidden="true">
-                                <circle cx="9" cy="8" r="3" /><path d="M2.5 19a6.5 6.5 0 0 1 13 0M17 11a3 3 0 1 0 0-6M21.5 19a5.5 5.5 0 0 0-4-5.3" />
-                              </svg>
-                              <span className="font-bold">{Number(selectedClub.memberCount || selectedClub.membersCount || 0).toLocaleString()}</span>
-                              <span className="text-white/45">Players</span>
-                            </span>
-                            <span className="flex items-center gap-1 text-white/80">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5 text-white/50" aria-hidden="true">
-                                <rect x="3" y="6" width="18" height="12" rx="3" />
-                              </svg>
-                              <span className="font-bold">{Number(selectedClub.activeTables || selectedClubEvents.length || 0).toLocaleString()}</span>
-                              <span className="text-white/45">Tables</span>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs">
-                          <span className="h-2.5 w-2.5 rounded-full bg-[#10B981]" />
-                          <span className="font-bold text-white">
-                            ${myCollection.reduce((max, card) => Math.max(max, parseDollarValue(card.tradeValue || card.value || card.avgMarketValue)), 0).toFixed(0)}
-                          </span>
-                          <span className="text-white/45">top card</span>
-                        </span>
-                        <span className="rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white/70">
-                          Binder <span className="font-bold text-white">{myCollection.length}</span>
-                        </span>
-                        <span className="rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#10B981]">
-                          {CLUB_ROLE_LABELS[selectedClubRole] || 'Guest'}
-                        </span>
-                      </div>
-
-                      {!selectedClubMembership ? (
-                        <button
-                          type="button"
-                          onClick={() => handleJoinSpecificClub(selectedClub)}
-                          disabled={clubJoinBusy || isSelectedClubBanned}
-                          className="mt-3 w-full rounded-xl bg-[#10B981] px-4 py-2.5 text-xs font-bold text-black shadow-[0_4px_14px_rgba(16,185,129,0.3)] hover:bg-emerald-400 disabled:opacity-60"
-                        >
-                          {clubJoinBusy ? 'Joining...' : isSelectedClubBanned ? 'Blocked From Club' : 'Join Club'}
-                        </button>
-                      ) : selectedClubRole && selectedClubRole !== 'owner' ? (
-                        <button
-                          type="button"
-                          onClick={() => handleLeaveClub()}
-                          disabled={clubActionBusyId === 'leave-club'}
-                          className="mt-3 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-950/70 disabled:opacity-60"
-                        >
-                          {clubActionBusyId === 'leave-club' ? 'Leaving...' : 'Leave Club'}
-                        </button>
-                      ) : selectedClubRole === 'owner' && Number(selectedClub.memberCount || 1) > 1 ? (
-                        <button
-                          type="button"
-                          onClick={() => setShowTransferOwnership(true)}
-                          className="mt-3 rounded-lg border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-950/50"
-                        >
-                          Transfer Ownership &amp; Leave
-                        </button>
-                      ) : null}
-                    </div>
+                    ) : selectedClubRole === 'owner' && Number(selectedClub.memberCount || 1) > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowTransferOwnership(true)}
+                        className="self-start rounded-lg border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-950/50"
+                      >
+                        Transfer Ownership &amp; Leave
+                      </button>
+                    ) : null}
 
                     <div className="flex items-start gap-2 rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
                       <span className="shrink-0 rounded-md bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/60">Notice</span>
@@ -7996,7 +7985,22 @@ export default function CardSwipersLanding() {
                                       {event.passcode ? ' · 🔒 Passcode' : ''}
                                     </p>
                                   </div>
-                                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}>{badge.label}</span>
+                                  <div className="flex shrink-0 items-center gap-1.5">
+                                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}>{badge.label}</span>
+                                    {registrationOpen && canManageTraders && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteTradeNight(event)}
+                                        disabled={clubEventBusyId === `delete-${event.id}`}
+                                        aria-label="Delete trade night"
+                                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444] hover:bg-[#EF4444]/20 disabled:opacity-55"
+                                      >
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5" aria-hidden="true">
+                                          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
 
                                 {eventCategories.length > 0 && (
@@ -8267,14 +8271,12 @@ export default function CardSwipersLanding() {
               <>
                 {showClubActionHub && (
                   <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/95 backdrop-blur-xl pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-                    <div className="mx-auto grid max-w-lg grid-cols-5">
+                    <div className="mx-auto grid max-w-lg grid-cols-4">
                       {[
-                        { id: 'inbox', label: 'Inbox', badge: inboxBadgeCount, onClick: () => { setShowClubActionHub(false); navigateToTab('messages'); },
+                        { id: 'inbox', label: 'Inbox', badge: clubInboxBadgeCount, onClick: () => { setShowClubActionHub(false); setShowClubInboxView(true); },
                           icon: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></> },
                         { id: 'members', label: 'Members', badge: selectedClubJoinRequests.length, onClick: () => { setShowClubActionHub(false); setShowClubMembersView(true); },
                           icon: <><circle cx="9" cy="8" r="3" /><path d="M2.5 19a6.5 6.5 0 0 1 13 0M17 11a3 3 0 1 0 0-6M21.5 19a5.5 5.5 0 0 0-4-5.3" /></> },
-                        { id: 'counter', label: 'Counter', badge: pendingOfferCount, onClick: () => { setShowClubActionHub(false); setShowNotificationHub(true); },
-                          icon: <><path d="M7 8h10M7 8l3-3M7 8l3 3M17 16H7M17 16l-3-3M17 16l-3 3" strokeLinecap="round" strokeLinejoin="round" /></> },
                         { id: 'data', label: 'Data', badge: 0, onClick: () => { setShowClubActionHub(false); setShowClubAdminView(true); },
                           icon: <><path d="M4 19V10M10 19V5M16 19v-6M22 19H2" strokeLinecap="round" /></> },
                         { id: 'admin', label: 'Admin', badge: openSelectedClubReports.length, onClick: () => { setShowClubActionHub(false); setShowClubAdminView(true); },
@@ -9042,6 +9044,59 @@ export default function CardSwipersLanding() {
         <AuthenticationQueue firebaseUser={firebaseUser} canAccess={canAccessAuthQueue} onClose={() => setShowAuthQueue(false)} />
       )}
 
+      {showClubInboxView && selectedClub && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-black" role="dialog" aria-modal="true" aria-labelledby="club-inbox-title">
+          <div
+            className="flex items-center gap-3 border-b border-white/10 px-4 py-3"
+            style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' } : undefined}
+          >
+            <button
+              type="button"
+              onClick={() => setShowClubInboxView(false)}
+              aria-label="Back to club"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <h3 id="club-inbox-title" className="flex-1 text-center text-base font-black text-white">Club Inbox</h3>
+            <span className="h-10 w-10" />
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-2">
+            {clubActivityFeed.length === 0 ? (
+              <p className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-white/60">
+                No club activity yet. Trades, member requests, and event updates will appear here.
+              </p>
+            ) : (
+              clubActivityFeed.map((entry) => {
+                const tone = {
+                  trade: { chip: 'bg-[#10B981]/15 text-[#10B981]', label: 'Trade' },
+                  event: { chip: 'bg-white/10 text-white/70', label: 'Event' },
+                  member: { chip: 'bg-amber-500/15 text-amber-300', label: 'Member' },
+                  alert: { chip: 'bg-[#EF4444]/15 text-[#EF4444]', label: 'Alert' }
+                }[entry.kind] || { chip: 'bg-white/10 text-white/70', label: 'Update' };
+                return (
+                  <div key={entry.id} className="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${tone.chip}`}>{tone.label}</span>
+                      {entry.at > 0 && (
+                        <span className="text-[10px] text-white/40">
+                          {new Date(entry.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-sm font-semibold text-white">{entry.title}</p>
+                    <p className="mt-0.5 text-[11px] text-white/55">{entry.detail}</p>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
       {showClubMembersView && selectedClub && (
         <div className="fixed inset-0 z-[70] flex flex-col bg-black" role="dialog" aria-modal="true" aria-labelledby="club-members-title">
           <div
@@ -9194,14 +9249,22 @@ export default function CardSwipersLanding() {
                   if (!term) return true;
                   return `${member.displayName || ''} ${member.email || ''} ${member.uid || ''}`.toLowerCase().includes(term);
                 })
-                .map((member) => (
-                  <div key={member.uid} className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
+                .map((member) => {
+                  const isAgentRole = member.role === 'agent' || member.role === 'super_agent';
+                  const agentFeePercent = Number.isFinite(Number(member.agentFeePercent))
+                    ? Number(member.agentFeePercent)
+                    : CLUB_DEFAULT_AGENT_FEE_PERCENT;
+                  return (
+                  <div key={member.uid} className="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
+                    <div className="flex items-center gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#10B981]/15 text-sm font-bold text-[#10B981]">
                       {(member.displayName || member.email || 'C')[0].toUpperCase()}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-white">{member.displayName || member.email || member.uid}</p>
-                      <p className="truncate text-[11px] text-white/45">ID: {member.uid.slice(0, 12)}</p>
+                      <p className="truncate text-[11px] text-white/45">
+                        {member.referralCode ? `Ref: ${member.referralCode}` : `ID: ${member.uid.slice(0, 12)}`}
+                      </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span className={`text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border ${member.role === 'super_agent' ? 'border-[#10B981]/40 bg-[#10B981]/10 text-[#10B981]' : 'border-white/15 bg-white/5 text-white/70'}`}>
@@ -9221,8 +9284,32 @@ export default function CardSwipersLanding() {
                         </select>
                       )}
                     </div>
+                    </div>
+
+                    {canManageClubMembers && isAgentRole && (
+                      <div className="mt-2.5 border-t border-white/10 pt-2.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-white/60">Fee Split</span>
+                          <span className="font-bold text-[#10B981]">
+                            {agentFeePercent}% agent · {CLUB_TOTAL_FEE_PERCENT - agentFeePercent}% owner
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max={CLUB_TOTAL_FEE_PERCENT}
+                          step="0.5"
+                          value={agentFeePercent}
+                          onChange={(changeEvent) => handleUpdateAgentSplit(member, changeEvent.target.value)}
+                          disabled={clubActionBusyId === `split-${member.uid}`}
+                          aria-label={`Fee split for ${member.displayName || member.uid}`}
+                          className="mt-1.5 w-full accent-[#10B981] disabled:opacity-60"
+                        />
+                      </div>
+                    )}
                   </div>
-                ))
+                  );
+                })
             )}
           </div>
 

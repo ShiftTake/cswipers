@@ -1716,18 +1716,22 @@ exports.notifyOnOfferStatusChange = onDocumentUpdated('offers/{offerId}', async 
   }
 });
 
-const MAX_RAKE_PERCENT = 10;
+const CLUB_TOTAL_FEE_PERCENT = 10;
+const CLUB_DEFAULT_AGENT_FEE_PERCENT = 3;
 
-// Computes the club fee split for a completed escrow trade.
+// Splits the flat 10% club fee: referring agent takes their configured share,
+// the owner keeps the remainder (the full 10% when no agent referred the buyer).
 function computeEscrowSplit(grossCents, club, agent) {
   const grossAmount = Math.max(0, Math.round(Number(grossCents || 0)));
-  const rakePercent = Math.min(MAX_RAKE_PERCENT, Math.max(0, Number(club?.rakePercent || 0)));
+  const rakePercent = CLUB_TOTAL_FEE_PERCENT;
   const totalRake = Math.round((grossAmount * rakePercent) / 100);
-  const agentSplitPercent = agent ? Math.min(100, Math.max(0, Number(agent.agentSplitPercent || 0))) : 0;
-  const agentPayout = agent ? Math.round((totalRake * agentSplitPercent) / 100) : 0;
+  const agentFeePercent = agent
+    ? Math.min(rakePercent, Math.max(0, Number.isFinite(Number(agent.agentFeePercent)) ? Number(agent.agentFeePercent) : CLUB_DEFAULT_AGENT_FEE_PERCENT))
+    : 0;
+  const agentPayout = agent ? Math.round((grossAmount * agentFeePercent) / 100) : 0;
   const ownerPayout = totalRake - agentPayout;
   const sellerPayout = grossAmount - totalRake;
-  return { grossAmount, rakePercent, totalRake, agentPayout, ownerPayout, sellerPayout };
+  return { grossAmount, rakePercent, agentFeePercent, totalRake, agentPayout, ownerPayout, sellerPayout };
 }
 
 async function createStripeTransfer(amountCents, destinationAccountId, transferGroup, metadata) {
@@ -1781,7 +1785,7 @@ exports.releaseTradeEscrow = onRequest({ secrets: [stripeSecret] }, async (req, 
         const agentUid = order.referred_by_agent_id || order.referredByAgentId || null;
         if (agentUid) {
           const agentSnap = await firestore.collection('clubs').doc(clubId).collection('members').doc(agentUid).get();
-          if (agentSnap.exists && String(agentSnap.data()?.role || '').toLowerCase() === 'agent') {
+          if (agentSnap.exists && ['agent', 'super_agent'].includes(String(agentSnap.data()?.role || '').toLowerCase())) {
             agent = { uid: agentUid, ...agentSnap.data() };
           }
         }
