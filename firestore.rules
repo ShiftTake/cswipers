@@ -41,7 +41,15 @@ service cloud.firestore {
       return isAdmin() || (
         signedIn() &&
         exists(clubMemberPath(clubId, request.auth.uid)) &&
-        get(clubMemberPath(clubId, request.auth.uid)).data.role in ['owner', 'agent']
+        get(clubMemberPath(clubId, request.auth.uid)).data.role in ['owner', 'super_agent', 'agent']
+      );
+    }
+
+    function isClubSenior(clubId) {
+      return isAdmin() || (
+        signedIn() &&
+        exists(clubMemberPath(clubId, request.auth.uid)) &&
+        get(clubMemberPath(clubId, request.auth.uid)).data.role in ['owner', 'super_agent']
       );
     }
 
@@ -270,7 +278,8 @@ service cloud.firestore {
         match /registrations/{memberId} {
           allow read: if isAdmin() || isClubModerator(clubId) ||
             (isClubMember(clubId) && memberId == request.auth.uid);
-          allow write: if false;
+          allow update, delete: if isAdmin() || isClubSenior(clubId);
+          allow create: if false;
         }
       }
 

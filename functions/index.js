@@ -1424,46 +1424,28 @@ exports.registerTradeNight = onRequest(async (req, res) => {
       const event = eventSnap.data();
       if (member.status && member.status !== 'active') throw new Error('Your club membership is not active.');
       if (String(event.status || '').toLowerCase() !== 'registration') throw new Error('Registration is closed for this trade night.');
-      const buyInCredits = Math.max(1, Math.floor(Number(event.buyInCredits || 0)));
+      if (Array.isArray(event.bannedUserIds) && event.bannedUserIds.includes(user.uid)) {
+        throw new Error('You have been banned from this Trade Night by a moderator and cannot re-enter.');
+      }
+      if (event.passcode && String(req.body?.passcode || '') !== event.passcode) {
+        throw new Error('Incorrect entry passcode.');
+      }
       const currentRegistrations = Number(event.currentRegistrations || 0);
       const capLimit = Number(event.capLimit || 0);
       if (capLimit > 0 && currentRegistrations >= capLimit) throw new Error('This trade night is full.');
 
-      const currentCredits = member.credits === 'infinite' ? Infinity : Number(member.credits || 0);
-      if (currentCredits < buyInCredits) throw new Error(`You need ${buyInCredits} available credits to register.`);
-      const remainingCredits = currentCredits === Infinity ? 'infinite' : currentCredits - buyInCredits;
-      const heldEscrow = Number(member.escrowHeld || 0) + buyInCredits;
-      const club = clubSnap.data();
-      const ledger = club.creditLedger || {};
-      const memberBalances = { ...(ledger.memberBalances || {}) };
-      memberBalances[user.uid] = {
-        ...(memberBalances[user.uid] || {}),
-        role: member.role || 'member',
-        credits: remainingCredits,
-        escrowHeld: heldEscrow,
-        status: 'active'
-      };
-
-      transaction.update(memberRef, { credits: remainingCredits, escrowHeld: heldEscrow, updatedAt: serverTimestamp() });
       transaction.update(eventRef, {
         currentRegistrations: currentRegistrations + 1,
-        escrowTotal: Number(event.escrowTotal || 0) + buyInCredits,
         updatedAt: serverTimestamp()
       });
       transaction.set(registrationRef, {
         userId: user.uid,
         displayName: member.displayName || user.name || user.email || 'Collector',
         status: 'registered',
-        buyInCredits,
-        escrowStatus: 'held',
+        pendingOfferAt: null,
         registeredAt: serverTimestamp()
       });
-      transaction.update(clubRef, {
-        totalEscrow: Number(club.totalEscrow || 0) + buyInCredits,
-        creditLedger: { ...ledger, memberBalances, escrowVault: Number(ledger.escrowVault || 0) + buyInCredits },
-        updatedAt: serverTimestamp()
-      });
-      return { buyInCredits, remainingCredits };
+      return { registered: true };
     });
 
     return sendJson(res, 200, { ok: true, ...result });

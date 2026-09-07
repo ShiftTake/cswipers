@@ -703,7 +703,28 @@ const buildAgentRefCode = (clubCode, member) => {
     .toUpperCase() || 'AGENT';
   return `${clubCode || 'CLUB'}-${nameSlug}`;
 };
-const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
+const isClubModeratorRole = (role) => role === 'owner' || role === 'super_agent' || role === 'agent';
+const isClubSeniorRole = (role) => role === 'owner' || role === 'super_agent';
+const CLUB_ROLE_LABELS = { owner: 'Owner', super_agent: 'Super Agent', agent: 'Agent', member: 'Player' };
+
+const TRADE_NIGHT_CATEGORIES = ['Baseball', 'Basketball', 'Football', 'Pokémon', 'Magic', 'Other'];
+const TRADE_NIGHT_CAPACITIES = [8, 16, 32, 64];
+const TRADER_IDLE_TIMEOUT_MS = 120 * 1000;
+
+/** Formats a countdown as "XD XXh" beyond a day, otherwise "HH:MM:SS". */
+const formatCountdown = (millis) => {
+  const total = Math.max(0, Math.floor(millis / 1000));
+  const days = Math.floor(total / 86400);
+  if (days >= 1) {
+    const hours = Math.floor((total % 86400) / 3600);
+    return `${days}D ${String(hours).padStart(2, '0')}h`;
+  }
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
 const CLUB_LOGO_PRESETS = [
   { id: 'baseball', symbol: '⚾', className: 'from-sky-900 via-blue-700 to-slate-950' },
   { id: 'basketball', symbol: '🏀', className: 'from-orange-900 via-orange-700 to-stone-950' },
@@ -717,7 +738,7 @@ const CLUB_LOGO_PRESETS = [
 ];
 const normalizeClubRole = (role) => {
   const normalized = String(role || 'member').toLowerCase();
-  if (normalized === 'owner' || normalized === 'agent') return normalized;
+  if (normalized === 'owner' || normalized === 'super_agent' || normalized === 'agent') return normalized;
   return 'member';
 };
 const getClubAccessMode = (clubData = {}) => {
@@ -1138,6 +1159,18 @@ export default function CardSwipersLanding() {
   const [clubMemberRoleFilter, setClubMemberRoleFilter] = useState('all');
   const [clubMemberSearch, setClubMemberSearch] = useState('');
   const [showClubAdminView, setShowClubAdminView] = useState(false);
+  const [showTradeNightForm, setShowTradeNightForm] = useState(false);
+  const [activeTradeNightId, setActiveTradeNightId] = useState('');
+  const [tradeNightRegistrations, setTradeNightRegistrations] = useState([]);
+  const [tradeNightDraft, setTradeNightDraft] = useState({
+    title: '',
+    maxTraders: 'unlimited',
+    passcode: '',
+    scheduledFor: '',
+    categories: [],
+    minCardValue: '',
+    roundMinutes: 60
+  });
   const [showTransferOwnership, setShowTransferOwnership] = useState(false);
   const [transferSuccessorUid, setTransferSuccessorUid] = useState('');
   const [selectedClubBanRecord, setSelectedClubBanRecord] = useState(null);
@@ -1245,6 +1278,7 @@ export default function CardSwipersLanding() {
   })();
   const canManageClubMembers = selectedClubRole === 'owner';
   const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
+  const canManageTraders = isClubSeniorRole(selectedClubRole) || hasAdminAccess;
   const isSelectedClubBanned = Boolean(selectedClubBanRecord);
   const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
   const filteredClubs = clubs.filter((club) => {
@@ -2084,6 +2118,39 @@ export default function CardSwipersLanding() {
   }, [firebaseUser]);
 
   useEffect(() => {
+    if (!selectedClubId || !activeTradeNightId) {
+      setTradeNightRegistrations([]);
+      return undefined;
+    }
+    const registrationsRef = collection(db, 'clubs', selectedClubId, 'events', activeTradeNightId, 'registrations');
+    return onSnapshot(
+      registrationsRef,
+      (snapshot) => setTradeNightRegistrations(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))),
+      (error) => {
+        console.error('Failed loading trade night registrations:', error);
+        setTradeNightRegistrations([]);
+      }
+    );
+  }, [selectedClubId, activeTradeNightId]);
+
+  useEffect(() => {
+    // Traders who ignore an offer for 2 minutes are flagged Away and dropped from the table.
+    if (!selectedClubId || !activeTradeNightId || !canModerateClubPosts) return;
+    const stale = tradeNightRegistrations.filter((registration) => {
+      if (registration.status !== 'registered') return false;
+      const pendingSince = registration.pendingOfferAt?.toMillis?.() || 0;
+      return pendingSince > 0 && clubLobbyTick - pendingSince > TRADER_IDLE_TIMEOUT_MS;
+    });
+    stale.forEach((registration) => {
+      updateDoc(doc(db, 'clubs', selectedClubId, 'events', activeTradeNightId, 'registrations', registration.id), {
+        status: 'away',
+        removedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }).catch((error) => console.error('Failed marking trader away:', error));
+    });
+  }, [selectedClubId, activeTradeNightId, tradeNightRegistrations, clubLobbyTick, canModerateClubPosts]);
+
+  useEffect(() => {
     setClubNoticeDraft(selectedClub?.notice || '');
   }, [selectedClubId, selectedClub?.notice]);
 
@@ -2184,7 +2251,7 @@ export default function CardSwipersLanding() {
         const loadedMembers = snapshot.docs
           .map((docSnap) => ({ uid: docSnap.id, ...docSnap.data() }))
           .sort((a, b) => {
-            const rank = { owner: 0, agent: 1, member: 2 };
+            const rank = { owner: 0, super_agent: 1, agent: 2, member: 3 };
             return (rank[a.role] ?? 3) - (rank[b.role] ?? 3);
           });
         setSelectedClubMembers(loadedMembers);
@@ -4638,28 +4705,12 @@ export default function CardSwipersLanding() {
         memberCount: 1,
         membersCount: 1,
         activeTables: 0,
-        totalEscrow: 0,
-        creditLedger: {
-          ownerUid: firebaseUser.uid,
-          ownerBalance: 'infinite',
-          agentQuotas: {},
-          memberBalances: {
-            [firebaseUser.uid]: {
-              role: 'owner',
-              credits: 'infinite',
-              creditLimit: 'infinite',
-              escrowHeld: 0,
-              status: 'active'
-            }
-          },
-          escrowVault: 0
-        },
+        rakePercent: 0,
         defaultEventConfig: {
-          buyInCredits: 50,
-          guaranteedPool: 1000,
           registrationWindowMinutes: 30,
-          roundMinutes: 10,
+          roundMinutes: 60,
           capLimit: 64,
+          minCardValue: 0,
           status: 'upcoming'
         }
       });
@@ -4671,9 +4722,6 @@ export default function CardSwipersLanding() {
         role: 'owner',
         joinedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        credits: 'infinite',
-        creditLimit: 'infinite',
-        escrowHeld: 0,
         status: 'active'
       }, { merge: true });
 
@@ -4725,9 +4773,6 @@ export default function CardSwipersLanding() {
         role: 'member',
         joinedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        credits: 0,
-        creditLimit: 0,
-        escrowHeld: 0,
         status: 'active'
       };
 
@@ -4736,7 +4781,7 @@ export default function CardSwipersLanding() {
 
         setSelectedClubId(clubDoc.id);
         setClubJoinCode('');
-        setClubInfo(`Joined ${clubData?.name || 'club'}. Credits are tied to the club ledger and trade-night escrow rules.`);
+        setClubInfo(`Joined ${clubData?.name || 'club'}. You can now enter trade nights that match your binder value.`);
         return;
       }
 
@@ -4747,7 +4792,6 @@ export default function CardSwipersLanding() {
         role: 'member',
         status: 'pending',
         requestedAt: serverTimestamp(),
-        creditRequest: 0,
         requestType: 'member-join'
       });
 
@@ -4784,9 +4828,6 @@ export default function CardSwipersLanding() {
           role: 'member',
           joinedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          credits: 0,
-          creditLimit: 0,
-          escrowHeld: 0,
           status: 'active'
         };
         const refInput = window.prompt('Agent referral code (optional):', '').trim().toUpperCase();
@@ -4839,7 +4880,6 @@ export default function CardSwipersLanding() {
         role: 'member',
         status: 'pending',
         requestedAt: serverTimestamp(),
-        creditRequest: 0,
         requestType: 'member-join'
       };
       const refInput = window.prompt('Agent referral code (optional):', '');
@@ -4883,7 +4923,7 @@ export default function CardSwipersLanding() {
   };
 
   const handleSaveClubNotice = async () => {
-    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubNoticeBusy) return;
+    if (!firebaseUser || !selectedClubId || !canManageClubMembers || clubNoticeBusy) return;
     setClubNoticeBusy(true);
     setClubError('');
     try {
@@ -4932,9 +4972,6 @@ export default function CardSwipersLanding() {
           role: 'member',
           joinedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          credits: 0,
-          creditLimit: 0,
-          escrowHeld: 0,
           status: 'active',
           ...(requestData.referredByAgentId ? { referredByAgentId: requestData.referredByAgentId, agentRefCode: requestData.agentRefCode || null } : {})
         }, { merge: true });
@@ -5026,37 +5063,66 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const openTradeNightForm = () => {
+    const defaultStart = new Date(Date.now() + 60 * 60 * 1000);
+    defaultStart.setSeconds(0, 0);
+    setTradeNightDraft({
+      title: '',
+      maxTraders: 'unlimited',
+      passcode: '',
+      scheduledFor: new Date(defaultStart.getTime() - defaultStart.getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+      categories: [],
+      minCardValue: '',
+      roundMinutes: 60
+    });
+    setClubError('');
+    setShowTradeNightForm(true);
+  };
+
   const handleCreateTradeNight = async () => {
     if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubEventBusyId) return;
+
+    const title = tradeNightDraft.title.trim() || 'Trade Night';
+    const scheduledFor = tradeNightDraft.scheduledFor ? new Date(tradeNightDraft.scheduledFor) : null;
+    if (!scheduledFor || Number.isNaN(scheduledFor.getTime())) {
+      setClubError('Choose a valid start date and time.');
+      return;
+    }
+    const minLeadMs = 10 * 60 * 1000;
+    const maxLeadMs = 14 * 24 * 60 * 60 * 1000;
+    const leadMs = scheduledFor.getTime() - Date.now();
+    if (leadMs < minLeadMs) {
+      setClubError('Trade nights must start at least 10 minutes from now.');
+      return;
+    }
+    if (leadMs > maxLeadMs) {
+      setClubError('Trade nights cannot be scheduled more than 14 days out.');
+      return;
+    }
 
     setClubEventBusyId('create');
     setClubError('');
     setClubInfo('');
 
     try {
-      const config = selectedClub?.defaultEventConfig || {};
-      const buyInCredits = Math.max(1, Number(config.buyInCredits || 50));
-      const capLimit = Math.max(2, Number(config.capLimit || 64));
-      const guaranteedPool = Math.max(0, Number(config.guaranteedPool || 0));
-      const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
       await addDoc(collection(db, 'clubs', selectedClubId, 'events'), {
-        title: 'Trade Night',
+        title,
         status: 'registration',
         format: 'mtt-trade-night',
-        buyInCredits,
-        guaranteedPool,
-        capLimit,
+        capLimit: tradeNightDraft.maxTraders === 'unlimited' ? 0 : Number(tradeNightDraft.maxTraders),
+        passcode: tradeNightDraft.passcode.trim() || null,
+        categories: tradeNightDraft.categories,
+        minCardValue: Math.max(0, Number(tradeNightDraft.minCardValue || 0)),
         currentRegistrations: 0,
-        escrowTotal: 0,
-        roundMinutes: Math.max(1, Number(config.roundMinutes || 10)),
+        roundMinutes: Math.max(1, Number(tradeNightDraft.roundMinutes || 60)),
         scheduledFor,
         createdByUid: firebaseUser.uid,
         createdByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
-      setClubInfo('Trade night opened for registration. Buy-ins will be held in club escrow.');
+      setShowTradeNightForm(false);
+      setClubInfo('Trade night opened for registration.');
     } catch (error) {
       console.error('Failed creating trade night:', error);
       setClubError('Could not create the trade night.');
@@ -5072,6 +5138,22 @@ export default function CardSwipersLanding() {
       return;
     }
 
+    if ((event.bannedUserIds || []).includes(firebaseUser.uid)) {
+      setClubError('You have been banned from this Trade Night by a moderator and cannot re-enter.');
+      return;
+    }
+
+    let passcode = '';
+    if (event.passcode) {
+      const entered = window.prompt(`Enter the access code for ${event.title || 'this trade night'}:`, '');
+      if (entered === null) return;
+      passcode = entered.trim();
+      if (passcode !== event.passcode) {
+        setClubError('That entry passcode is incorrect.');
+        return;
+      }
+    }
+
     setClubEventBusyId(`register-${event.id}`);
     setClubError('');
     setClubInfo('');
@@ -5083,13 +5165,13 @@ export default function CardSwipersLanding() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
-        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id })
+        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id, passcode })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload.error || 'Registration could not be completed.');
       }
-      setClubInfo(`Registered for ${event.title || 'Trade Night'}. ${payload.buyInCredits} credits are held in escrow.`);
+      setClubInfo(`Registered for ${event.title || 'Trade Night'}.`);
     } catch (error) {
       console.error('Failed registering for trade night:', error);
       setClubError(error.message || 'Could not register for this trade night.');
@@ -5218,10 +5300,10 @@ export default function CardSwipersLanding() {
 
     try {
       const targetMember = selectedClubMembers.find((member) => member.uid === memberUid) || {};
-      const roleUpdate = { role, updatedAt: serverTimestamp() };
-      if (role === 'agent') {
+      const roleUpdate = { role: normalizeClubRole(role), updatedAt: serverTimestamp() };
+      if (roleUpdate.role === 'agent' || roleUpdate.role === 'super_agent') {
         roleUpdate.agentRefCode = targetMember.agentRefCode || buildAgentRefCode(selectedClub?.code, targetMember);
-      } else if (role === 'member') {
+      } else if (roleUpdate.role === 'member') {
         roleUpdate.agentRefCode = null;
       }
       await setDoc(doc(db, 'clubs', selectedClubId, 'members', memberUid), roleUpdate, { merge: true });
@@ -5245,30 +5327,47 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleAllocateClubCredits = async (member) => {
-    if (!firebaseUser || !selectedClubId || !member?.uid || !canModerateClubPosts) return;
-    const creditsInput = window.prompt(`Credits to assign to ${member.displayName || member.email || 'this member'}:`, '50');
-    const credits = Math.floor(Number(creditsInput));
-    if (!Number.isFinite(credits) || credits <= 0) return;
-
-    setClubActionBusyId(`credits-${member.uid}`);
+  const handleKickTrader = async (event, member) => {
+    if (!firebaseUser || !selectedClubId || !event?.id || !member?.uid || !canManageTraders) return;
+    setClubActionBusyId(`kick-${member.uid}`);
     setClubError('');
     setClubInfo('');
     try {
-      const response = await fetch('/api/clubs/allocate-credits', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
-        },
-        body: JSON.stringify({ clubId: selectedClubId, memberId: member.uid, credits })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Credit allocation failed.');
-      setClubInfo(`${credits} credits assigned to ${member.displayName || member.email || 'member'}.`);
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'events', event.id, 'registrations', member.uid));
+      setClubInfo(`${member.displayName || 'Trader'} was removed from the table.`);
     } catch (error) {
-      console.error('Failed allocating club credits:', error);
-      setClubError(error.message || 'Could not allocate credits.');
+      console.error('Failed kicking trader:', error);
+      setClubError('Could not remove that trader.');
+    } finally {
+      setClubActionBusyId('');
+    }
+  };
+
+  const handleBanTrader = async (event, member) => {
+    if (!firebaseUser || !selectedClubId || !event?.id || !member?.uid || !canManageTraders) return;
+    const confirmed = await requestConfirmation(
+      'Ban Trader',
+      `Permanently ban ${member.displayName || 'this trader'} from "${event.title || 'this Trade Night'}"? They will not be able to re-enter.`,
+      'Ban Trader'
+    );
+    if (!confirmed) return;
+
+    setClubActionBusyId(`ban-trader-${member.uid}`);
+    setClubError('');
+    setClubInfo('');
+    try {
+      const eventRef = doc(db, 'clubs', selectedClubId, 'events', event.id);
+      await runTransaction(db, async (transaction) => {
+        const eventSnap = await transaction.get(eventRef);
+        if (!eventSnap.exists()) throw new Error('Trade night no longer exists.');
+        const bannedUserIds = Array.from(new Set([...(eventSnap.data().bannedUserIds || []), member.uid]));
+        transaction.update(eventRef, { bannedUserIds, updatedAt: serverTimestamp() });
+        transaction.delete(doc(eventRef, 'registrations', member.uid));
+      });
+      setClubInfo(`${member.displayName || 'Trader'} is banned from this trade night.`);
+    } catch (error) {
+      console.error('Failed banning trader:', error);
+      setClubError(error.message || 'Could not ban that trader.');
     } finally {
       setClubActionBusyId('');
     }
@@ -7620,25 +7719,7 @@ export default function CardSwipersLanding() {
                         </svg>
                       </button>
 
-                      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
-                        {selectedClub.logoUrl ? (
-                          <img src={selectedClub.logoUrl} alt={selectedClub.name || 'Club'} className="h-full w-full object-cover" />
-                        ) : (
-                          (() => {
-                            const headerPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === selectedClub.logoPresetId);
-                            return headerPreset ? (
-                              <span className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${headerPreset.className} text-lg`}>{headerPreset.symbol}</span>
-                            ) : (
-                              <span className="flex h-full w-full items-center justify-center text-lg">🃏</span>
-                            );
-                          })()
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-black text-white">{selectedClub.name || 'Club'}</p>
-                        <p className="truncate text-[10px] text-white/50">ID: {selectedClub.code || selectedClub.id}</p>
-                      </div>
+                      <div className="flex-1" />
 
                       <button
                         type="button"
@@ -7724,17 +7805,17 @@ export default function CardSwipersLanding() {
 
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs">
-                          <span className="h-2.5 w-2.5 rounded-full bg-[#EF4444]" />
+                          <span className="h-2.5 w-2.5 rounded-full bg-[#10B981]" />
                           <span className="font-bold text-white">
-                            {selectedClubMembership?.credits === 'infinite' ? '∞' : Number(selectedClubMembership?.credits || 0).toLocaleString()}
+                            ${myCollection.reduce((max, card) => Math.max(max, parseDollarValue(card.tradeValue || card.value || card.avgMarketValue)), 0).toFixed(0)}
                           </span>
-                          <span className="text-white/45">credits</span>
+                          <span className="text-white/45">top card</span>
                         </span>
                         <span className="rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white/70">
-                          Held <span className="font-bold text-white">{Number(selectedClubMembership?.escrowHeld || 0).toLocaleString()}</span>
+                          Binder <span className="font-bold text-white">{myCollection.length}</span>
                         </span>
                         <span className="rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#10B981]">
-                          {selectedClubRole || 'guest'}
+                          {CLUB_ROLE_LABELS[selectedClubRole] || 'Guest'}
                         </span>
                       </div>
 
@@ -7769,7 +7850,7 @@ export default function CardSwipersLanding() {
 
                     <div className="flex items-start gap-2 rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
                       <span className="shrink-0 rounded-md bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/60">Notice</span>
-                      {canModerateClubPosts ? (
+                      {canManageClubMembers ? (
                         <>
                           <input
                             type="text"
@@ -7857,7 +7938,7 @@ export default function CardSwipersLanding() {
                     {canModerateClubPosts && (
                       <button
                         type="button"
-                        onClick={handleCreateTradeNight}
+                        onClick={openTradeNightForm}
                         disabled={Boolean(clubEventBusyId)}
                         className="w-full rounded-xl border-2 border-[#10B981] bg-zinc-900 py-3.5 text-sm font-bold text-[#10B981] transition-colors hover:bg-[#10B981]/10 disabled:opacity-55"
                       >
@@ -7878,19 +7959,19 @@ export default function CardSwipersLanding() {
                             const startMs = eventDate ? eventDate.getTime() : 0;
                             const closesInMs = startMs ? startMs - clubLobbyTick : 0;
                             const isLive = startMs > 0 && clubLobbyTick >= startMs && clubLobbyTick <= startMs + windowMs;
-                            const countdown = closesInMs > 0
-                              ? `${String(Math.floor(closesInMs / 60000)).padStart(2, '0')}:${String(Math.floor((closesInMs % 60000) / 1000)).padStart(2, '0')}`
-                              : '';
+                            const countdown = closesInMs > 0 ? formatCountdown(closesInMs) : '';
+                            const liveRemaining = isLive ? formatCountdown(startMs + windowMs - clubLobbyTick) : '';
                             const minCardValue = Number(event.minCardValue || 0);
+                            const eventCategories = Array.isArray(event.categories) ? event.categories : [];
                             const bestCardValue = myCollection.reduce(
                               (max, card) => Math.max(max, parseDollarValue(card.tradeValue || card.value || card.avgMarketValue)),
                               0
                             );
                             const meetsCriteria = minCardValue <= 0 || bestCardValue >= minCardValue;
                             const badge = isLive
-                              ? { label: 'Live', className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
+                              ? { label: `Closes in ${liveRemaining}`, className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
                               : registrationOpen && countdown
-                                ? { label: `Closes in ${countdown}`, className: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
+                                ? { label: `Starts in ${countdown}`, className: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
                                 : registrationOpen
                                   ? { label: 'Registering', className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
                                   : { label: String(event.status || 'Closed'), className: 'bg-white/10 text-white/60 border-white/15' };
@@ -7911,11 +7992,22 @@ export default function CardSwipersLanding() {
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-bold text-white">{event.title || 'Trade Night'}</p>
                                     <p className="mt-1 text-[11px] text-white/55">
-                                      {event.buyInCredits || 0} credits · {eventDate ? eventDate.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Time TBA'}
+                                      {eventDate ? eventDate.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Time TBA'}
+                                      {event.passcode ? ' · 🔒 Passcode' : ''}
                                     </p>
                                   </div>
                                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}>{badge.label}</span>
                                 </div>
+
+                                {eventCategories.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {eventCategories.map((category) => (
+                                      <span key={category} className="rounded-md border border-[#10B981]/30 bg-[#10B981]/10 px-2 py-0.5 text-[10px] font-semibold text-[#10B981]">
+                                        {category}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
 
                                 <div className="mt-2.5 grid grid-cols-3 gap-2">
                                   <div className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
@@ -7938,6 +8030,51 @@ export default function CardSwipersLanding() {
                                       ? `Binder qualifies — best card $${bestCardValue.toFixed(0)}`
                                       : `Add a card worth $${minCardValue}+ to your binder to enter.`}
                                   </p>
+                                )}
+
+                                {isLive && canManageTraders && (
+                                  <div className="mt-2.5 rounded-lg border border-white/10 bg-black/30 p-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveTradeNightId((prev) => (prev === event.id ? '' : event.id))}
+                                      className="flex w-full items-center justify-between text-[11px] font-semibold text-white/70 hover:text-white"
+                                    >
+                                      <span>Active Traders</span>
+                                      <span>{activeTradeNightId === event.id ? 'Hide' : 'Manage'}</span>
+                                    </button>
+                                    {activeTradeNightId === event.id && (
+                                      <div className="mt-2 space-y-1.5">
+                                        {tradeNightRegistrations.length === 0 ? (
+                                          <p className="text-[11px] text-white/45">No traders seated yet.</p>
+                                        ) : (
+                                          tradeNightRegistrations.map((registration) => (
+                                            <div key={registration.id} className="flex items-center gap-2 rounded-md bg-white/[0.04] px-2 py-1.5">
+                                              <span className="min-w-0 flex-1 truncate text-[11px] text-white">{registration.displayName || registration.id}</span>
+                                              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${registration.status === 'away' ? 'bg-amber-500/20 text-amber-300' : 'bg-[#10B981]/20 text-[#10B981]'}`}>
+                                                {registration.status === 'away' ? 'Away' : 'Active'}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleKickTrader(event, { uid: registration.id, displayName: registration.displayName })}
+                                                disabled={clubActionBusyId === `kick-${registration.id}`}
+                                                className="shrink-0 rounded bg-white/10 px-2 py-1 text-[10px] font-bold text-white/80 hover:bg-white/20 disabled:opacity-55"
+                                              >
+                                                Kick
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleBanTrader(event, { uid: registration.id, displayName: registration.displayName })}
+                                                disabled={clubActionBusyId === `ban-trader-${registration.id}`}
+                                                className="shrink-0 rounded bg-[#EF4444]/15 px-2 py-1 text-[10px] font-bold text-[#EF4444] hover:bg-[#EF4444]/25 disabled:opacity-55"
+                                              >
+                                                Ban
+                                              </button>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 )}
 
                                 <button
@@ -8976,6 +9113,7 @@ export default function CardSwipersLanding() {
                 {[
                   { id: 'all', label: 'All' },
                   { id: 'owner', label: 'Manager' },
+                  { id: 'super_agent', label: 'Super Agent' },
                   { id: 'agent', label: 'Agent' },
                   { id: 'member', label: 'Player' }
                 ].map((chip) => (
@@ -9066,16 +9204,21 @@ export default function CardSwipersLanding() {
                       <p className="truncate text-[11px] text-white/45">ID: {member.uid.slice(0, 12)}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{member.role || 'member'}</span>
+                      <span className={`text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border ${member.role === 'super_agent' ? 'border-[#10B981]/40 bg-[#10B981]/10 text-[#10B981]' : 'border-white/15 bg-white/5 text-white/70'}`}>
+                        {CLUB_ROLE_LABELS[member.role] || 'Player'}
+                      </span>
                       {canManageClubMembers && member.role !== 'owner' && member.uid !== firebaseUser?.uid && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateClubMemberRole(member.uid, member.role === 'agent' ? 'member' : 'agent')}
+                        <select
+                          value={member.role || 'member'}
+                          onChange={(changeEvent) => handleUpdateClubMemberRole(member.uid, changeEvent.target.value)}
                           disabled={clubActionBusyId === `role-${member.uid}`}
-                          className="rounded-lg bg-white/10 px-2 py-1 text-[10px] font-semibold hover:bg-white/20 disabled:opacity-60"
+                          aria-label={`Set role for ${member.displayName || member.uid}`}
+                          className="rounded-lg border border-white/10 bg-zinc-800 px-2 py-1 text-[10px] font-semibold text-white focus:border-[#10B981] focus:outline-none disabled:opacity-60"
                         >
-                          {member.role === 'agent' ? 'Demote' : 'Promote'}
-                        </button>
+                          <option value="member">Player</option>
+                          <option value="agent">Agent</option>
+                          <option value="super_agent">Super Agent</option>
+                        </select>
                       )}
                     </div>
                   </div>
@@ -9196,6 +9339,140 @@ export default function CardSwipersLanding() {
                   </svg>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTradeNightForm && selectedClub && (
+        <div className="fixed inset-0 z-[71] flex items-end justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="trade-night-form-title">
+          <button type="button" onClick={() => setShowTradeNightForm(false)} className="absolute inset-0" aria-label="Close trade night form" />
+          <div className="relative flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-3xl border-t border-white/15 bg-zinc-950 text-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+              <h3 id="trade-night-form-title" className="text-lg font-bold">Create Trade Night</h3>
+              <button type="button" onClick={() => setShowTradeNightForm(false)} className="text-sm text-white/70 hover:text-white">Close</button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-4">
+              <label className="block">
+                <span className="text-xs font-semibold text-white/70">Event Title</span>
+                <input
+                  type="text"
+                  value={tradeNightDraft.title}
+                  onChange={(event) => setTradeNightDraft((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder="e.g. Dragon Ball Z $100+ USD"
+                  maxLength={60}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-white placeholder-zinc-500 focus:border-[#10B981] focus:outline-none"
+                />
+              </label>
+
+              <div>
+                <span className="text-xs font-semibold text-white/70">Max Traders</span>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTradeNightDraft((prev) => ({ ...prev, maxTraders: 'unlimited' }))}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${tradeNightDraft.maxTraders === 'unlimited' ? 'border-[#10B981] bg-[#10B981] text-black' : 'border-white/10 bg-zinc-900 text-white/70 hover:border-white/25'}`}
+                  >
+                    Unlimited
+                  </button>
+                  {TRADE_NIGHT_CAPACITIES.map((capacity) => (
+                    <button
+                      key={capacity}
+                      type="button"
+                      onClick={() => setTradeNightDraft((prev) => ({ ...prev, maxTraders: capacity }))}
+                      className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${tradeNightDraft.maxTraders === capacity ? 'border-[#10B981] bg-[#10B981] text-black' : 'border-white/10 bg-zinc-900 text-white/70 hover:border-white/25'}`}
+                    >
+                      {capacity}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="text-xs font-semibold text-white/70">Entry Passcode <span className="text-white/40">(optional)</span></span>
+                <input
+                  type="text"
+                  value={tradeNightDraft.passcode}
+                  onChange={(event) => setTradeNightDraft((prev) => ({ ...prev, passcode: event.target.value }))}
+                  placeholder="Leave blank for open entry"
+                  maxLength={20}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-white placeholder-zinc-500 focus:border-[#10B981] focus:outline-none"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-semibold text-white/70">Start Date &amp; Time <span className="text-white/40">(10 min – 14 days out)</span></span>
+                <input
+                  type="datetime-local"
+                  value={tradeNightDraft.scheduledFor}
+                  onChange={(event) => setTradeNightDraft((prev) => ({ ...prev, scheduledFor: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-white focus:border-[#10B981] focus:outline-none"
+                />
+              </label>
+
+              <div>
+                <span className="text-xs font-semibold text-white/70">Designated Categories</span>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  {TRADE_NIGHT_CATEGORIES.map((category) => {
+                    const active = tradeNightDraft.categories.includes(category);
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => setTradeNightDraft((prev) => ({
+                          ...prev,
+                          categories: active ? prev.categories.filter((entry) => entry !== category) : [...prev.categories, category]
+                        }))}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${active ? 'border-[#10B981] bg-[#10B981] text-black' : 'border-white/10 bg-zinc-900 text-white/70 hover:border-white/25'}`}
+                      >
+                        {active ? '✓ ' : ''}{category}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-semibold text-white/70">Min Card Value</span>
+                  <div className="mt-1 flex items-center gap-1 rounded-xl border border-white/10 bg-zinc-900 px-3 py-3 focus-within:border-[#10B981]">
+                    <span className="text-white/50">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={tradeNightDraft.minCardValue}
+                      onChange={(event) => setTradeNightDraft((prev) => ({ ...prev, minCardValue: event.target.value }))}
+                      placeholder="0"
+                      className="w-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none"
+                    />
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-white/70">Trade Window (min)</span>
+                  <input
+                    type="number"
+                    min="10"
+                    max="480"
+                    value={tradeNightDraft.roundMinutes}
+                    onChange={(event) => setTradeNightDraft((prev) => ({ ...prev, roundMinutes: event.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-white focus:border-[#10B981] focus:outline-none"
+                  />
+                </label>
+              </div>
+
+              {clubError && <p className="text-xs text-red-300">{clubError}</p>}
+            </div>
+
+            <div className="border-t border-white/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <button
+                type="button"
+                onClick={handleCreateTradeNight}
+                disabled={Boolean(clubEventBusyId)}
+                className="w-full rounded-xl bg-[#10B981] py-3.5 text-sm font-bold text-black shadow-lg shadow-[#10B981]/25 hover:bg-emerald-400 disabled:opacity-55"
+              >
+                {clubEventBusyId === 'create' ? 'Creating...' : 'Create Trade Night'}
+              </button>
             </div>
           </div>
         </div>
