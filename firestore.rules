@@ -53,6 +53,16 @@ service cloud.firestore {
       );
     }
 
+    // Collection-group reads: path-scoped rules above do not apply to
+    // collectionGroup() queries, so these grant them explicitly.
+    match /{path=**}/members/{memberId} {
+      allow read: if isAdmin() || (signedIn() && memberId == request.auth.uid);
+    }
+
+    match /{path=**}/ledgers/{txId} {
+      allow read: if isAdmin();
+    }
+
     match /users/{userId} {
       allow create: if isSelf(userId);
       allow read: if isSelf(userId) || isAdmin();

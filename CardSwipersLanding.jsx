@@ -1085,6 +1085,8 @@ export default function CardSwipersLanding() {
   const [userPurchaseIntents, setUserPurchaseIntents] = useState([]);
   const [premiumSubscriptions, setPremiumSubscriptions] = useState([]);
   const [sellerVerifications, setSellerVerifications] = useState([]);
+  const [adminClubMembers, setAdminClubMembers] = useState([]);
+  const [adminClubLedgers, setAdminClubLedgers] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [reviewDrafts, setReviewDrafts] = useState({});
   const [reviewBusyByPurchaseId, setReviewBusyByPurchaseId] = useState({});
@@ -2059,6 +2061,43 @@ export default function CardSwipersLanding() {
       unsubPurchases();
       unsubSubscriptions();
       unsubVerifications();
+    };
+  }, [isAdmin, currentTab]);
+
+  useEffect(() => {
+    if (!isAdmin || currentTab !== 'admin') {
+      setAdminClubMembers([]);
+      setAdminClubLedgers([]);
+      return undefined;
+    }
+
+    const unsubMembers = onSnapshot(
+      query(collectionGroup(db, 'members'), limit(2000)),
+      (snapshot) => {
+        setAdminClubMembers(snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          clubId: docSnap.ref.parent.parent?.id || '',
+          ...docSnap.data()
+        })));
+      },
+      (error) => console.error('Failed loading club members for admin:', error)
+    );
+
+    const unsubLedgers = onSnapshot(
+      query(collectionGroup(db, 'ledgers'), limit(2000)),
+      (snapshot) => {
+        setAdminClubLedgers(snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          clubId: docSnap.ref.parent.parent?.id || '',
+          ...docSnap.data()
+        })));
+      },
+      (error) => console.error('Failed loading club ledgers for admin:', error)
+    );
+
+    return () => {
+      unsubMembers();
+      unsubLedgers();
     };
   }, [isAdmin, currentTab]);
 
@@ -6006,6 +6045,93 @@ export default function CardSwipersLanding() {
     };
     return accumulator;
   }, {});
+
+  // Club-network rollups for the admin overview (amounts stored in cents).
+  const clubNetworkStats = (() => {
+    const byClub = new Map();
+    clubs.forEach((club) => {
+      byClub.set(club.id, {
+        clubId: club.id,
+        name: club.name || 'Untitled Club',
+        code: club.code || '',
+        owners: 0,
+        superAgents: 0,
+        agents: 0,
+        players: 0,
+        activeMembers: 0,
+        transactions: 0,
+        volume: 0,
+        ownerFees: 0,
+        superAgentFees: 0,
+        agentFees: 0
+      });
+    });
+
+    const memberByUid = new Map();
+    adminClubMembers.forEach((member) => {
+      const bucket = byClub.get(member.clubId);
+      memberByUid.set(`${member.clubId}:${member.id}`, member);
+      if (!bucket) return;
+      if (member.status !== 'banned') bucket.activeMembers += 1;
+      if (member.role === 'owner') bucket.owners += 1;
+      else if (member.role === 'super_agent') bucket.superAgents += 1;
+      else if (member.role === 'agent') bucket.agents += 1;
+      else bucket.players += 1;
+    });
+
+    adminClubLedgers.forEach((entry) => {
+      const bucket = byClub.get(entry.clubId);
+      if (!bucket) return;
+      bucket.transactions += 1;
+      bucket.volume += Number(entry.grossAmount || 0);
+      bucket.ownerFees += Number(entry.ownerFee || 0);
+      const agentRecord = entry.agentId ? memberByUid.get(`${entry.clubId}:${entry.agentId}`) : null;
+      if (agentRecord?.role === 'super_agent') bucket.superAgentFees += Number(entry.agentFee || 0);
+      else bucket.agentFees += Number(entry.agentFee || 0);
+    });
+
+    const clubRows = Array.from(byClub.values()).sort((a, b) => b.volume - a.volume);
+    return {
+      clubRows,
+      totalClubs: clubs.length,
+      totalActiveMembers: clubRows.reduce((sum, row) => sum + row.activeMembers, 0),
+      totalTransactions: clubRows.reduce((sum, row) => sum + row.transactions, 0),
+      totalVolume: clubRows.reduce((sum, row) => sum + row.volume, 0),
+      totalOwnerFees: clubRows.reduce((sum, row) => sum + row.ownerFees, 0),
+      totalSuperAgentFees: clubRows.reduce((sum, row) => sum + row.superAgentFees, 0),
+      totalAgentFees: clubRows.reduce((sum, row) => sum + row.agentFees, 0)
+    };
+  })();
+
+  const clubEarningsRoster = (() => {
+    const clubNameById = new Map(clubs.map((club) => [club.id, club.name || 'Untitled Club']));
+    return adminClubMembers
+      .filter((member) => ['owner', 'super_agent', 'agent'].includes(member.role))
+      .map((member) => {
+        const referredPlayers = adminClubMembers.filter(
+          (entry) => entry.clubId === member.clubId && entry.referredByAgentId === member.id
+        ).length;
+        const ledgers = adminClubLedgers.filter((entry) => entry.clubId === member.clubId);
+        const earned = member.role === 'owner'
+          ? ledgers.reduce((sum, entry) => sum + Number(entry.ownerFee || 0), 0)
+          : ledgers.filter((entry) => entry.agentId === member.id).reduce((sum, entry) => sum + Number(entry.agentFee || 0), 0);
+        const volume = member.role === 'owner'
+          ? ledgers.reduce((sum, entry) => sum + Number(entry.grossAmount || 0), 0)
+          : ledgers.filter((entry) => entry.agentId === member.id).reduce((sum, entry) => sum + Number(entry.grossAmount || 0), 0);
+        return {
+          key: `${member.clubId}:${member.id}`,
+          name: member.displayName || member.email || member.id,
+          clubName: clubNameById.get(member.clubId) || member.clubId,
+          role: member.role,
+          referralCode: member.referralCode || member.agentRefCode || '—',
+          referredPlayers,
+          volume,
+          earned
+        };
+      })
+      .sort((a, b) => b.earned - a.earned);
+  })();
+
   return (
     <div
       className="text-white font-sans flex flex-col relative min-h-[100dvh] bg-black"
@@ -6709,6 +6835,8 @@ export default function CardSwipersLanding() {
             ratingStatsByUser={ratingStatsByUser}
             sellerVerifications={sellerVerifications}
             premiumSubscriptions={premiumSubscriptions}
+            clubNetworkStats={clubNetworkStats}
+            clubEarningsRoster={clubEarningsRoster}
             handleAdminReviewVerification={handleAdminReviewVerification}
           />
         )}
@@ -7816,6 +7944,70 @@ export default function CardSwipersLanding() {
                       </button>
 
                       <div className="flex-1" />
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-zinc-900 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="relative shrink-0">
+                          <div className="h-16 w-16 overflow-hidden rounded-2xl border-2 border-[#10B981] bg-zinc-800">
+                            {selectedClub.logoUrl ? (
+                              <img src={selectedClub.logoUrl} alt={selectedClub.name || 'Club'} className="h-full w-full object-cover" />
+                            ) : (
+                              (() => {
+                                const avatarPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === selectedClub.logoPresetId);
+                                return avatarPreset ? (
+                                  <span className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${avatarPreset.className} text-3xl`}>{avatarPreset.symbol}</span>
+                                ) : (
+                                  <span className="flex h-full w-full items-center justify-center text-3xl">🃏</span>
+                                );
+                              })()
+                            )}
+                          </div>
+                          {canManageClubMembers && (
+                            <button
+                              type="button"
+                              onClick={openCreateClub}
+                              aria-label="Edit club avatar"
+                              className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-zinc-900 bg-[#10B981] text-black"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3" aria-hidden="true">
+                                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <h2 className="truncate text-lg font-black text-white">{selectedClub.name || 'Club'}</h2>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <p className="truncate text-xs text-white/50">ID: {selectedClub.code || selectedClub.id}</p>
+                            <button
+                              type="button"
+                              onClick={handleCopyClubId}
+                              aria-label="Share club ID"
+                              className="text-white/50 hover:text-white"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5" aria-hidden="true">
+                                <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                                <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" strokeLinecap="round" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="flex items-center gap-1 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-xs text-white/80">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5 text-white/50" aria-hidden="true">
+                                <circle cx="9" cy="8" r="3" /><path d="M2.5 19a6.5 6.5 0 0 1 13 0M17 11a3 3 0 1 0 0-6M21.5 19a5.5 5.5 0 0 0-4-5.3" />
+                              </svg>
+                              <span className="font-bold">{Number(selectedClub.memberCount || selectedClub.membersCount || 0).toLocaleString()}</span>
+                              <span className="text-white/45">Members</span>
+                            </span>
+                            <span className="rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-[#10B981]">
+                              {CLUB_ROLE_LABELS[selectedClubRole] || 'Guest'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     {!selectedClubMembership ? (

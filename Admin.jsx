@@ -30,6 +30,8 @@ export default function AdminPanel({
   ratingStatsByUser,
   sellerVerifications,
   premiumSubscriptions,
+  clubNetworkStats,
+  clubEarningsRoster,
   handleAdminReviewVerification
 }) {
   const formatMoney = (value) =>
@@ -38,6 +40,10 @@ export default function AdminPanel({
       currency: 'USD',
       maximumFractionDigits: 2
     }).format(Number(value || 0));
+
+  // Club ledger amounts are stored in cents.
+  const formatCents = (value) => formatMoney(Number(value || 0) / 100);
+  const ROLE_LABELS = { owner: 'Owner', super_agent: 'Super Agent', agent: 'Agent' };
 
   const activePremiumCount = (premiumSubscriptions || []).filter((subscription) => {
     const status = String(subscription.status || '').toLowerCase();
@@ -106,6 +112,108 @@ export default function AdminPanel({
       {adminUsersError && (
         <div className="text-sm text-red-200 bg-red-900/40 border border-red-400/30 rounded-xl p-3">{adminUsersError}</div>
       )}
+
+      <div className="border-t border-white/10 pt-8 mt-8">
+        <h3 className="text-xl font-bold mb-4">Club Network Overview</h3>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+          <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3">
+            <p className="text-[10px] uppercase tracking-widest text-red-200">Total Clubs</p>
+            <p className="text-2xl font-bold mt-1">{clubNetworkStats?.totalClubs || 0}</p>
+          </div>
+          <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3">
+            <p className="text-[10px] uppercase tracking-widest text-red-200">Active Members</p>
+            <p className="text-2xl font-bold mt-1">{clubNetworkStats?.totalActiveMembers || 0}</p>
+          </div>
+          <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3">
+            <p className="text-[10px] uppercase tracking-widest text-red-200">Transactions</p>
+            <p className="text-2xl font-bold mt-1">{clubNetworkStats?.totalTransactions || 0}</p>
+          </div>
+          <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3">
+            <p className="text-[10px] uppercase tracking-widest text-red-200">Trade Volume</p>
+            <p className="text-2xl font-bold mt-1">{formatCents(clubNetworkStats?.totalVolume)}</p>
+          </div>
+          <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3">
+            <p className="text-[10px] uppercase tracking-widest text-red-200">Owner Fees</p>
+            <p className="text-2xl font-bold mt-1">{formatCents(clubNetworkStats?.totalOwnerFees)}</p>
+          </div>
+          <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3">
+            <p className="text-[10px] uppercase tracking-widest text-red-200">Super Agent Comm.</p>
+            <p className="text-2xl font-bold mt-1">{formatCents(clubNetworkStats?.totalSuperAgentFees)}</p>
+          </div>
+          <div className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3">
+            <p className="text-[10px] uppercase tracking-widest text-red-200">Agent Comm.</p>
+            <p className="text-2xl font-bold mt-1">{formatCents(clubNetworkStats?.totalAgentFees)}</p>
+          </div>
+        </div>
+
+        <h4 className="text-sm font-bold mt-6 mb-2 text-red-100">Per-Club Breakdown</h4>
+        <div className="overflow-x-auto">
+          <div className="min-w-[880px]">
+            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-red-200 border-b border-red-500/30 font-bold">
+              <div className="col-span-3">Club</div>
+              <div className="col-span-1 text-right">Members</div>
+              <div className="col-span-2 text-center">Roles (O/SA/A/P)</div>
+              <div className="col-span-1 text-right">Txns</div>
+              <div className="col-span-2 text-right">Volume</div>
+              <div className="col-span-3 text-right">Owner / SA / Agent Fees</div>
+            </div>
+            {(clubNetworkStats?.clubRows || []).length === 0 ? (
+              <div className="px-3 py-4 text-sm text-red-100">No clubs found.</div>
+            ) : (
+              clubNetworkStats.clubRows.map((row) => (
+                <div key={row.clubId} className="grid grid-cols-12 gap-2 px-3 py-2.5 text-xs border-t border-red-500/20 items-center">
+                  <div className="col-span-3 min-w-0">
+                    <p className="font-semibold truncate">{row.name}</p>
+                    <p className="text-[10px] text-red-300 truncate">{row.code || row.clubId}</p>
+                  </div>
+                  <div className="col-span-1 text-right font-semibold">{row.activeMembers}</div>
+                  <div className="col-span-2 text-center text-red-100">
+                    {row.owners}/{row.superAgents}/{row.agents}/{row.players}
+                  </div>
+                  <div className="col-span-1 text-right">{row.transactions}</div>
+                  <div className="col-span-2 text-right font-semibold">{formatCents(row.volume)}</div>
+                  <div className="col-span-3 text-right text-red-100">
+                    {formatCents(row.ownerFees)} / {formatCents(row.superAgentFees)} / {formatCents(row.agentFees)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <h4 className="text-sm font-bold mt-6 mb-2 text-red-100">Individual Earnings Roster</h4>
+        <div className="overflow-x-auto">
+          <div className="min-w-[820px]">
+            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-red-200 border-b border-red-500/30 font-bold">
+              <div className="col-span-3">Name</div>
+              <div className="col-span-2">Club</div>
+              <div className="col-span-2">Role</div>
+              <div className="col-span-2">Referral Code</div>
+              <div className="col-span-1 text-right">Referred</div>
+              <div className="col-span-1 text-right">Volume</div>
+              <div className="col-span-1 text-right">Earned</div>
+            </div>
+            {(clubEarningsRoster || []).length === 0 ? (
+              <div className="px-3 py-4 text-sm text-red-100">No owners, super agents, or agents found.</div>
+            ) : (
+              clubEarningsRoster.map((row) => (
+                <div key={row.key} className="grid grid-cols-12 gap-2 px-3 py-2.5 text-xs border-t border-red-500/20 items-center">
+                  <div className="col-span-3 font-semibold truncate">{row.name}</div>
+                  <div className="col-span-2 truncate text-red-100">{row.clubName}</div>
+                  <div className="col-span-2">
+                    <span className="text-[10px] px-2 py-1 rounded-lg bg-white/10 border border-white/20 uppercase">{ROLE_LABELS[row.role] || row.role}</span>
+                  </div>
+                  <div className="col-span-2 font-mono text-[11px] truncate text-red-100">{row.referralCode}</div>
+                  <div className="col-span-1 text-right">{row.referredPlayers}</div>
+                  <div className="col-span-1 text-right">{formatCents(row.volume)}</div>
+                  <div className="col-span-1 text-right font-bold text-emerald-300">{formatCents(row.earned)}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="border-t border-white/10 pt-8 mt-8">
         <div className="flex items-center justify-between gap-4 mb-4">
