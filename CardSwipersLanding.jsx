@@ -400,7 +400,7 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+      <div className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4">
         <PaymentElement />
       </div>
 
@@ -408,14 +408,14 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
         <button
           type="submit"
           disabled={!stripe || !elements || isSubmitting}
-          className="min-h-11 flex-1 rounded-2xl bg-[#FFD700] text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70 font-semibold disabled:opacity-60"
+          className="min-h-11 flex-1 rounded-2xl bg-[#FFD700] text-[#000000] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70 font-semibold disabled:opacity-60"
         >
           {isSubmitting ? 'Processing...' : `Pay ${formatMoney(purchaseSummary.totalCharge)}`}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="min-h-11 px-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] text-white font-semibold hover:bg-[#161B22] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+          className="min-h-11 px-4 rounded-2xl border border-[#27272A] bg-[#000000] text-white font-semibold hover:bg-[#18181B] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
         >
           Cancel
         </button>
@@ -464,7 +464,7 @@ function MakeOfferModal({ isOpen, listing, buyerId, isSubmitting, error, onClose
           type="button"
           disabled={isSubmitting || !buyerId || !offerAmount}
           onClick={() => onSubmit(offerAmount)}
-          className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60"
+          className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] hover:bg-[#FFE66D] disabled:opacity-60"
         >
           {isSubmitting ? 'Sending...' : 'Submit Offer'}
         </button>
@@ -491,23 +491,23 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
-      <div className="receipt-sheet w-full max-w-lg space-y-5 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+      <div className="receipt-sheet w-full max-w-lg space-y-5 rounded-2xl border border-[#27272A] bg-[#000000] p-5 text-white shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Digital receipt</p>
             <h2 id="receipt-title" className="mt-1 text-xl font-bold">{order.cardTitle || 'Card transaction'}</h2>
             <p className="mt-1 text-xs text-white/70">Order {order.orderId || order.id}</p>
           </div>
-          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-lg text-white/75 hover:bg-[#161B22]" aria-label="Close receipt">x</button>
+          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#27272A] text-lg text-white/75 hover:bg-[#18181B]" aria-label="Close receipt">x</button>
         </div>
 
-        <div className="flex gap-3 rounded-xl border border-white/10 bg-[#161B22] p-3">
-          {order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl ? <img src={order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl} alt="Card front" className="h-24 w-16 rounded-lg object-cover" /> : <div className="flex h-24 w-16 items-center justify-center rounded-lg bg-[#0B0E14] text-2xl">🃏</div>}
+        <div className="flex gap-3 rounded-xl border border-white/10 bg-[#18181B] p-3">
+          {order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl ? <img src={order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl} alt="Card front" className="h-24 w-16 rounded-lg object-cover" /> : <div className="flex h-24 w-16 items-center justify-center rounded-lg bg-[#000000] text-2xl">🃏</div>}
           {order.cardImageBackUrl ? <img src={order.cardImageBackUrl} alt="Card back" className="h-24 w-16 rounded-lg object-cover" /> : null}
           <div className="text-sm text-white/80"><p className="font-semibold text-white">{isSeller ? 'Seller payout receipt' : 'Buyer purchase receipt'}</p><p className="mt-2">Status: <span className="capitalize text-[#FFE66D]">{status}</span></p><p className="mt-1">{order.cardBrand || 'Trading card'}</p></div>
         </div>
 
-        <div className="space-y-2 rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm">
+        <div className="space-y-2 rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm">
           {isSeller ? (
             <>
               <div className="flex justify-between"><span>Item subtotal</span><span>{formatMoney(subtotal)}</span></div>
@@ -526,10 +526,10 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
           )}
         </div>
 
-        {!isSeller && order.buyerShippingAddress && <div className="rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm"><p className="font-semibold">Shipping address</p><p className="mt-2 text-white/75">{order.buyerShippingAddress.line1 || order.buyerShippingAddress.street}<br />{order.buyerShippingAddress.city}, {order.buyerShippingAddress.state} {order.buyerShippingAddress.postal_code || order.buyerShippingAddress.zip}<br />{order.buyerShippingAddress.country || 'US'}</p></div>}
+        {!isSeller && order.buyerShippingAddress && <div className="rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm"><p className="font-semibold">Shipping address</p><p className="mt-2 text-white/75">{order.buyerShippingAddress.line1 || order.buyerShippingAddress.street}<br />{order.buyerShippingAddress.city}, {order.buyerShippingAddress.state} {order.buyerShippingAddress.postal_code || order.buyerShippingAddress.zip}<br />{order.buyerShippingAddress.country || 'US'}</p></div>}
 
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Download / Print Receipt</button>
+          <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] hover:bg-[#FFE66D]">Download / Print Receipt</button>
           {!isSeller && order.trackingNumber && <a href={order.trackingUrl || '#'} target="_blank" rel="noreferrer" className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 py-2.5 text-sm font-semibold text-[#FFE66D]">View Live Tracking</a>}
           {!isSeller && !['disputed', 'completed', 'released', 'refunded'].includes(String(order.status || order.escrowStatus || '').toLowerCase()) && <button type="button" onClick={onReportIssue} className="min-h-11 rounded-xl border border-rose-300/60 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-400/10">Report Issue / Dispute</button>}
         </div>
@@ -538,17 +538,17 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
           <div className="space-y-3 rounded-xl border border-rose-300/50 bg-rose-400/10 p-4">
             <div><p className="font-semibold text-rose-100">Return shipment required</p><p className="mt-1 text-sm text-white/70">Submit return tracking to start the automated refund clock after delivery.</p></div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <select value={returnCarrier} onChange={(event) => setReturnCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select>
-              <input value={returnTrackingNumber} onChange={(event) => setReturnTrackingNumber(event.target.value)} placeholder="Return tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base text-white" />
+              <select value={returnCarrier} onChange={(event) => setReturnCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#000000] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select>
+              <input value={returnTrackingNumber} onChange={(event) => setReturnTrackingNumber(event.target.value)} placeholder="Return tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#000000] px-3 text-base text-white" />
             </div>
-            <button type="button" onClick={() => onReturnTrackingSubmit(order, returnCarrier, returnTrackingNumber)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Submit Return Tracking</button>
+            <button type="button" onClick={() => onReturnTrackingSubmit(order, returnCarrier, returnTrackingNumber)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] hover:bg-[#FFE66D]">Submit Return Tracking</button>
           </div>
         )}
 
         {isSeller && (
-          <div className="space-y-3 rounded-xl border border-white/10 bg-[#161B22] p-4">
+          <div className="space-y-3 rounded-xl border border-white/10 bg-[#18181B] p-4">
             <p className="font-semibold">Shipping fulfillment</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><select value={carrier} onChange={(event) => setCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base" /></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><select value={carrier} onChange={(event) => setCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#000000] px-3 text-base"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#000000] px-3 text-base" /></div>
             <button type="button" onClick={() => onTrackingSubmit(order, carrier, trackingNumber)} className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 text-sm font-bold text-[#FFE66D] hover:bg-[#FFD700]/10">Submit Tracking</button>
             <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl border border-white/20 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Print Shipping Label</button>
           </div>
@@ -575,16 +575,16 @@ function EvidenceSubmissionModal({ order, isOpen, onClose, onSubmit, isSubmittin
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="evidence-title">
-      <form onSubmit={(event) => { event.preventDefault(); onSubmit({ category, explanation, files }); }} className="w-full max-w-lg space-y-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+      <form onSubmit={(event) => { event.preventDefault(); onSubmit({ category, explanation, files }); }} className="w-full max-w-lg space-y-4 rounded-2xl border border-[#27272A] bg-[#000000] p-5 text-white shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <div><p className="text-[11px] uppercase tracking-[0.2em] text-rose-200">Order issue</p><h2 id="evidence-title" className="mt-1 text-xl font-bold">Submit dispute evidence</h2><p className="mt-1 text-sm text-white/70">Order {order.orderId || order.id}</p></div>
-          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-lg text-white/75 hover:bg-[#161B22]" aria-label="Close dispute form">x</button>
+          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#27272A] text-lg text-white/75 hover:bg-[#18181B]" aria-label="Close dispute form">x</button>
         </div>
-        <label className="block text-sm font-semibold text-white/80">Dispute category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option>Item Not Received</option><option>Damaged in Transit</option><option>Counterfeit / Incorrect Card</option></select></label>
-        <label className="block text-sm font-semibold text-white/80">Detailed explanation<textarea required minLength={10} value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={5} placeholder="Describe what happened and what resolution you are requesting." className="mt-1 w-full resize-none rounded-xl border border-white/15 bg-[#161B22] px-3 py-3 text-base text-white placeholder:text-white/45" /></label>
-        <label className="block text-sm font-semibold text-white/80">Photo or video evidence<input type="file" accept="image/*,video/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 5))} className="mt-2 block w-full text-sm text-white/70 file:mr-3 file:rounded-lg file:border-0 file:bg-[#FFD700] file:px-3 file:py-2 file:font-semibold file:text-[#0B0E14]" /></label>
+        <label className="block text-sm font-semibold text-white/80">Dispute category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white"><option>Item Not Received</option><option>Damaged in Transit</option><option>Counterfeit / Incorrect Card</option></select></label>
+        <label className="block text-sm font-semibold text-white/80">Detailed explanation<textarea required minLength={10} value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={5} placeholder="Describe what happened and what resolution you are requesting." className="mt-1 w-full resize-none rounded-xl border border-white/15 bg-[#18181B] px-3 py-3 text-base text-white placeholder:text-white/45" /></label>
+        <label className="block text-sm font-semibold text-white/80">Photo or video evidence<input type="file" accept="image/*,video/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 5))} className="mt-2 block w-full text-sm text-white/70 file:mr-3 file:rounded-lg file:border-0 file:bg-[#FFD700] file:px-3 file:py-2 file:font-semibold file:text-[#000000]" /></label>
         {files.length > 0 && <p className="text-xs text-white/65">{files.length} evidence file{files.length === 1 ? '' : 's'} selected.</p>}
-        <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-[#30363D] bg-[#161B22] px-4 text-sm font-semibold">Cancel</button><button type="submit" disabled={isSubmitting} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] disabled:opacity-60">{isSubmitting ? 'Submitting...' : 'Open Dispute'}</button></div>
+        <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-[#27272A] bg-[#18181B] px-4 text-sm font-semibold">Cancel</button><button type="submit" disabled={isSubmitting} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] disabled:opacity-60">{isSubmitting ? 'Submitting...' : 'Open Dispute'}</button></div>
       </form>
     </div>
   );
@@ -5677,8 +5677,9 @@ export default function CardSwipersLanding() {
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
   const isCreateClubScreen = currentTab === 'create-club';
+  const isInClubRoom = currentTab === 'onboarding' && Boolean(selectedClubId);
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
-  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
+  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen && !isInClubRoom;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
 
   useEffect(() => {
@@ -5841,7 +5842,7 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
-      {!isCreateClubScreen && (isAuthenticated || (isLandingScreen && !isNativeApp)) && (
+      {!isCreateClubScreen && !isInClubRoom && (isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header
         className="bg-black/95 border-white/10 backdrop-blur-md border-b sticky top-0 z-50"
         style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: '0.35rem' } : undefined}
@@ -6766,7 +6767,7 @@ export default function CardSwipersLanding() {
                         <p className="text-sm text-white/65">Seeking: {currentCard.lookingFor}</p>
                       </div>
 
-                      <div className="rounded-2xl border border-[#30363D] bg-[#161B22] px-3 py-3 md:px-4 md:py-4">
+                      <div className="rounded-2xl border border-[#27272A] bg-[#18181B] px-3 py-3 md:px-4 md:py-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Recent Market Sales</p>
@@ -6938,7 +6939,7 @@ export default function CardSwipersLanding() {
         {currentTab === 'post' && (
           <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
             <div ref={postScrollRef} className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-40 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
-            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-zinc-900 px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">+ Card</p>
@@ -6959,7 +6960,7 @@ export default function CardSwipersLanding() {
             </div>
 
             <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-4 md:gap-6 items-start flex-1 min-h-0">
-              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 [touch-action:pan-y]">
+              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-zinc-900 p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 [touch-action:pan-y]">
                 <input
                   ref={postFrontImageInputRef}
                   type="file"
@@ -7032,7 +7033,7 @@ export default function CardSwipersLanding() {
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#0D1117] px-4 py-3">
+                  <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-zinc-900 px-4 py-3">
                     <p className="text-xs text-white/70">Step {postComposerStep} of 2: {postComposerStep === 1 ? 'Capture photos' : 'Enter details manually'}</p>
                     <div className="flex items-center gap-2">
                       <button type="button" onClick={() => saveDraft(true)} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white/80 hover:bg-white/10">Save Draft & Exit</button>
@@ -7264,13 +7265,13 @@ export default function CardSwipersLanding() {
                 )}
               </form>
 
-              <aside className="hidden xl:block rounded-[24px] border border-white/10 bg-[#11161F] p-4 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-3 min-h-0 overflow-y-auto">
+              <aside className="hidden xl:block rounded-[24px] border border-white/10 bg-zinc-900 p-4 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-3 min-h-0 overflow-y-auto">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Live Preview</p>
                   <h3 className="mt-2 text-xl font-black">Your Listing Card</h3>
                 </div>
 
-                <div className="rounded-[20px] bg-[#0D1117] border border-white/10 overflow-hidden">
+                <div className="rounded-[20px] bg-zinc-900 border border-white/10 overflow-hidden">
                   <div className="h-40 sm:h-48 bg-black/40 flex items-center justify-center relative">
                     {postFrontImagePreview ? (
                       <img src={postFrontImagePreview} alt="Live card preview" className="w-full h-full object-cover" />
@@ -7298,7 +7299,7 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
 
-                <div className="rounded-[18px] bg-[#0D1117] border border-white/10 px-4 py-3">
+                <div className="rounded-[18px] bg-zinc-900 border border-white/10 px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Tips</p>
                   <ul className="mt-2 space-y-1 text-xs text-white/70">
                     <li>Use bright lighting and fill most of the frame with the card.</li>
@@ -7328,7 +7329,7 @@ export default function CardSwipersLanding() {
                     resetClubDraft();
                     setCurrentTab('onboarding');
                   }}
-                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#30363D] text-white hover:bg-[#161B22]"
+                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#27272A] text-white hover:bg-[#18181B]"
                   aria-label="Back to clubs"
                 >
                   <span className="text-5xl font-light leading-none">‹</span>
@@ -7398,7 +7399,7 @@ export default function CardSwipersLanding() {
                         >
                           <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
                           <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
-                          {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#0B0E14] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
+                          {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#000000] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
                         </button>
                       );
                     })}
@@ -7570,7 +7571,10 @@ export default function CardSwipersLanding() {
               {selectedClub && (
               <section ref={selectedClubDetailRef} className="flex flex-col gap-3 min-h-0 w-full">
                 <>
-                    <div className="flex items-center gap-2 pb-1">
+                    <div
+                      className="sticky top-0 z-30 -mx-3 flex items-center gap-3 border-b border-white/10 bg-black/95 px-3 py-2.5 backdrop-blur-xl sm:-mx-5 sm:px-5"
+                      style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' } : undefined}
+                    >
                       <button
                         type="button"
                         onClick={handleExitClub}
@@ -7581,23 +7585,50 @@ export default function CardSwipersLanding() {
                           <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </button>
-                      <p className="flex-1 truncate text-center text-base font-black text-white">{selectedClub.name || 'Club'}</p>
-                      <span className="h-10 w-10 shrink-0" />
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-lg sm:text-xl font-black">{selectedClub.name}</h3>
-                          <p className="text-xs text-white/60 mt-1">{selectedClub.description || 'No description provided.'}</p>
-                        </div>
-                        <span className="px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.15em] border border-white/20 bg-white/10">Code {selectedClub.code || '------'}</span>
+
+                      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+                        {selectedClub.logoUrl ? (
+                          <img src={selectedClub.logoUrl} alt={selectedClub.name || 'Club'} className="h-full w-full object-cover" />
+                        ) : (
+                          (() => {
+                            const headerPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === selectedClub.logoPresetId);
+                            return headerPreset ? (
+                              <span className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${headerPreset.className} text-lg`}>{headerPreset.symbol}</span>
+                            ) : (
+                              <span className="flex h-full w-full items-center justify-center text-lg">🃏</span>
+                            );
+                          })()
+                        )}
                       </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-black text-white">{selectedClub.name || 'Club'}</p>
+                        <p className="truncate text-[10px] text-white/50">ID: {selectedClub.code || selectedClub.id}</p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowNotificationHub(true)}
+                        aria-label="Club alerts"
+                        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+                      >
+                        <BellIcon />
+                        {clubModerationBadgeCount > 0 && (
+                          <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#EF4444] text-[10px] leading-4 text-white font-bold text-center">
+                            {clubModerationBadgeCount > 99 ? '99+' : clubModerationBadgeCount}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3">
+                      <p className="text-xs text-white/60">{selectedClub.description || 'No description provided.'}</p>
                       {!selectedClubMembership ? (
                         <button
                           type="button"
                           onClick={() => handleJoinSpecificClub(selectedClub)}
                           disabled={clubJoinBusy || isSelectedClubBanned}
-                          className="mt-3 w-full rounded-xl bg-[#22C55E] px-4 py-2.5 text-xs font-bold text-black shadow-[0_4px_14px_rgba(34,197,94,0.3)] hover:bg-[#16A34A] disabled:opacity-60"
+                          className="mt-3 w-full rounded-xl bg-[#10B981] px-4 py-2.5 text-xs font-bold text-black shadow-[0_4px_14px_rgba(16,185,129,0.3)] hover:bg-emerald-400 disabled:opacity-60"
                         >
                           {clubJoinBusy ? 'Joining...' : isSelectedClubBanned ? 'Blocked From Club' : 'Join Club'}
                         </button>
@@ -7606,7 +7637,7 @@ export default function CardSwipersLanding() {
                           type="button"
                           onClick={() => handleLeaveClub()}
                           disabled={clubActionBusyId === 'leave-club'}
-                          className="mt-3 rounded-lg border border-red-300/30 bg-red-900/35 px-3 py-2 text-xs font-semibold text-red-100 hover:bg-red-900/55 disabled:opacity-60"
+                          className="mt-3 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-950/70 disabled:opacity-60"
                         >
                           {clubActionBusyId === 'leave-club' ? 'Leaving...' : 'Leave Club'}
                         </button>
@@ -7614,14 +7645,14 @@ export default function CardSwipersLanding() {
                         <button
                           type="button"
                           onClick={() => setShowTransferOwnership(true)}
-                          className="mt-3 rounded-lg border border-amber-300/30 bg-amber-900/25 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-900/45"
+                          className="mt-3 rounded-lg border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-950/50"
                         >
                           Transfer Ownership &amp; Leave
                         </button>
                       ) : null}
                     </div>
 
-                    <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                    <section className="rounded-2xl border border-white/10 bg-zinc-900 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Trade Nights</p>
@@ -7667,8 +7698,18 @@ export default function CardSwipersLanding() {
                                   ? { label: 'Registering', className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
                                   : { label: String(event.status || 'Closed'), className: 'bg-white/10 text-white/60 border-white/15' };
 
+                            const ribbon = isLive
+                              ? { label: 'LIVE', className: 'bg-[#10B981] text-black' }
+                              : registrationOpen
+                                ? { label: 'REGISTERING', className: 'bg-[#EF4444] text-white' }
+                                : { label: 'FEATURED', className: 'bg-zinc-700 text-white/80' };
+
                             return (
-                              <div key={event.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
+                              <div key={event.id} className="flex overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+                                <div className={`flex w-7 shrink-0 items-center justify-center ${ribbon.className}`}>
+                                  <span className="text-[9px] font-black uppercase tracking-[0.18em] [writing-mode:vertical-rl] rotate-180">{ribbon.label}</span>
+                                </div>
+                                <div className="min-w-0 flex-1 p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-bold text-white">{event.title || 'Trade Night'}</p>
@@ -7695,7 +7736,7 @@ export default function CardSwipersLanding() {
                                 </div>
 
                                 {minCardValue > 0 && (
-                                  <p className={`mt-2 text-[11px] ${meetsCriteria ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                  <p className={`mt-2 text-[11px] ${meetsCriteria ? 'text-emerald-400' : 'text-amber-400'}`}>
                                     {meetsCriteria
                                       ? `Binder qualifies — best card $${bestCardValue.toFixed(0)}`
                                       : `Add a card worth $${minCardValue}+ to your binder to enter.`}
@@ -7706,7 +7747,7 @@ export default function CardSwipersLanding() {
                                   type="button"
                                   onClick={() => handleRegisterForTradeNight(event)}
                                   disabled={!registrationOpen || !selectedClubMembership || isSelectedClubBanned || !meetsCriteria || Boolean(clubEventBusyId)}
-                                  className="mt-2.5 w-full rounded-lg bg-[#E11D48] py-2 text-xs font-bold text-white hover:bg-[#BE123C] disabled:opacity-55 disabled:cursor-not-allowed"
+                                  className="mt-2.5 w-full rounded-lg bg-[#EF4444] py-2 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-55 disabled:cursor-not-allowed"
                                 >
                                   {clubEventBusyId === `register-${event.id}`
                                     ? 'Registering...'
@@ -7716,6 +7757,7 @@ export default function CardSwipersLanding() {
                                         ? 'Select Binder & Register'
                                         : String(event.status || 'closed')}
                                 </button>
+                                </div>
                               </div>
                             );
                           })
@@ -7724,53 +7766,7 @@ export default function CardSwipersLanding() {
                     </section>
 
                     <div className="grid lg:grid-cols-2 gap-3 min-h-0">
-                      {(canManageClubMembers || canModerateClubPosts) && (
-                        <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-[#0D1117] p-3">
-                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Invite &amp; Share</p>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <code className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-xs font-mono text-white/85 select-all">
-                              {selectedClub?.id || '—'}
-                            </code>
-                            <button
-                              type="button"
-                              onClick={handleCopyClubId}
-                              className="px-3 py-2 rounded-lg text-xs font-bold bg-[#E11D48] hover:bg-[#BE123C] transition-colors"
-                            >
-                              Copy Club ID
-                            </button>
-                            {selectedClub?.code && (
-                              <span className="text-[11px] text-white/55">Access code: <span className="font-mono text-white/80">{selectedClub.code}</span></span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      {canViewClubFinances && (
-                        <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-[#0D1117] p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Club Financials</p>
-                              <p className="mt-0.5 text-xs text-white/60">Fee income and trade capture from completed escrow trades.</p>
-                            </div>
-                            <div className="flex gap-1 rounded-lg border border-white/10 bg-black/30 p-0.5">
-                              {['1M', '1Y', 'ALL'].map((range) => (
-                                <button
-                                  key={range}
-                                  type="button"
-                                  onClick={() => setClubFinancesTimeframe(range)}
-                                  className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${clubFinancesTimeframe === range ? 'bg-[#E11D48] text-white' : 'text-white/60 hover:text-white'}`}
-                                >
-                                  {range}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="mt-3 grid sm:grid-cols-2 gap-3">
-                            <FinanceChart title="Fee Income" subtitle="Cumulative club + agent fees" data={clubFinanceSeries} valueKey="cumulativeFeeIncome" prefix="$" accent="#34D399" />
-                            <FinanceChart title="Trade Capture Rate" subtitle="Fee share of gross trade value" data={clubFinanceSeries} valueKey="captureRate" suffix="%" accent="#F5C542" />
-                          </div>
-                        </div>
-                      )}
-                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col">
+                      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-3 min-h-0 flex flex-col">
                         <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
                         <div className="space-y-2 overflow-y-auto pr-1">
                           {selectedClubMembers.length === 0 ? (
@@ -7858,7 +7854,7 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
 
-                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col gap-3">
+                      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-3 min-h-0 flex flex-col gap-3">
                         <div>
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Post Card In Club</p>
                           <p className="text-[11px] text-white/55 mt-1">Members can post cards. Owners and agents can delete posts.</p>
@@ -7904,7 +7900,7 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex-1 overflow-y-auto">
+                    <div className="rounded-2xl border border-white/10 bg-zinc-900 p-3 min-h-0 flex-1 overflow-y-auto">
                       <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Club Feed</p>
                       <div className="space-y-2">
                         {selectedClubPosts.length === 0 ? (
@@ -7972,7 +7968,7 @@ export default function CardSwipersLanding() {
                     </div>
 
                     {canModerateClubPosts && (
-                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Moderation Queue</p>
                           <span className="text-[11px] text-white/65">Open: {openSelectedClubReports.length}</span>
@@ -8097,7 +8093,7 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
-            <div className="grid grid-cols-3 rounded-xl border border-[#30363D] bg-[#161B22] p-1">
+            <div className="grid grid-cols-3 rounded-xl border border-[#27272A] bg-[#18181B] p-1">
               {[
                 ['active', 'Active'],
                 ['drafts', 'Drafts'],
@@ -8107,7 +8103,7 @@ export default function CardSwipersLanding() {
                   key={value}
                   type="button"
                   onClick={() => setSellerHubTab(value)}
-                  className={`min-h-11 rounded-lg px-2 text-xs font-semibold ${sellerHubTab === value ? 'bg-[#FFD700] text-[#0B0E14]' : 'text-white/70 hover:bg-white/10'}`}
+                  className={`min-h-11 rounded-lg px-2 text-xs font-semibold ${sellerHubTab === value ? 'bg-[#FFD700] text-[#000000]' : 'text-white/70 hover:bg-white/10'}`}
                 >
                   {label}
                 </button>
@@ -8116,19 +8112,19 @@ export default function CardSwipersLanding() {
 
             {sellerHubTab === 'drafts' ? (
               <div className="space-y-3">
-                {savedDrafts.length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No saved drafts yet.</p> : savedDrafts.map((draft) => (
-                  <div key={draft.id} className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+                {savedDrafts.length === 0 ? <p className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 text-sm text-white/70">No saved drafts yet.</p> : savedDrafts.map((draft) => (
+                  <div key={draft.id} className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4">
                     <div className="flex items-center gap-3">
                       <SafeImage src={draft.frontPreview || ''} alt="Draft front" className="h-16 w-12 rounded-lg object-cover" fallbackClassName="h-16 w-12" />
                       <div className="min-w-0 flex-1"><p className="truncate font-semibold">{draft.title || 'Untitled draft'}</p><p className="text-xs text-white/65">{draft.brand || 'No brand'} · {draft.updatedAt ? new Date(draft.updatedAt).toLocaleDateString() : 'Recently saved'}</p></div>
                     </div>
-                    <div className="mt-3 flex gap-2"><button type="button" onClick={() => resumeDraft(draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-xs font-bold text-[#0B0E14]">Resume</button><button type="button" onClick={() => deleteDraft(draft.id)} className="min-h-11 rounded-xl border border-rose-300/50 px-4 text-xs font-semibold text-rose-100">Delete</button></div>
+                    <div className="mt-3 flex gap-2"><button type="button" onClick={() => resumeDraft(draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-xs font-bold text-[#000000]">Resume</button><button type="button" onClick={() => deleteDraft(draft.id)} className="min-h-11 rounded-xl border border-rose-300/50 px-4 text-xs font-semibold text-rose-100">Delete</button></div>
                   </div>
                 ))}
               </div>
             ) : sellerHubTab === 'sales' ? (
               <div className="space-y-3">
-                {userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid && ['completed', 'released', 'fulfilled', 'shipped', 'payment_held', 'payment_pending'].includes(String(order.status || order.escrowStatus || '').toLowerCase())).length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No sales history yet.</p> : userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid).map((order) => <button key={order.id} type="button" onClick={() => setActiveReceipt({ ...order, isSeller: true, orderId: order.orderId || order.id, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#30363D] bg-[#161B22] p-3 text-left hover:border-[#FFD700]/60"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{order.cardTitle || 'Sold card'}</p><p className="mt-1 text-xs text-white/65">Order {order.orderId || order.id} · {order.status || order.escrowStatus || 'pending'}</p></div><span className="text-sm font-bold text-[#FFE66D]">{formatMoney(order.sellerNetPayout || order.sellerPayoutAmount || order.listingPrice || 0)}</span></button>)}</div>
+                {userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid && ['completed', 'released', 'fulfilled', 'shipped', 'payment_held', 'payment_pending'].includes(String(order.status || order.escrowStatus || '').toLowerCase())).length === 0 ? <p className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 text-sm text-white/70">No sales history yet.</p> : userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid).map((order) => <button key={order.id} type="button" onClick={() => setActiveReceipt({ ...order, isSeller: true, orderId: order.orderId || order.id, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#27272A] bg-[#18181B] p-3 text-left hover:border-[#FFD700]/60"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{order.cardTitle || 'Sold card'}</p><p className="mt-1 text-xs text-white/65">Order {order.orderId || order.id} · {order.status || order.escrowStatus || 'pending'}</p></div><span className="text-sm font-bold text-[#FFE66D]">{formatMoney(order.sellerNetPayout || order.sellerPayoutAmount || order.listingPrice || 0)}</span></button>)}</div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
                 {myCollection.map((card) => (
@@ -8177,14 +8173,14 @@ export default function CardSwipersLanding() {
                   ['Pending escrow', userPurchaseIntents.filter((record) => ['payment_pending', 'payment_held', 'shipped', 'delivered'].includes(String(record.escrowStatus || record.status || '').toLowerCase())).reduce((total, record) => total + Number(record.escrowAmount || record.listingPrice || 0), 0)],
                   ['Completed payouts', userPurchaseIntents.filter((record) => ['released', 'completed', 'fulfilled'].includes(String(record.status || '').toLowerCase())).length]
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+                  <div key={label} className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/65">{label}</p>
                     <p className="mt-2 text-2xl font-black text-[#FFE66D]">{label === 'Completed payouts' ? value : formatMoney(value)}</p>
                   </div>
                 ))}
               </div>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+              <section className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 space-y-4">
                 <div>
                   <h3 className="text-base font-bold">Shipping address</h3>
                   <p className="mt-1 text-sm text-white/70">Used for buyer receipts and shipment destination validation.</p>
@@ -8203,17 +8199,17 @@ export default function CardSwipersLanding() {
                         type="text"
                         value={walletAddress[field] || ''}
                         onChange={(event) => setWalletAddress((previous) => ({ ...previous, [field]: event.target.value }))}
-                        className="mt-1 w-full rounded-xl border border-white/15 bg-[#0B0E14] px-3 py-2.5 text-base text-white focus:border-[#FFD700] focus:outline-none"
+                        className="mt-1 w-full rounded-xl border border-white/15 bg-[#000000] px-3 py-2.5 text-base text-white focus:border-[#FFD700] focus:outline-none"
                       />
                     </label>
                   ))}
                 </div>
-                <button type="button" onClick={handleSaveWalletAddress} disabled={walletBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60">
+                <button type="button" onClick={handleSaveWalletAddress} disabled={walletBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#000000] hover:bg-[#FFE66D] disabled:opacity-60">
                   {walletBusy ? 'Saving...' : 'Save Shipping Address'}
                 </button>
               </section>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
+              <section className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-base font-bold">Seller payout account</h3>
@@ -8227,7 +8223,7 @@ export default function CardSwipersLanding() {
                 {walletMessage && <p className="text-sm text-white/75">{walletMessage}</p>}
               </section>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
+              <section className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-base font-bold">Identity verification</h3>
@@ -8235,12 +8231,12 @@ export default function CardSwipersLanding() {
                   </div>
                   <StatusPill label={sellerVerificationStatus} status={sellerVerificationStatus} tone={sellerVerificationStatus === 'verified' ? 'success' : 'warning'} />
                 </div>
-                <button type="button" onClick={handleStartIdentityVerification} disabled={verificationSessionBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60">
+                <button type="button" onClick={handleStartIdentityVerification} disabled={verificationSessionBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#000000] hover:bg-[#FFE66D] disabled:opacity-60">
                   {verificationSessionBusy ? 'Opening verification...' : 'Verify Account with Stripe Identity'}
                 </button>
               </section>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+              <section className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 space-y-4">
                 <div>
                   <h3 className="text-base font-bold">Purchases & Orders</h3>
                   <p className="mt-1 text-sm text-white/70">Digital receipts, shipment progress, and dispute actions.</p>
@@ -8252,7 +8248,7 @@ export default function CardSwipersLanding() {
                   const stages = ['payment_held', 'shipped', 'delivered', 'completed'];
                   const stageIndex = status === 'released' ? 3 : Math.max(0, stages.indexOf(status));
                   return (
-                    <div key={order.id} className="rounded-xl border border-white/10 bg-[#0B0E14] p-3 space-y-3">
+                    <div key={order.id} className="rounded-xl border border-white/10 bg-[#000000] p-3 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div><p className="font-semibold">{order.cardTitle || 'Card purchase'}</p><p className="text-xs text-white/65">Order {order.orderId || order.id}</p></div>
                         <StatusPill label={status.replaceAll('_', ' ')} status={status} tone={status === 'disputed' ? 'error' : status === 'completed' || status === 'released' ? 'success' : 'warning'} />
@@ -8266,12 +8262,12 @@ export default function CardSwipersLanding() {
                 })}
               </section>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+              <section className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 space-y-4">
                 <div><h3 className="text-base font-bold">Seller Hub / Sales Orders</h3><p className="mt-1 text-sm text-white/70">Enter valid carrier tracking before a sale can move to shipped.</p></div>
                 {userPurchaseIntents.filter((record) => record.sellerUid === firebaseUser?.uid).map((order) => {
                   const orderId = order.orderId || order.id;
                   const draft = trackingDrafts[orderId] || { carrier: order.shippingCarrier || '', trackingNumber: order.trackingNumber || '', trackingUrl: order.trackingUrl || '' };
-                  return <div key={order.id} className="rounded-xl border border-white/10 bg-[#0B0E14] p-3 space-y-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{order.cardTitle || 'Sale'} <span className="text-xs text-white/60">#{orderId}</span></p><StatusPill label={order.status || order.escrowStatus || 'pending'} status={order.status || 'pending'} tone={order.status === 'shipped' || order.status === 'delivered' ? 'success' : 'warning'} /></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><select value={draft.carrier} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, carrier: event.target.value } }))} className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={draft.trackingNumber} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, trackingNumber: event.target.value } }))} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /><button type="button" onClick={() => handleSubmitTrackingForOrder({ ...order, orderId, isSeller: true }, draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-3 text-xs font-bold text-[#0B0E14]">Submit Tracking</button><button type="button" onClick={() => setActiveReceipt({ ...order, orderId, isSeller: true, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white">View Receipt</button></div></div>;
+                  return <div key={order.id} className="rounded-xl border border-white/10 bg-[#000000] p-3 space-y-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{order.cardTitle || 'Sale'} <span className="text-xs text-white/60">#{orderId}</span></p><StatusPill label={order.status || order.escrowStatus || 'pending'} status={order.status || 'pending'} tone={order.status === 'shipped' || order.status === 'delivered' ? 'success' : 'warning'} /></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><select value={draft.carrier} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, carrier: event.target.value } }))} className="min-h-11 rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={draft.trackingNumber} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, trackingNumber: event.target.value } }))} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white" /><button type="button" onClick={() => handleSubmitTrackingForOrder({ ...order, orderId, isSeller: true }, draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-3 text-xs font-bold text-[#000000]">Submit Tracking</button><button type="button" onClick={() => setActiveReceipt({ ...order, orderId, isSeller: true, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white">View Receipt</button></div></div>;
                 })}
               </section>
 
@@ -8778,7 +8774,7 @@ export default function CardSwipersLanding() {
                     value={chatDraft}
                     onChange={(e) => setChatDraft(e.target.value)}
                       maxLength={1000}
-                      className="min-h-11 flex-grow rounded-xl border border-[#30363D] bg-[#161B22] p-3 text-base text-white focus:outline-none"
+                      className="min-h-11 flex-grow rounded-xl border border-[#27272A] bg-[#18181B] p-3 text-base text-white focus:outline-none"
                   />
                   <button type="button" onClick={() => setShowTradeOfferModal(true)} className="min-h-11 min-w-11 rounded-xl border border-[#FFD700]/60 bg-[#FFD700]/10 text-xl font-bold text-[#FFE66D]" aria-label="Propose trade">+</button>
                   <button 
@@ -8812,7 +8808,7 @@ export default function CardSwipersLanding() {
       {showClubActionHub && selectedClub && (
         <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="club-hub-title">
           <button type="button" onClick={() => setShowClubActionHub(false)} className="absolute inset-0" aria-label="Close club hub" />
-          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-[#0B0F19] text-white shadow-2xl flex flex-col max-h-[80vh]">
+          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-zinc-950 text-white shadow-2xl flex flex-col max-h-[80vh]">
             <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">{selectedClubRole || 'member'}</p>
@@ -8822,6 +8818,49 @@ export default function CardSwipersLanding() {
             </div>
 
             <div className="overflow-y-auto px-5 pb-6 space-y-4 flex-1 min-h-0">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Invite &amp; Share</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <code className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-xs font-mono text-white/85 select-all">
+                    {selectedClub?.id || '—'}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyClubId}
+                    className="rounded-lg bg-[#EF4444] px-3 py-2 text-xs font-bold text-white hover:bg-red-500 transition-colors"
+                  >
+                    Copy Club ID
+                  </button>
+                </div>
+                {selectedClub?.code && (
+                  <p className="mt-2 text-[11px] text-white/55">Access code: <span className="font-mono text-white/80">{selectedClub.code}</span></p>
+                )}
+              </div>
+
+              {canViewClubFinances && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Financials &amp; KPIs</p>
+                    <div className="flex gap-1 rounded-lg border border-white/10 bg-black/40 p-0.5">
+                      {['1M', '1Y', 'ALL'].map((range) => (
+                        <button
+                          key={range}
+                          type="button"
+                          onClick={() => setClubFinancesTimeframe(range)}
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${clubFinancesTimeframe === range ? 'bg-[#EF4444] text-white' : 'text-white/60 hover:text-white'}`}
+                        >
+                          {range}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    <FinanceChart title="Fee Income" subtitle="Cumulative club + agent fees" data={clubFinanceSeries} valueKey="cumulativeFeeIncome" prefix="$" accent="#10B981" />
+                    <FinanceChart title="Trade Capture Rate" subtitle="Fee share of gross trade value" data={clubFinanceSeries} valueKey="captureRate" suffix="%" accent="#EF4444" />
+                  </div>
+                </div>
+              )}
+
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Your Activity</p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
@@ -9131,7 +9170,7 @@ export default function CardSwipersLanding() {
               type="button"
               disabled={interestBusy}
               onClick={handleSendInterest}
-              className="min-h-11 w-full rounded-xl bg-[#FFD700] text-[#0B0E14] hover:bg-[#FFE66D] font-semibold text-sm disabled:opacity-60"
+              className="min-h-11 w-full rounded-xl bg-[#FFD700] text-[#000000] hover:bg-[#FFE66D] font-semibold text-sm disabled:opacity-60"
             >
               {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
             </button>
@@ -9161,7 +9200,7 @@ export default function CardSwipersLanding() {
             className="absolute inset-0"
             aria-label="Close filters"
           />
-          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-[#0B0F19] text-white shadow-2xl flex flex-col max-h-[86vh]">
+          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-zinc-950 text-white shadow-2xl flex flex-col max-h-[86vh]">
             <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p>
@@ -9697,14 +9736,14 @@ export default function CardSwipersLanding() {
 
       {ENABLE_PAYMENT_PIPELINE && activePaymentSheet && stripePromise && (
         <div className="fixed inset-0 z-[68] flex items-end justify-center overflow-y-auto bg-black/80 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:items-center">
-          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-[28px] border border-[#30363D] bg-[#0B0E14] p-5 pb-8 text-white shadow-2xl space-y-4">
+          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-[28px] border border-[#27272A] bg-[#000000] p-5 pb-8 text-white shadow-2xl space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-bold">Secure escrow checkout</h2>
                 <p className="text-sm text-white/75">Payment is held until shipment and release.</p>
             {confirmDialog && (
               <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
-                <div className="w-full max-w-md space-y-5 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+                <div className="w-full max-w-md space-y-5 rounded-2xl border border-[#27272A] bg-[#000000] p-5 text-white shadow-2xl">
                   <div>
                     <h2 id="confirm-dialog-title" className="text-lg font-bold">{confirmDialog.title}</h2>
                     <p className="mt-2 text-sm text-white/75">{confirmDialog.message}</p>
@@ -9717,7 +9756,7 @@ export default function CardSwipersLanding() {
                         confirmResolverRef.current = null;
                         setConfirmDialog(null);
                       }}
-                      className="min-h-11 rounded-xl border border-[#30363D] bg-[#161B22] px-4 text-sm font-semibold text-white hover:bg-[#20262D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                      className="min-h-11 rounded-xl border border-[#27272A] bg-[#18181B] px-4 text-sm font-semibold text-white hover:bg-[#20262D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                     >
                       Cancel
                     </button>
@@ -9728,7 +9767,7 @@ export default function CardSwipersLanding() {
                         confirmResolverRef.current = null;
                         setConfirmDialog(null);
                       }}
-                      className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-semibold text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                      className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-semibold text-[#000000] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                     >
                       {confirmDialog.confirmLabel}
                     </button>
@@ -9744,7 +9783,7 @@ export default function CardSwipersLanding() {
                   setActivePaymentSheet(null);
                   setPaymentSheetError('');
                 }}
-                className="min-h-11 min-w-11 rounded-full text-sm font-semibold text-white/75 hover:bg-[#161B22] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                className="min-h-11 min-w-11 rounded-full text-sm font-semibold text-white/75 hover:bg-[#18181B] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
               >
                 Close
               </button>
@@ -9764,7 +9803,7 @@ export default function CardSwipersLanding() {
                   theme: 'night',
                   variables: {
                     colorPrimary: '#FFD700',
-                    colorBackground: '#161B22',
+                    colorBackground: '#18181B',
                     colorText: '#FFFFFF',
                     colorDanger: '#FDA4AF',
                     borderRadius: '12px'
@@ -9794,24 +9833,24 @@ export default function CardSwipersLanding() {
 
       {showTradeOfferModal && activeChat && (
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="trade-offer-title">
-          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Trade builder</p><h2 id="trade-offer-title" className="mt-1 text-xl font-bold">Propose Trade</h2></div><button type="button" onClick={() => setShowTradeOfferModal(false)} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-white/75">x</button></div>
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-[#27272A] bg-[#000000] p-5 text-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Trade builder</p><h2 id="trade-offer-title" className="mt-1 text-xl font-bold">Propose Trade</h2></div><button type="button" onClick={() => setShowTradeOfferModal(false)} className="min-h-11 min-w-11 rounded-full border border-[#27272A] text-white/75">x</button></div>
             <p className="text-sm text-white/70">Select one or more cards from your binder to offer in this conversation.</p>
             <div className="grid grid-cols-2 gap-2">
               {DEAL_TYPES.filter((deal) => ['pure_trade', 'hybrid_trade'].includes(deal.value)).map((deal) => (
-                <button key={deal.value} type="button" onClick={() => setOfferDealType(deal.value)} className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${offerDealType === deal.value ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/15 bg-[#161B22] text-white/75'}`}>
+                <button key={deal.value} type="button" onClick={() => setOfferDealType(deal.value)} className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${offerDealType === deal.value ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/15 bg-[#18181B] text-white/75'}`}>
                   {deal.label}
                 </button>
               ))}
             </div>
             <div className="grid max-h-[42vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
-              {myCollection.length === 0 ? <p className="col-span-full rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm text-white/70">Your binder is empty.</p> : myCollection.map((card) => {
+              {myCollection.length === 0 ? <p className="col-span-full rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm text-white/70">Your binder is empty.</p> : myCollection.map((card) => {
                 const selected = selectedTradeCardIds.includes(card.id);
-                return <button key={card.id} type="button" onClick={() => toggleTradeCard(card.id)} className={`rounded-xl border p-2 text-left ${selected ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-[#161B22]'}`}><div className="flex items-center gap-2">{card.imageUrl ? <img src={card.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <span className="flex h-14 w-10 items-center justify-center rounded bg-[#0B0E14]">🃏</span>}<span className="min-w-0"><span className="block truncate text-xs font-semibold">{card.name || card.title}</span><span className="block truncate text-[10px] text-white/60">{card.brand}</span></span></div></button>;
+                return <button key={card.id} type="button" onClick={() => toggleTradeCard(card.id)} className={`rounded-xl border p-2 text-left ${selected ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-[#18181B]'}`}><div className="flex items-center gap-2">{card.imageUrl ? <img src={card.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <span className="flex h-14 w-10 items-center justify-center rounded bg-[#000000]">🃏</span>}<span className="min-w-0"><span className="block truncate text-xs font-semibold">{card.name || card.title}</span><span className="block truncate text-[10px] text-white/60">{card.brand}</span></span></div></button>;
               })}
             </div>
-            <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white disabled:opacity-50" /></label>
-            <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
+            <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white disabled:opacity-50" /></label>
+            <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
           </div>
         </div>
       )}
