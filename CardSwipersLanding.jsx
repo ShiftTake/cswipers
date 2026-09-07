@@ -1113,6 +1113,7 @@ export default function CardSwipersLanding() {
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
   const clubCarouselRef = useRef(null);
+  const selectedClubDetailRef = useRef(null);
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
   const [selectedClubJoinRequests, setSelectedClubJoinRequests] = useState([]);
   const [selectedClubMessages, setSelectedClubMessages] = useState([]);
@@ -2248,6 +2249,13 @@ export default function CardSwipersLanding() {
       unsubBan();
     };
   }, [selectedClubId, firebaseUser, canModerateClubPosts, selectedClubMembership?.uid, selectedClubMembership?.status, hasAdminAccess]);
+
+  useEffect(() => {
+    // Below the xl breakpoint the detail panel stacks under the carousel, so
+    // bring it into view instead of leaving the tap looking like a no-op.
+    if (!selectedClubId || !selectedClubDetailRef.current) return;
+    selectedClubDetailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [selectedClubId]);
 
   useEffect(() => {
     if (!selectedClubId || !canModerateClubPosts) {
@@ -7514,7 +7522,7 @@ export default function CardSwipersLanding() {
               </section>
 
               {selectedClub && (
-              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
+              <section ref={selectedClubDetailRef} className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0 scroll-mt-4">
                 <>
                     <div className="rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
