@@ -1129,6 +1129,15 @@ export default function CardSwipersLanding() {
   const [clubFinancesTimeframe, setClubFinancesTimeframe] = useState('1M');
   const [showClubActionHub, setShowClubActionHub] = useState(false);
   const [clubLobbyTick, setClubLobbyTick] = useState(() => Date.now());
+  const [clubLobbyTab, setClubLobbyTab] = useState('all');
+  const [clubQuickFilters, setClubQuickFilters] = useState({ activeTrades: false, hideFull: false });
+  const [clubNoticeDraft, setClubNoticeDraft] = useState('');
+  const [clubNoticeBusy, setClubNoticeBusy] = useState(false);
+  const [showClubMembersView, setShowClubMembersView] = useState(false);
+  const [clubMembersTab, setClubMembersTab] = useState('members');
+  const [clubMemberRoleFilter, setClubMemberRoleFilter] = useState('all');
+  const [clubMemberSearch, setClubMemberSearch] = useState('');
+  const [showClubAdminView, setShowClubAdminView] = useState(false);
   const [showTransferOwnership, setShowTransferOwnership] = useState(false);
   const [transferSuccessorUid, setTransferSuccessorUid] = useState('');
   const [selectedClubBanRecord, setSelectedClubBanRecord] = useState(null);
@@ -2073,6 +2082,10 @@ export default function CardSwipersLanding() {
 
     return () => unsubscribe();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    setClubNoticeDraft(selectedClub?.notice || '');
+  }, [selectedClubId, selectedClub?.notice]);
 
   useEffect(() => {
     // Drives the live "closes in" countdown on trade-night lobby rows.
@@ -4862,8 +4875,29 @@ export default function CardSwipersLanding() {
   const handleExitClub = () => {
     setSelectedClubId('');
     setShowClubActionHub(false);
+    setShowClubMembersView(false);
+    setShowClubAdminView(false);
+    setClubLobbyTab('all');
     setClubError('');
     setClubInfo('');
+  };
+
+  const handleSaveClubNotice = async () => {
+    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubNoticeBusy) return;
+    setClubNoticeBusy(true);
+    setClubError('');
+    try {
+      await updateDoc(doc(db, 'clubs', selectedClubId), {
+        notice: clubNoticeDraft.trim(),
+        updatedAt: serverTimestamp()
+      });
+      setClubInfo('Club notice updated.');
+    } catch (error) {
+      console.error('Failed updating club notice:', error);
+      setClubError('Could not update the club notice.');
+    } finally {
+      setClubNoticeBusy(false);
+    }
   };
 
   const handleApproveClubJoinRequest = async (request) => {
@@ -7621,8 +7655,89 @@ export default function CardSwipersLanding() {
                       </button>
                     </div>
 
-                    <div className="rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3">
-                      <p className="text-xs text-white/60">{selectedClub.description || 'No description provided.'}</p>
+                    <div className="rounded-2xl border border-white/10 bg-zinc-900 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="relative shrink-0">
+                          <div className="h-16 w-16 overflow-hidden rounded-2xl border-2 border-[#10B981] bg-zinc-800">
+                            {selectedClub.logoUrl ? (
+                              <img src={selectedClub.logoUrl} alt={selectedClub.name || 'Club'} className="h-full w-full object-cover" />
+                            ) : (
+                              (() => {
+                                const avatarPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === selectedClub.logoPresetId);
+                                return avatarPreset ? (
+                                  <span className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${avatarPreset.className} text-3xl`}>{avatarPreset.symbol}</span>
+                                ) : (
+                                  <span className="flex h-full w-full items-center justify-center text-3xl">🃏</span>
+                                );
+                              })()
+                            )}
+                          </div>
+                          {canManageClubMembers && (
+                            <button
+                              type="button"
+                              onClick={openCreateClub}
+                              aria-label="Edit club avatar"
+                              className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-zinc-900 bg-[#10B981] text-black"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3" aria-hidden="true">
+                                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <h2 className="truncate text-lg font-black text-white">{selectedClub.name || 'Club'}</h2>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <p className="truncate text-xs text-white/50">(ID: {selectedClub.code || selectedClub.id})</p>
+                            <button
+                              type="button"
+                              onClick={handleCopyClubId}
+                              aria-label="Share club ID"
+                              className="text-white/50 hover:text-white"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5" aria-hidden="true">
+                                <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                                <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" strokeLinecap="round" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                            <span className="flex items-center gap-1 text-white/80">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5 text-white/50" aria-hidden="true">
+                                <circle cx="9" cy="8" r="3" /><path d="M2.5 19a6.5 6.5 0 0 1 13 0M17 11a3 3 0 1 0 0-6M21.5 19a5.5 5.5 0 0 0-4-5.3" />
+                              </svg>
+                              <span className="font-bold">{Number(selectedClub.memberCount || selectedClub.membersCount || 0).toLocaleString()}</span>
+                              <span className="text-white/45">Players</span>
+                            </span>
+                            <span className="flex items-center gap-1 text-white/80">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5 text-white/50" aria-hidden="true">
+                                <rect x="3" y="6" width="18" height="12" rx="3" />
+                              </svg>
+                              <span className="font-bold">{Number(selectedClub.activeTables || selectedClubEvents.length || 0).toLocaleString()}</span>
+                              <span className="text-white/45">Tables</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs">
+                          <span className="h-2.5 w-2.5 rounded-full bg-[#EF4444]" />
+                          <span className="font-bold text-white">
+                            {selectedClubMembership?.credits === 'infinite' ? '∞' : Number(selectedClubMembership?.credits || 0).toLocaleString()}
+                          </span>
+                          <span className="text-white/45">credits</span>
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white/70">
+                          Held <span className="font-bold text-white">{Number(selectedClubMembership?.escrowHeld || 0).toLocaleString()}</span>
+                        </span>
+                        <span className="rounded-full border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#10B981]">
+                          {selectedClubRole || 'guest'}
+                        </span>
+                      </div>
+
                       {!selectedClubMembership ? (
                         <button
                           type="button"
@@ -7652,24 +7767,106 @@ export default function CardSwipersLanding() {
                       ) : null}
                     </div>
 
-                    <section className="rounded-2xl border border-white/10 bg-zinc-900 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Trade Nights</p>
-                          <p className="mt-1 text-xs text-white/60">Buy-ins are held in escrow until the event payout is verified.</p>
-                        </div>
-                        {canModerateClubPosts && (
+                    <div className="flex items-start gap-2 rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
+                      <span className="shrink-0 rounded-md bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/60">Notice</span>
+                      {canModerateClubPosts ? (
+                        <>
+                          <input
+                            type="text"
+                            value={clubNoticeDraft}
+                            onChange={(event) => setClubNoticeDraft(event.target.value)}
+                            placeholder="Add a club notice for members..."
+                            maxLength={280}
+                            className="min-w-0 flex-1 bg-transparent text-xs text-white placeholder-white/35 focus:outline-none"
+                          />
+                          {clubNoticeDraft !== (selectedClub.notice || '') && (
+                            <button
+                              type="button"
+                              onClick={handleSaveClubNotice}
+                              disabled={clubNoticeBusy}
+                              className="shrink-0 rounded-md bg-[#10B981] px-2.5 py-1 text-[10px] font-bold text-black hover:bg-emerald-400 disabled:opacity-60"
+                            >
+                              {clubNoticeBusy ? 'Saving' : 'Save'}
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <p className="min-w-0 flex-1 text-xs text-white/70">{selectedClub.notice || 'No notice posted.'}</p>
+                      )}
+                    </div>
+
+                    <div className="border-b border-white/10">
+                      <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {[
+                          { id: 'all', label: 'All' },
+                          { id: 'trade-nights', label: 'Trade Nights' },
+                          { id: 'high-value', label: 'High Value' },
+                          { id: 'instant', label: 'Instant Trade' }
+                        ].map((tab) => (
                           <button
+                            key={tab.id}
                             type="button"
-                            onClick={handleCreateTradeNight}
-                            disabled={Boolean(clubEventBusyId)}
-                            className="px-3 py-2 rounded-lg text-xs font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed"
+                            onClick={() => setClubLobbyTab(tab.id)}
+                            className={`relative shrink-0 px-4 py-2.5 text-sm font-semibold transition-colors ${clubLobbyTab === tab.id ? 'text-white' : 'text-white/45 hover:text-white/70'}`}
                           >
-                            {clubEventBusyId === 'create' ? 'Opening...' : 'Open Trade Night'}
+                            {tab.label}
+                            {clubLobbyTab === tab.id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-[#10B981]" />}
                           </button>
-                        )}
+                        ))}
                       </div>
-                      <div className="mt-3 grid gap-2">
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        {[
+                          { id: 'activeTrades', label: 'Active Trades' },
+                          { id: 'hideFull', label: 'Hide Full' }
+                        ].map((filter) => (
+                          <button
+                            key={filter.id}
+                            type="button"
+                            onClick={() => setClubQuickFilters((prev) => ({ ...prev, [filter.id]: !prev[filter.id] }))}
+                            className="flex items-center gap-1.5 text-xs text-white/70 hover:text-white"
+                          >
+                            <span className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${clubQuickFilters[filter.id] ? 'border-[#10B981] bg-[#10B981]' : 'border-white/25 bg-transparent'}`}>
+                              {clubQuickFilters[filter.id] && (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3.5" className="h-2.5 w-2.5" aria-hidden="true">
+                                  <path d="m5 12 5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </span>
+                            {filter.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowDiscoverFilters(true)}
+                        className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white/70 hover:text-white"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5" aria-hidden="true">
+                          <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
+                        </svg>
+                        Filter
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {canModerateClubPosts && (
+                      <button
+                        type="button"
+                        onClick={handleCreateTradeNight}
+                        disabled={Boolean(clubEventBusyId)}
+                        className="w-full rounded-xl border-2 border-[#10B981] bg-zinc-900 py-3.5 text-sm font-bold text-[#10B981] transition-colors hover:bg-[#10B981]/10 disabled:opacity-55"
+                      >
+                        {clubEventBusyId === 'create' ? 'Opening...' : '+ Create Trade Night'}
+                      </button>
+                    )}
+
+                    <section className="rounded-2xl border border-white/10 bg-zinc-900 p-3">
+                      <div className="grid gap-2">
                         {selectedClubEvents.length === 0 ? (
                           <p className="text-sm text-white/60">No trade nights are open yet.</p>
                         ) : (
@@ -7765,140 +7962,6 @@ export default function CardSwipersLanding() {
                       </div>
                     </section>
 
-                    <div className="grid lg:grid-cols-2 gap-3 min-h-0">
-                      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-3 min-h-0 flex flex-col">
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
-                        <div className="space-y-2 overflow-y-auto pr-1">
-                          {selectedClubMembers.length === 0 ? (
-                            <p className="text-xs text-white/60">No members yet.</p>
-                          ) : (
-                            selectedClubMembers.map((member) => (
-                              <div key={member.uid} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold truncate">{member.displayName || member.email || member.uid}</p>
-                                    <p className="text-[11px] text-white/55 truncate">{member.email || member.uid}</p>
-                                    <p className="text-[11px] text-[#86EFAC] mt-1">{member.credits === 'infinite' ? 'Unlimited credits' : `${Number(member.credits || 0)} credits`} · {Number(member.escrowHeld || 0)} held</p>
-                                  </div>
-                                  <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{member.role || 'member'}</span>
-                                </div>
-                                {(canManageClubMembers || canModerateClubPosts) && member.uid !== firebaseUser?.uid && (
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {canManageClubMembers && member.role !== 'owner' && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'agent')}
-                                          disabled={clubActionBusyId === `role-${member.uid}`}
-                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
-                                        >
-                                          Make Agent
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'member')}
-                                          disabled={clubActionBusyId === `role-${member.uid}`}
-                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
-                                        >
-                                          Make Member
-                                        </button>
-                                      </>
-                                    )}
-                                    {member.role !== 'owner' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveClubMember(member)}
-                                        disabled={clubActionBusyId === `remove-${member.uid}`}
-                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
-                                      >
-                                        Remove
-                                      </button>
-                                    )}
-                                    {member.role !== 'owner' && canModerateClubPosts && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAllocateClubCredits(member)}
-                                        disabled={clubActionBusyId === `credits-${member.uid}` || (selectedClubRole === 'agent' && member.role !== 'member')}
-                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-emerald-500/15 border border-emerald-400/30 text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-60"
-                                      >
-                                        {clubActionBusyId === `credits-${member.uid}` ? 'Assigning...' : 'Add Credits'}
-                                      </button>
-                                    )}
-                                    {member.role !== 'owner' && canModerateClubPosts && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleBanClubMember(member, 'Manual moderator action')}
-                                        disabled={clubActionBusyId === `ban-${member.uid}`}
-                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-800/55 border border-red-300/40 text-red-100 hover:bg-red-800/70 disabled:opacity-60"
-                                      >
-                                        Block
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                                {member.uid !== firebaseUser?.uid && (
-                                  <div className="mt-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleReportClubMember(member)}
-                                      disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
-                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
-                                    >
-                                      Report
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-3 min-h-0 flex flex-col gap-3">
-                        <div>
-                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Post Card In Club</p>
-                          <p className="text-[11px] text-white/55 mt-1">Members can post cards. Owners and agents can delete posts.</p>
-                        </div>
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={clubPostDraft.title}
-                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, title: event.target.value }))}
-                            placeholder="Card title"
-                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                          />
-                          <input
-                            type="text"
-                            value={clubPostDraft.askingPrice}
-                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, askingPrice: event.target.value }))}
-                            placeholder="Asking price (e.g. $450 or trade + $200)"
-                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                          />
-                          <input
-                            type="text"
-                            value={clubPostDraft.imageUrl}
-                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, imageUrl: event.target.value }))}
-                            placeholder="Image URL (optional)"
-                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35"
-                          />
-                          <textarea
-                            value={clubPostDraft.description}
-                            onChange={(event) => setClubPostDraft((prev) => ({ ...prev, description: event.target.value }))}
-                            placeholder="Condition, comp references, and shipping notes"
-                            className="w-full px-3 py-2 rounded-lg bg-black/20 border border-white/15 text-sm focus:outline-none focus:border-white/35 resize-none"
-                            rows={3}
-                          />
-                          <button
-                            type="button"
-                            onClick={handlePublishClubPost}
-                            disabled={clubPostBusy || !selectedClubMembership || isSelectedClubBanned}
-                            className="w-full px-3 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-b from-[#E11D48] to-[#BE123C] hover:brightness-110 disabled:opacity-55 disabled:cursor-not-allowed"
-                          >
-                            {clubPostBusy ? 'Posting...' : isSelectedClubBanned ? 'Blocked From Club' : selectedClubMembership ? 'Post In Club Feed' : 'Join Club To Post'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
 
                     <div className="rounded-2xl border border-white/10 bg-zinc-900 p-3 min-h-0 flex-1 overflow-y-auto">
                       <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Club Feed</p>
@@ -8064,19 +8127,56 @@ export default function CardSwipersLanding() {
             </div>
 
             {selectedClub && (
-              <button
-                type="button"
-                onClick={() => setShowClubActionHub(true)}
-                aria-label="Open club action hub"
-                className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#E11D48] shadow-[0_10px_28px_rgba(225,29,72,0.45)] hover:bg-[#BE123C] transition-colors"
-              >
-                <span className="grid grid-cols-2 gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                </span>
-              </button>
+              <>
+                {showClubActionHub && (
+                  <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/95 backdrop-blur-xl pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                    <div className="mx-auto grid max-w-lg grid-cols-5">
+                      {[
+                        { id: 'inbox', label: 'Inbox', badge: inboxBadgeCount, onClick: () => { setShowClubActionHub(false); navigateToTab('messages'); },
+                          icon: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></> },
+                        { id: 'members', label: 'Members', badge: selectedClubJoinRequests.length, onClick: () => { setShowClubActionHub(false); setShowClubMembersView(true); },
+                          icon: <><circle cx="9" cy="8" r="3" /><path d="M2.5 19a6.5 6.5 0 0 1 13 0M17 11a3 3 0 1 0 0-6M21.5 19a5.5 5.5 0 0 0-4-5.3" /></> },
+                        { id: 'counter', label: 'Counter', badge: pendingOfferCount, onClick: () => { setShowClubActionHub(false); setShowNotificationHub(true); },
+                          icon: <><path d="M7 8h10M7 8l3-3M7 8l3 3M17 16H7M17 16l-3-3M17 16l-3 3" strokeLinecap="round" strokeLinejoin="round" /></> },
+                        { id: 'data', label: 'Data', badge: 0, onClick: () => { setShowClubActionHub(false); setShowClubAdminView(true); },
+                          icon: <><path d="M4 19V10M10 19V5M16 19v-6M22 19H2" strokeLinecap="round" /></> },
+                        { id: 'admin', label: 'Admin', badge: openSelectedClubReports.length, onClick: () => { setShowClubActionHub(false); setShowClubAdminView(true); },
+                          icon: <><path d="M12 3 4 6.5v5c0 4.6 3.2 8.6 8 9.5 4.8-.9 8-4.9 8-9.5v-5L12 3Z" strokeLinejoin="round" /></> }
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={item.onClick}
+                          className="relative flex flex-col items-center justify-center gap-1 py-2.5 text-white/60 hover:text-white transition-colors"
+                        >
+                          <span className="relative">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden="true">{item.icon}</svg>
+                            {item.badge > 0 && (
+                              <span className="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 rounded-full bg-[#EF4444] text-[9px] leading-4 font-bold text-white text-center">
+                                {item.badge > 99 ? '99+' : item.badge}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[10px] font-semibold">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowClubActionHub((prev) => !prev)}
+                  aria-label={showClubActionHub ? 'Close club action hub' : 'Open club action hub'}
+                  className={`fixed right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#EF4444] shadow-[0_10px_28px_rgba(239,68,68,0.45)] hover:bg-red-500 transition-all ${showClubActionHub ? 'bottom-24 rotate-45' : 'bottom-6'}`}
+                >
+                  <span className="grid grid-cols-2 gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                  </span>
+                </button>
+              </>
             )}
           </div>
         )}
@@ -8805,125 +8905,297 @@ export default function CardSwipersLanding() {
         <AuthenticationQueue firebaseUser={firebaseUser} canAccess={canAccessAuthQueue} onClose={() => setShowAuthQueue(false)} />
       )}
 
-      {showClubActionHub && selectedClub && (
-        <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="club-hub-title">
-          <button type="button" onClick={() => setShowClubActionHub(false)} className="absolute inset-0" aria-label="Close club hub" />
-          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-zinc-950 text-white shadow-2xl flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">{selectedClubRole || 'member'}</p>
-                <h3 id="club-hub-title" className="mt-0.5 text-lg font-bold">{selectedClub.name || 'Club'} Hub</h3>
-              </div>
-              <button type="button" onClick={() => setShowClubActionHub(false)} className="text-sm text-white/70 hover:text-white">Close</button>
+      {showClubMembersView && selectedClub && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-black" role="dialog" aria-modal="true" aria-labelledby="club-members-title">
+          <div
+            className="flex items-center gap-3 border-b border-white/10 px-4 py-3"
+            style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' } : undefined}
+          >
+            <button
+              type="button"
+              onClick={() => setShowClubMembersView(false)}
+              aria-label="Back to club"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <h3 id="club-members-title" className="flex-1 text-center text-base font-black text-white">Club Members</h3>
+            <span className="h-10 w-10" />
+          </div>
+
+          <div className="border-b border-white/10">
+            <div className="flex">
+              {[
+                { id: 'members', label: `Member List (${selectedClubMembers.length})` },
+                { id: 'applicants', label: `Applicants (${selectedClubJoinRequests.length})` }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setClubMembersTab(tab.id)}
+                  className={`relative flex-1 px-4 py-3 text-sm font-semibold transition-colors ${clubMembersTab === tab.id ? 'text-white' : 'text-white/45 hover:text-white/70'}`}
+                >
+                  {tab.label}
+                  {clubMembersTab === tab.id && <span className="absolute inset-x-4 -bottom-px h-0.5 rounded-full bg-[#10B981]" />}
+                </button>
+              ))}
             </div>
+          </div>
 
-            <div className="overflow-y-auto px-5 pb-6 space-y-4 flex-1 min-h-0">
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Invite &amp; Share</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <code className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-xs font-mono text-white/85 select-all">
-                    {selectedClub?.id || '—'}
-                  </code>
+          <div className="space-y-3 px-4 py-3">
+            {clubMembersTab === 'applicants' && canModerateClubPosts && (
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
+                <span className="text-xs font-semibold text-white/80">Auto Approve</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!canManageClubMembers) return;
+                    try {
+                      await updateDoc(doc(db, 'clubs', selectedClubId), {
+                        autoApproveJoins: !selectedClub.autoApproveJoins,
+                        updatedAt: serverTimestamp()
+                      });
+                    } catch (error) {
+                      console.error('Failed toggling auto approve:', error);
+                      setClubError('Could not update auto approve.');
+                    }
+                  }}
+                  disabled={!canManageClubMembers}
+                  aria-label="Toggle auto approve"
+                  className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${selectedClub.autoApproveJoins ? 'bg-[#10B981]' : 'bg-white/20'}`}
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${selectedClub.autoApproveJoins ? 'left-[1.375rem]' : 'left-0.5'}`} />
+                </button>
+              </div>
+            )}
+
+            {clubMembersTab === 'members' && (
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'owner', label: 'Manager' },
+                  { id: 'agent', label: 'Agent' },
+                  { id: 'member', label: 'Player' }
+                ].map((chip) => (
                   <button
+                    key={chip.id}
                     type="button"
-                    onClick={handleCopyClubId}
-                    className="rounded-lg bg-[#EF4444] px-3 py-2 text-xs font-bold text-white hover:bg-red-500 transition-colors"
+                    onClick={() => setClubMemberRoleFilter(chip.id)}
+                    className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold border transition-colors ${clubMemberRoleFilter === chip.id ? 'border-[#10B981] bg-[#10B981] text-black' : 'border-white/10 bg-zinc-900 text-white/70 hover:border-white/25'}`}
                   >
-                    Copy Club ID
+                    {chip.label}
                   </button>
-                </div>
-                {selectedClub?.code && (
-                  <p className="mt-2 text-[11px] text-white/55">Access code: <span className="font-mono text-white/80">{selectedClub.code}</span></p>
-                )}
+                ))}
               </div>
+            )}
 
-              {canViewClubFinances && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Financials &amp; KPIs</p>
-                    <div className="flex gap-1 rounded-lg border border-white/10 bg-black/40 p-0.5">
-                      {['1M', '1Y', 'ALL'].map((range) => (
-                        <button
-                          key={range}
-                          type="button"
-                          onClick={() => setClubFinancesTimeframe(range)}
-                          className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${clubFinancesTimeframe === range ? 'bg-[#EF4444] text-white' : 'text-white/60 hover:text-white'}`}
-                        >
-                          {range}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mt-3 space-y-3">
-                    <FinanceChart title="Fee Income" subtitle="Cumulative club + agent fees" data={clubFinanceSeries} valueKey="cumulativeFeeIncome" prefix="$" accent="#10B981" />
-                    <FinanceChart title="Trade Capture Rate" subtitle="Fee share of gross trade value" data={clubFinanceSeries} valueKey="captureRate" suffix="%" accent="#EF4444" />
-                  </div>
-                </div>
-              )}
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
+                  <circle cx="8.5" cy="8.5" r="5.5" /><path d="m13.5 13.5 3 3" strokeLinecap="round" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={clubMemberSearch}
+                onChange={(event) => setClubMemberSearch(event.target.value)}
+                placeholder="Search by name or ID"
+                className="w-full rounded-xl border border-white/10 bg-zinc-900 py-2.5 pl-9 pr-4 text-sm text-white placeholder-zinc-500 focus:border-[#10B981] focus:outline-none"
+              />
+            </div>
+          </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Your Activity</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                    <p className="text-[9px] uppercase tracking-[0.14em] text-white/45">Active Swaps</p>
-                    <p className="mt-0.5 text-sm font-bold">{pendingOfferOffers.buying.filter((offer) => offer.status === 'accepted').length}</p>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                    <p className="text-[9px] uppercase tracking-[0.14em] text-white/45">Trade History</p>
-                    <p className="mt-0.5 text-sm font-bold">{purchaseIntents.filter((record) => record.buyerUid === firebaseUser?.uid || record.sellerUid === firebaseUser?.uid).length}</p>
-                  </div>
-                </div>
-              </div>
-
-              {(selectedClubRole === 'agent' || selectedClubRole === 'owner') && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Agent Tools</p>
-                  <div className="mt-2 space-y-2">
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                      <span className="text-[11px] text-white/60">Sub-Referral Code</span>
-                      <code className="font-mono text-xs text-white/85 select-all">{selectedClubMembership?.agentRefCode || '—'}</code>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                      <span className="text-[11px] text-white/60">Referred Members</span>
-                      <span className="text-sm font-bold">{selectedClubMembers.filter((member) => member.referredByAgentId === firebaseUser?.uid).length}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                      <span className="text-[11px] text-white/60">Earned Fee Splits</span>
-                      <span className="text-sm font-bold text-emerald-300">
-                        ${(selectedClubLedgers.filter((entry) => entry.agentId === firebaseUser?.uid).reduce((sum, entry) => sum + Number(entry.agentFee || 0), 0) / 100).toFixed(2)}
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-2">
+            {clubMembersTab === 'applicants' ? (
+              selectedClubJoinRequests.length === 0 ? (
+                <p className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-white/60">No pending applicants.</p>
+              ) : (
+                selectedClubJoinRequests
+                  .filter((request) => {
+                    const term = clubMemberSearch.trim().toLowerCase();
+                    if (!term) return true;
+                    return `${request.userName || ''} ${request.userEmail || ''} ${request.userId || ''}`.toLowerCase().includes(term);
+                  })
+                  .map((request) => (
+                    <div key={request.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#10B981]/15 text-sm font-bold text-[#10B981]">
+                        {(request.userName || 'C')[0].toUpperCase()}
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-white">{request.userName || 'Collector'}</p>
+                        <p className="truncate text-[11px] text-white/45">{request.userEmail || request.userId}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleRejectClubJoinRequest(request)}
+                          disabled={clubActionBusyId === `join-reject-${request.id}`}
+                          className="rounded-lg border border-red-400/30 bg-red-950/40 px-2.5 py-1.5 text-[11px] font-semibold text-red-200 disabled:opacity-60"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApproveClubJoinRequest(request)}
+                          disabled={clubActionBusyId === `join-approve-${request.id}`}
+                          className="rounded-lg bg-[#10B981] px-2.5 py-1.5 text-[11px] font-bold text-black disabled:opacity-60"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    </div>
+                  ))
+              )
+            ) : (
+              selectedClubMembers
+                .filter((member) => clubMemberRoleFilter === 'all' || member.role === clubMemberRoleFilter)
+                .filter((member) => {
+                  const term = clubMemberSearch.trim().toLowerCase();
+                  if (!term) return true;
+                  return `${member.displayName || ''} ${member.email || ''} ${member.uid || ''}`.toLowerCase().includes(term);
+                })
+                .map((member) => (
+                  <div key={member.uid} className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#10B981]/15 text-sm font-bold text-[#10B981]">
+                      {(member.displayName || member.email || 'C')[0].toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-white">{member.displayName || member.email || member.uid}</p>
+                      <p className="truncate text-[11px] text-white/45">ID: {member.uid.slice(0, 12)}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{member.role || 'member'}</span>
+                      {canManageClubMembers && member.role !== 'owner' && member.uid !== firebaseUser?.uid && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateClubMemberRole(member.uid, member.role === 'agent' ? 'member' : 'agent')}
+                          disabled={clubActionBusyId === `role-${member.uid}`}
+                          className="rounded-lg bg-white/10 px-2 py-1 text-[10px] font-semibold hover:bg-white/20 disabled:opacity-60"
+                        >
+                          {member.role === 'agent' ? 'Demote' : 'Promote'}
+                        </button>
+                      )}
                     </div>
                   </div>
-                </div>
-              )}
+                ))
+            )}
+          </div>
 
-              {selectedClubRole === 'owner' && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Owner Controls</p>
-                  <div className="mt-2 space-y-2">
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                      <span className="text-[11px] text-white/60">Club Rake</span>
-                      <span className="text-sm font-bold">{Number(selectedClub.rakePercent || 0)}%</span>
+          {clubMembersTab === 'applicants' && canModerateClubPosts && selectedClubJoinRequests.length > 0 && (
+            <div className="flex gap-3 border-t border-white/10 bg-black px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <button
+                type="button"
+                onClick={() => selectedClubJoinRequests.forEach((request) => handleRejectClubJoinRequest(request))}
+                className="flex-1 rounded-xl border border-red-400/30 bg-red-950/40 py-3 text-sm font-bold text-red-200 hover:bg-red-950/70"
+              >
+                Reject All
+              </button>
+              <button
+                type="button"
+                onClick={() => selectedClubJoinRequests.forEach((request) => handleApproveClubJoinRequest(request))}
+                className="flex-1 rounded-xl bg-[#10B981] py-3 text-sm font-bold text-black hover:bg-emerald-400"
+              >
+                Approve All
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showClubAdminView && selectedClub && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-black" role="dialog" aria-modal="true" aria-labelledby="club-admin-title">
+          <div
+            className="flex items-center gap-3 border-b border-white/10 px-4 py-3"
+            style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' } : undefined}
+          >
+            <button
+              type="button"
+              onClick={() => setShowClubAdminView(false)}
+              aria-label="Back to club"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <h3 id="club-admin-title" className="flex-1 text-center text-base font-black text-white">Club Admin</h3>
+            <span className="h-10 w-10" />
+          </div>
+
+          <div className="border-b border-white/10">
+            <div className="flex gap-1 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {['1M', '1Y', 'ALL'].map((format) => (
+                <button
+                  key={format}
+                  type="button"
+                  onClick={() => setClubFinancesTimeframe(format)}
+                  className={`relative shrink-0 px-4 py-2.5 text-sm font-semibold transition-colors ${clubFinancesTimeframe === format ? 'text-white' : 'text-white/45 hover:text-white/70'}`}
+                >
+                  {format}
+                  {clubFinancesTimeframe === format && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-[#10B981]" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
+            {canViewClubFinances && (
+              <>
+                <div className="rounded-xl border border-white/10 bg-zinc-900 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Summary</p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-2">
+                      <p className="text-[9px] uppercase tracking-wider text-white/45">Fee Income</p>
+                      <p className="mt-0.5 text-sm font-black text-[#10B981]">
+                        ${(selectedClubLedgers.reduce((sum, entry) => sum + Number(entry.ownerFee || 0) + Number(entry.agentFee || 0), 0) / 100).toFixed(2)}
+                      </p>
                     </div>
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                      <span className="text-[11px] text-white/60">Ledger Entries</span>
-                      <span className="text-sm font-bold">{selectedClubLedgers.length}</span>
+                    <div className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-2">
+                      <p className="text-[9px] uppercase tracking-wider text-white/45">Trades</p>
+                      <p className="mt-0.5 text-sm font-black text-white">{selectedClubLedgers.length}</p>
                     </div>
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                      <span className="text-[11px] text-white/60">Agents</span>
-                      <span className="text-sm font-bold">{selectedClubMembers.filter((member) => member.role === 'agent').length}</span>
+                    <div className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-2">
+                      <p className="text-[9px] uppercase tracking-wider text-white/45">Rake</p>
+                      <p className="mt-0.5 text-sm font-black text-white">{Number(selectedClub.rakePercent || 0)}%</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => { setShowClubActionHub(false); handleCreateTradeNight(); }}
-                      disabled={Boolean(clubEventBusyId)}
-                      className="w-full rounded-lg bg-[#22C55E] py-2.5 text-xs font-bold text-black hover:bg-[#16A34A] disabled:opacity-55"
-                    >
-                      {clubEventBusyId === 'create' ? 'Opening...' : 'Schedule Trade Night'}
-                    </button>
                   </div>
                 </div>
-              )}
+
+                <FinanceChart title="Fee Income" subtitle="Cumulative club + agent fees" data={clubFinanceSeries} valueKey="cumulativeFeeIncome" prefix="$" accent="#10B981" />
+                <FinanceChart title="Trade Capture Rate" subtitle="Fee share of gross trade value" data={clubFinanceSeries} valueKey="captureRate" suffix="%" accent="#EF4444" />
+              </>
+            )}
+
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+              {[
+                { id: 'invite', label: 'Invite & Share', detail: selectedClub.code || selectedClub.id, isNew: false, onClick: handleCopyClubId },
+                { id: 'members', label: 'Member Management', detail: `${selectedClubMembers.length} members`, isNew: selectedClubJoinRequests.length > 0, onClick: () => { setShowClubAdminView(false); setShowClubMembersView(true); } },
+                { id: 'agents', label: 'Agent Management', detail: `${selectedClubMembers.filter((member) => member.role === 'agent').length} agents`, isNew: false, onClick: () => { setShowClubAdminView(false); setClubMemberRoleFilter('agent'); setShowClubMembersView(true); } },
+                { id: 'events', label: 'Scheduled Trade Nights', detail: `${selectedClubEvents.length} scheduled`, isNew: false, onClick: () => { setShowClubAdminView(false); handleCreateTradeNight(); } },
+                { id: 'reports', label: 'Moderation Reports', detail: `${openSelectedClubReports.length} open`, isNew: openSelectedClubReports.length > 0, onClick: () => setShowClubAdminView(false) }
+              ].map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={item.onClick}
+                  className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/5 ${index > 0 ? 'border-t border-white/10' : ''}`}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-white">{item.label}</span>
+                      {item.isNew && (
+                        <span className="shrink-0 rounded bg-[#10B981] px-1.5 py-0.5 text-[9px] font-black uppercase text-black">New</span>
+                      )}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-white/45">{item.detail}</span>
+                  </span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-white/35" aria-hidden="true">
+                    <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              ))}
             </div>
           </div>
         </div>
