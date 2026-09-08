@@ -2238,17 +2238,10 @@ export default function CardSwipersLanding() {
   }, [selectedClubId]);
 
   useEffect(() => {
-    // Auto-focus the user's primary (most recently joined) club once, without
-    // overriding a manual selection made before the membership data arrived.
-    if (hasAutoSelectedClubRef.current || selectedClubId) return;
-    if (!firebaseUser || clubs.length === 0) return;
-    const candidateId = primaryClubId || myClubIds[0] || '';
-    if (!candidateId || !clubs.some((club) => club.id === candidateId)) return;
+    // Do not auto-enter a club. The user must tap a club image to enter.
+    // (Previously this auto-focused the primary/most-recent club on load.)
     hasAutoSelectedClubRef.current = true;
-    setSelectedClubId(candidateId);
-    const candidateIndex = orderedClubs.findIndex((entry) => entry.id === candidateId);
-    if (candidateIndex >= 0) setSelectedClubCarouselIndex(candidateIndex);
-  }, [firebaseUser, clubs, primaryClubId, myClubIds, selectedClubId, orderedClubs]);
+  }, []);
 
   useEffect(() => {
     if (!firebaseUser || moderatedClubIds.length === 0) {
@@ -2289,8 +2282,10 @@ export default function CardSwipersLanding() {
       return;
     }
 
-    if (!selectedClubId || !clubs.some((club) => club.id === selectedClubId)) {
-      setSelectedClubId(clubs[0].id);
+    // Only recover a dangling selection (club deleted out from under us).
+    // Never auto-select when the user has deliberately exited (selectedClubId === '').
+    if (selectedClubId && !clubs.some((club) => club.id === selectedClubId)) {
+      setSelectedClubId('');
       setSelectedClubCarouselIndex(0);
     }
   }, [clubs, selectedClubId]);
