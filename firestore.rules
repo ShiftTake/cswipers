@@ -226,11 +226,12 @@ service cloud.firestore {
       allow get: if isAdmin() || (signedIn() && !isClubBanned(clubId));
       allow list: if signedIn();
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if isAdmin() || (
+      // isPublic is set permanently at creation and can never be flipped.
+      allow update: if (isAdmin() || (
         isClubOwner(clubId) &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
         request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null)
-      );
+      )) && request.resource.data.get('isPublic', null) == resource.data.get('isPublic', null);
       allow delete: if isAdmin() || isClubOwner(clubId);
 
       match /joinRequests/{requestId} {

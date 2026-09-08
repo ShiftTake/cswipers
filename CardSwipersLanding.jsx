@@ -745,6 +745,9 @@ const normalizeClubRole = (role) => {
   return 'member';
 };
 const getClubAccessMode = (clubData = {}) => {
+  // isPublic is the immutable source of truth set at creation. Fall back to the
+  // legacy accessMode/visibility fields for clubs created before this shipped.
+  if (typeof clubData.isPublic === 'boolean') return clubData.isPublic ? 'public' : 'private';
   const accessMode = String(clubData.accessMode || clubData.visibility || 'private').toLowerCase();
   return accessMode === 'public' || accessMode === 'auto-join' ? 'public' : 'private';
 };
@@ -1124,6 +1127,7 @@ export default function CardSwipersLanding() {
   const [clubDraftName, setClubDraftName] = useState('');
   const [clubDraftDescription, setClubDraftDescription] = useState('');
   const [clubDraftLogoId, setClubDraftLogoId] = useState('');
+  const [clubDraftIsPublic, setClubDraftIsPublic] = useState(true);
   const [clubDraftLogoFile, setClubDraftLogoFile] = useState(null);
   const [clubDraftLogoPreview, setClubDraftLogoPreview] = useState('');
   const [clubDraftError, setClubDraftError] = useState('');
@@ -1245,6 +1249,7 @@ export default function CardSwipersLanding() {
       && (discoverFilters.gradeStatus === 'all' || (discoverFilters.gradeStatus === 'graded' ? isGraded : !isGraded));
   });
   const currentCard = filteredDiscoverDeck[cardIndex] || null;
+  const publicClubs = clubs.filter((club) => getClubAccessMode(club) === 'public');
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
   const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
@@ -4684,6 +4689,7 @@ export default function CardSwipersLanding() {
     setClubDraftName('');
     setClubDraftDescription('');
     setClubDraftLogoId('');
+    setClubDraftIsPublic(true);
     setClubDraftLogoFile(null);
     setClubDraftLogoPreview('');
     setClubDraftError('');
@@ -4776,8 +4782,9 @@ export default function CardSwipersLanding() {
         logoType: clubDraftLogoId === 'custom' ? 'custom' : 'preset',
         logoPresetId: clubDraftLogoId === 'custom' ? null : clubDraftLogoId,
         logoUrl,
-        accessMode: 'private',
-        accessType: 'private',
+        isPublic: clubDraftIsPublic,
+        accessMode: clubDraftIsPublic ? 'public' : 'private',
+        accessType: clubDraftIsPublic ? 'public' : 'private',
         creditHierarchy: 'owner→agent→member',
         ownerUid: firebaseUser.uid,
         ownerId: firebaseUser.uid,
@@ -7058,6 +7065,73 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'swipe' && (
           <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-y-auto overscroll-y-contain pr-1">
+            {publicClubs.length > 0 && (
+              <section className="mb-4 w-full">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">Public Clubs</p>
+                  <span className="text-[11px] text-white/40">{publicClubs.length}</span>
+                </div>
+                <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {publicClubs.map((club) => {
+                    const memberCount = Number(club.memberCount || club.membersCount || 0);
+                    const clubEvents = selectedClubId === club.id ? selectedClubEvents : [];
+                    const activeTradeNight = clubEvents.find((event) => {
+                      const start = toDateValue(event.scheduledFor)?.getTime() || 0;
+                      const windowMs = Math.max(1, Number(event.roundMinutes || 60)) * 60 * 1000;
+                      return start > 0 && Date.now() >= start && Date.now() <= start + windowMs;
+                    });
+                    const tags = Array.isArray(club.categories) && club.categories.length
+                      ? club.categories
+                      : [club.category, club.brand].filter(Boolean);
+                    const isMember = myClubIdSet.has(club.id);
+                    const logoPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === club.logoPresetId);
+                    return (
+                      <div key={club.id} className="w-[240px] shrink-0 rounded-2xl border border-white/10 bg-zinc-900 p-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/15 bg-zinc-800">
+                            {club.logoUrl ? (
+                              <img src={club.logoUrl} alt={club.name || 'Club'} className="h-full w-full object-cover" />
+                            ) : (
+                              <span className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${logoPreset ? logoPreset.className : ''} text-xl`}>{logoPreset ? logoPreset.symbol : '🃏'}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-white">{club.name || 'Club'}</p>
+                            <p className="text-[11px] text-white/50">{memberCount.toLocaleString()} members</p>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${activeTradeNight ? 'border-[#10B981]/40 bg-[#10B981]/10 text-[#10B981]' : 'border-white/15 bg-white/5 text-white/50'}`}>
+                            {activeTradeNight ? '● Trade Night Live' : 'No Live Trade Night'}
+                          </span>
+                          {tags.slice(0, 2).map((tag) => (
+                            <span key={tag} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/60">{tag}</span>
+                          ))}
+                        </div>
+                        {isMember ? (
+                          <button
+                            type="button"
+                            onClick={() => handleEnterClub(club)}
+                            className="mt-3 w-full rounded-lg border border-[#10B981]/40 bg-[#10B981]/10 py-2 text-xs font-bold text-[#10B981] hover:bg-[#10B981]/20"
+                          >
+                            Enter Club
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleJoinSpecificClub(club)}
+                            disabled={clubJoinBusy}
+                            className="mt-3 w-full rounded-lg bg-[#10B981] py-2 text-xs font-bold text-black hover:bg-emerald-400 disabled:opacity-60"
+                          >
+                            {clubJoinBusy ? 'Joining...' : 'Join Club'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
             {currentCard ? (
               <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
@@ -7831,6 +7905,34 @@ export default function CardSwipersLanding() {
                     })}
                   </div>
                 </div>
+              </div>
+
+              <div className="mt-8">
+                <p className="text-xl font-medium text-white">Club Visibility</p>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  {[
+                    { value: true, title: 'Public Club', desc: 'Visible on the Discover feed. Anyone can search, join, or request entry.' },
+                    { value: false, title: 'Private Club', desc: 'Hidden from Discover. Accessible strictly via invite link / Club ID.' }
+                  ].map((option) => {
+                    const selected = clubDraftIsPublic === option.value;
+                    return (
+                      <button
+                        key={option.title}
+                        type="button"
+                        onClick={() => { setClubDraftIsPublic(option.value); setClubDraftError(''); }}
+                        aria-pressed={selected}
+                        className={`rounded-2xl border p-4 text-left transition-colors ${selected ? 'border-[#10B981] bg-[#10B981]/10 ring-2 ring-[#10B981]/40' : 'border-white/10 bg-zinc-900/80 hover:border-white/25'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-bold text-white">{option.title}</span>
+                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold ${selected ? 'border-[#10B981] bg-[#10B981] text-black' : 'border-white/25 text-transparent'}`}>✓</span>
+                        </div>
+                        <p className="mt-1.5 text-xs leading-relaxed text-white/55">{option.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-slate-400">This setting is permanent and cannot be changed after the club is created.</p>
               </div>
 
               {clubDraftError && <p className="mt-5 text-sm font-medium text-rose-300">{clubDraftError}</p>}
