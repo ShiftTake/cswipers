@@ -473,7 +473,7 @@ function MakeOfferModal({ isOpen, listing, buyerId, isSubmitting, error, onClose
   );
 }
 
-function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTrackingSubmit, onReportIssue }) {
+function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTrackingSubmit, onReportIssue, onReportTrade }) {
   const [carrier, setCarrier] = useState(order?.shippingCarrier || order?.carrier || '');
   const [trackingNumber, setTrackingNumber] = useState(order?.trackingNumber || order?.tracking_number || '');
   const [returnCarrier, setReturnCarrier] = useState(order?.returnCarrier || order?.return_carrier || '');
@@ -532,6 +532,7 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
           <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] hover:bg-[#FFE66D]">Download / Print Receipt</button>
           {!isSeller && order.trackingNumber && <a href={order.trackingUrl || '#'} target="_blank" rel="noreferrer" className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 py-2.5 text-sm font-semibold text-[#FFE66D]">View Live Tracking</a>}
           {!isSeller && !['disputed', 'completed', 'released', 'refunded'].includes(String(order.status || order.escrowStatus || '').toLowerCase()) && <button type="button" onClick={onReportIssue} className="min-h-11 rounded-xl border border-rose-300/60 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-400/10">Report Issue / Dispute</button>}
+          {onReportTrade && <button type="button" onClick={onReportTrade} className="min-h-11 rounded-xl border border-white/25 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Report Trade</button>}
         </div>
 
         {!isSeller && String(order.status || order.escrowStatus || '').toLowerCase() === 'disputed' && (
@@ -3008,6 +3009,7 @@ export default function CardSwipersLanding() {
       dealType: options?.dealType || 'cash_sale',
       feeOnly,
       offerId: options?.offerId || null,
+      clubId: options?.clubId || null,
       listedAt: card.listedAt || null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
@@ -3027,6 +3029,7 @@ export default function CardSwipersLanding() {
           currency: 'usd',
           orderId,
           buyerId: firebaseUser.uid,
+          clubId: options?.clubId || null,
           sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || '',
           sellerUserId: card.ownerUid || null,
           sellerName: card.owner || 'Collector',
@@ -3188,6 +3191,7 @@ export default function CardSwipersLanding() {
     const checkoutStarted = await handleInstantPurchase(checkoutCard, {
       cashAmount,
       offerId: offer.id,
+      clubId: offer.clubId || null,
       dealType,
       feeOnly,
       protectionRole: offer.buyerUid === firebaseUser.uid ? 'buyer' : 'seller',
@@ -4167,6 +4171,11 @@ export default function CardSwipersLanding() {
   const handleDeleteAccount = async () => {
     if (!firebaseUser || deleteAccountBusy) return;
 
+    if (Number(currentUserProfile?.activeTradesCount || 0) > 0) {
+      setAuthError('Account cannot be deleted while you have active or pending trades.');
+      return;
+    }
+
     const confirmed = await requestConfirmation(
       'Delete Account',
       'Are you sure you want to permanently delete your CardSwipers account and all associated binder listings? This action is immediate and cannot be undone (Apple Guideline 5.1.1(v)).',
@@ -4431,6 +4440,7 @@ export default function CardSwipersLanding() {
         const checkoutStarted = await handleInstantPurchase(checkoutCard, {
           cashAmount: offer.cashAmount || offer.amount || 0,
           offerId: offer.id,
+          clubId: offer.clubId || null,
           dealType: normalizedDealType,
           feeOnly: normalizedDealType === 'pure_trade',
           protectionRole: offer.buyerUid === firebaseUser.uid ? 'buyer' : 'seller',
@@ -5364,6 +5374,67 @@ export default function CardSwipersLanding() {
     } catch (error) {
       console.error('Failed reporting club post:', error);
       setClubError('Could not submit post report right now.');
+    } finally {
+      setClubReportBusy(false);
+    }
+  };
+
+  const handleReportTrade = async (order) => {
+    if (!firebaseUser || !order || clubReportBusy) return;
+
+    const sellerUid = order.sellerUid || order.seller_user_id || null;
+    const buyerUid = order.buyerUid || order.buyer_id || null;
+    const reporterIsSeller = firebaseUser.uid === sellerUid;
+    const targetUid = reporterIsSeller ? buyerUid : sellerUid;
+    const targetName = reporterIsSeller
+      ? order.buyerName || order.buyer_name || 'Buyer'
+      : order.sellerName || order.seller_name || 'Seller';
+    const tradeId = order.orderId || order.order_id || order.id || '';
+    const clubId = String(order.clubId || order.club_id || '').trim();
+
+    const reasonInput = window.prompt(`Report trade ${tradeId ? `#${tradeId} ` : ''}with ${targetName} for:`, 'Item not as described, harassment, or policy violation');
+    const reason = String(reasonInput || '').trim();
+    if (!reason) return;
+
+    setClubReportBusy(true);
+    setAuthError('');
+    try {
+      const basePayload = {
+        reportType: 'trade',
+        tradeId,
+        targetUid: targetUid || null,
+        targetName,
+        reason,
+        reportedByUid: firebaseUser.uid,
+        reportedByEmail: firebaseUser.email || '',
+        reportedByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+        status: 'open',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      if (clubId) {
+        // In-club trade reports route to the Club Owner & Super Agents' Club Inbox.
+        await addDoc(collection(db, 'clubs', clubId, 'reports'), {
+          ...basePayload,
+          clubId,
+          clubName: clubs.find((club) => club.id === clubId)?.name || ''
+        });
+        setAuthInfo('Report sent to the club owner and super agents for review.');
+      } else {
+        // Discover / public trade reports route to CS Support for platform admins.
+        await addDoc(collection(db, 'chatReports'), {
+          ...basePayload,
+          chatId: order.chatId || null,
+          orderId: tradeId,
+          reportedUserId: targetUid || null,
+          reportedUserName: targetName
+        });
+        setAuthInfo('Report submitted to CardSwipers support for review.');
+      }
+    } catch (error) {
+      console.error('Failed to report trade:', error);
+      setAuthError('Could not submit your report right now. Please try again.');
     } finally {
       setClubReportBusy(false);
     }
@@ -9257,6 +9328,57 @@ export default function CardSwipersLanding() {
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-2">
+            {(isClubSeniorRole(selectedClubRole) || hasAdminAccess) && openSelectedClubReports.length > 0 && (
+              <div className="space-y-2">
+                <p className="px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#EF4444]">
+                  Open Reports ({openSelectedClubReports.length})
+                </p>
+                {openSelectedClubReports.map((report) => (
+                  <div key={report.id} className="space-y-2 rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/[0.06] px-3 py-2.5">
+                    <p className="text-sm font-semibold text-white">
+                      {report.reportType === 'trade' ? 'Trade Report' : report.reportType === 'post' ? 'Post Report' : 'Member Report'}
+                      {': '}{report.targetName || report.targetPostTitle || 'Unknown user'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-white/60">
+                      <span className="min-w-0 truncate">Reported User: <span className="text-white/85">{report.targetName || report.targetUid || '—'}</span></span>
+                      <span className="min-w-0 truncate">Reporter ID: <span className="font-mono text-white/85">{report.reportedByUid || '—'}</span></span>
+                      <span className="col-span-2 min-w-0 truncate">Trade ID: <span className="font-mono text-white/85">{report.tradeId || '—'}</span></span>
+                    </div>
+                    <p className="text-[11px] text-white/70">Reason: {report.reason || 'No reason provided'}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleModerationActionFromReport(report, 'dismiss')}
+                        disabled={clubActionBusyId === `report-${report.id}`}
+                        className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
+                      >
+                        Dismiss
+                      </button>
+                      {report.targetUid && (
+                        <button
+                          type="button"
+                          onClick={() => handleModerationActionFromReport(report, 'remove-member')}
+                          disabled={clubActionBusyId === `report-${report.id}`}
+                          className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-2.5 py-1 text-[11px] font-semibold text-[#EF4444] hover:bg-[#EF4444]/20 disabled:opacity-60"
+                        >
+                          Kick User
+                        </button>
+                      )}
+                      {report.targetUid && (
+                        <button
+                          type="button"
+                          onClick={() => handleModerationActionFromReport(report, 'ban-member')}
+                          disabled={clubActionBusyId === `report-${report.id}`}
+                          className="rounded-lg border border-[#EF4444]/50 bg-[#EF4444]/25 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#EF4444]/40 disabled:opacity-60"
+                        >
+                          Ban User from Club
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {clubActivityFeed.length === 0 ? (
               <p className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-white/60">
                 No club activity yet. Trades, member requests, and event updates will appear here.
@@ -10693,6 +10815,7 @@ export default function CardSwipersLanding() {
         )}
         onReturnTrackingSubmit={handleSubmitReturnTracking}
         onReportIssue={() => { setActiveReceipt(null); setDisputeOrder({ ...activeReceipt, isBuyer: true }); }}
+        onReportTrade={() => handleReportTrade(activeReceipt)}
       />
       <EvidenceSubmissionModal
         order={disputeOrder}

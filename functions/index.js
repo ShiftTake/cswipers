@@ -653,6 +653,21 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       sellerNetPayoutCents
     });
 
+    // Club trade wiring: stamp the club and the seller's referring agent so the
+    // escrow split (10% total, agent/owner) can be applied at release time.
+    const normalizedClubId = String(req.body?.clubId || '').trim();
+    if (normalizedClubId) {
+      const clubSnap = await db.collection('clubs').doc(normalizedClubId).get();
+      if (clubSnap.exists) {
+        orderRecord.club_id = normalizedClubId;
+        if (sellerUserId) {
+          const sellerMemberSnap = await db.collection('clubs').doc(normalizedClubId).collection('members').doc(String(sellerUserId)).get();
+          const referringAgentId = sellerMemberSnap.exists ? sellerMemberSnap.data()?.referredByAgentId || null : null;
+          if (referringAgentId) orderRecord.referred_by_agent_id = referringAgentId;
+        }
+      }
+    }
+
     await db.collection(ORDERS_COLLECTION).doc(orderId).set(orderRecord, { merge: true });
     await syncPurchaseIntentMirror(orderId, orderRecord);
 
@@ -826,7 +841,7 @@ exports.acceptDelivery = onRequest({ secrets: [stripeSecret] }, async (req, res)
   try {
     const decodedToken = await requireAuth(req);
     const orderId = buildOrderId(req.body?.orderId);
-    const { order } = await getOrderOrThrow(orderId);
+    const { orderRef, order } = await getOrderOrThrow(orderId);
 
     if (order.buyer_id !== decodedToken.uid) {
       return sendJson(res, 403, { error: 'Only the buyer can accept delivery for this order.' });
@@ -836,6 +851,9 @@ exports.acceptDelivery = onRequest({ secrets: [stripeSecret] }, async (req, res)
       actor: decodedToken.uid,
       resolution: 'buyer_accept_delivery'
     });
+
+    // Receipt verification stamp: buyer explicitly confirmed the item arrived.
+    await orderRef.set({ delivery_confirmed_at: serverTimestamp(), updated_at: serverTimestamp() }, { merge: true });
 
     return sendJson(res, 200, {
       orderId,
@@ -1266,8 +1284,17 @@ exports.deleteUserAccount = onRequest(async (req, res) => {
     const uid = user.uid;
     const firestoreDb = getDb();
 
+    const DELETION_BLOCK_MESSAGE = 'Account cannot be deleted while you have active or pending trades.';
+
+    const userSnap = await firestoreDb.collection(USERS_COLLECTION).doc(uid).get();
+    if (Number(userSnap.data()?.activeTradesCount || 0) > 0) {
+      return sendJson(res, 400, { error: DELETION_BLOCK_MESSAGE });
+    }
+
+    // Block while any physical card delivery involving this user is unfulfilled
+    // (awaiting payment, paid/awaiting shipment, in transit, delivered awaiting receipt, or disputed).
     const activeOrdersSnap = await firestoreDb.collection(ORDERS_COLLECTION)
-      .where('status', 'in', ['payment_held', 'shipped', 'disputed'])
+      .where('status', 'in', ['pending_payment', 'payment_held', 'shipped', 'delivered', 'disputed'])
       .get();
 
     const userHasActiveEscrow = activeOrdersSnap.docs.some((docSnap) => {
@@ -1276,9 +1303,18 @@ exports.deleteUserAccount = onRequest(async (req, res) => {
     });
 
     if (userHasActiveEscrow) {
-      return sendJson(res, 400, {
-        error: 'Cannot delete account while you have active escrow orders in progress. Please complete or resolve active transactions first.'
-      });
+      return sendJson(res, 400, { error: DELETION_BLOCK_MESSAGE });
+    }
+
+    const [buyerOffersSnap, sellerOffersSnap] = await Promise.all([
+      firestoreDb.collection('offers').where('buyerId', '==', uid).get(),
+      firestoreDb.collection('offers').where('sellerId', '==', uid).get()
+    ]);
+    const userHasActiveOffers = [...buyerOffersSnap.docs, ...sellerOffersSnap.docs].some((docSnap) =>
+      ['pending', 'countered', 'accepted'].includes(String(docSnap.data()?.status || '').toLowerCase()));
+
+    if (userHasActiveOffers) {
+      return sendJson(res, 400, { error: DELETION_BLOCK_MESSAGE });
     }
 
     const userCardsSnap = await firestoreDb.collection('cards').where('ownerUid', '==', uid).get();
@@ -1604,6 +1640,9 @@ exports.autoReleaseDeliveredOrders = onSchedule({ schedule: 'every 15 minutes', 
         actor: 'system',
         resolution: 'auto_release_after_7_days'
       });
+      if (String(order.status || '').toLowerCase() === 'delivered' || order.delivered_at) {
+        await docSnap.ref.set({ delivery_confirmed_at: serverTimestamp(), updated_at: serverTimestamp() }, { merge: true });
+      }
     } catch (error) {
       console.error(`autoReleaseDeliveredOrders failed for ${docSnap.id}:`, error);
     }
@@ -1769,6 +1808,17 @@ exports.releaseTradeEscrow = onRequest({ secrets: [stripeSecret] }, async (req, 
     }
     if (order.escrow_split_at) {
       return sendJson(res, 200, { ok: true, orderId, alreadySplit: true });
+    }
+    if (order.payout_frozen === true) {
+      throw new Error('Escrow is frozen while this order has an active dispute.');
+    }
+    // Payout safeguard: club escrow splits are held until there is evidence of
+    // delivery confirmation (tracking delivered) or buyer receipt verification.
+    const deliveryConfirmed = Boolean(
+      order.delivered_at || order.delivery_confirmed_at || order.receipt_verified_at || order.funds_released_at
+    );
+    if (!deliveryConfirmed) {
+      throw new Error('Escrow release is held until delivery confirmation or receipt verification.');
     }
 
     const grossAmount = Number(order.amount_base || order.total_paid || 0);
