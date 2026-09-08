@@ -43,6 +43,10 @@ import { createOffer, getUserOffers } from './offersService';
 import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
+import tcgBoothBg from './ChatGPT Image Sep 7, 2026, 10_46_40 PM.png';
+import footballBoothBg from './ChatGPT Image Sep 7, 2026, 10_41_18 PM.png';
+import sportsBoothBg from './ChatGPT Image Sep 7, 2026, 10_41_53 PM.png';
+import grailBoothBg from './ChatGPT Image Sep 7, 2026, 10_42_29 PM.png';
 import AdminPanel from './Admin';
 import TermsOfService from './TermsOfService.jsx';
 import NotificationHub from './NotificationHub.jsx';
@@ -788,13 +792,15 @@ const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().s
 const TRADE_NIGHT_THEMES = {
   grail: {
     label: 'Grail Vault',
+    image: grailBoothBg,
     backdrop: 'bg-[radial-gradient(circle_at_50%_0%,rgba(212,175,55,0.28),transparent_55%),linear-gradient(180deg,#1a1508_0%,#0a0805_100%)]',
     booth: 'border-[#d4af37]/50 bg-gradient-to-b from-[#2a2110] to-[#12100a]',
     accent: 'text-[#f5d67b]',
     glow: 'shadow-[0_0_60px_rgba(212,175,55,0.25)]'
   },
-  basketball: {
-    label: 'Courtside Booth',
+  sports: {
+    label: 'Sports Lounge',
+    image: sportsBoothBg,
     backdrop: 'bg-[radial-gradient(circle_at_50%_-10%,rgba(249,115,22,0.25),transparent_50%),linear-gradient(180deg,#1c1108_0%,#0a0605_100%)]',
     booth: 'border-orange-500/40 bg-gradient-to-b from-[#241204] to-[#0e0704]',
     accent: 'text-orange-400',
@@ -802,6 +808,7 @@ const TRADE_NIGHT_THEMES = {
   },
   football: {
     label: 'Stadium Lounge',
+    image: footballBoothBg,
     backdrop: 'bg-[radial-gradient(circle_at_50%_-10%,rgba(34,197,94,0.22),transparent_50%),linear-gradient(180deg,#0b1a10_0%,#050a07_100%)]',
     booth: 'border-emerald-600/40 bg-gradient-to-b from-[#0c2416] to-[#050f09]',
     accent: 'text-emerald-400',
@@ -809,6 +816,7 @@ const TRADE_NIGHT_THEMES = {
   },
   tcg: {
     label: 'Holo Arena',
+    image: tcgBoothBg,
     backdrop: 'bg-[radial-gradient(circle_at_30%_0%,rgba(168,85,247,0.28),transparent_50%),radial-gradient(circle_at_75%_10%,rgba(59,130,246,0.25),transparent_45%),linear-gradient(180deg,#150a24_0%,#08050f_100%)]',
     booth: 'border-purple-500/40 bg-gradient-to-b from-[#1d1030] to-[#0c0716]',
     accent: 'text-purple-300',
@@ -816,6 +824,7 @@ const TRADE_NIGHT_THEMES = {
   },
   standard: {
     label: 'Card Shop Counter',
+    image: sportsBoothBg,
     backdrop: 'bg-[radial-gradient(circle_at_50%_0%,rgba(148,163,184,0.14),transparent_55%),linear-gradient(180deg,#101216_0%,#060708_100%)]',
     booth: 'border-white/15 bg-gradient-to-b from-[#17191d] to-[#0b0c0e]',
     accent: 'text-slate-300',
@@ -828,8 +837,8 @@ const resolveTradeNightTheme = (event = {}) => {
   if (minValue >= 1000) return TRADE_NIGHT_THEMES.grail;
   const categories = (Array.isArray(event.categories) ? event.categories : []).map((c) => String(c).toLowerCase());
   if (categories.some((c) => c.includes('pok') || c.includes('magic') || c.includes('tcg'))) return TRADE_NIGHT_THEMES.tcg;
-  if (categories.some((c) => c.includes('basketball'))) return TRADE_NIGHT_THEMES.basketball;
   if (categories.some((c) => c.includes('football'))) return TRADE_NIGHT_THEMES.football;
+  if (categories.some((c) => c.includes('basketball') || c.includes('baseball'))) return TRADE_NIGHT_THEMES.sports;
   return TRADE_NIGHT_THEMES.standard;
 };
 
@@ -11026,91 +11035,105 @@ export default function CardSwipersLanding() {
         const sellers = tradeNightRegistrations.filter((r) => ['seller', 'both'].includes(String(r.tradeRole || 'both').toLowerCase()) && r.status !== 'away');
         const vendors = sellers.length ? sellers : tradeNightRegistrations.filter((r) => r.status !== 'away');
         const vendor = vendors[Math.min(boothVendorIndex, Math.max(0, vendors.length - 1))] || null;
+        const myRegistration = tradeNightRegistrations.find((r) => r.id === firebaseUser?.uid || r.userId === firebaseUser?.uid) || null;
+        const iAmSeller = ['seller', 'both'].includes(String(myRegistration?.tradeRole || '').toLowerCase());
+        // Buyers see the booth's seller; a seller viewing their own booth sees the buyer/counterparty.
+        const framePerson = iAmSeller ? (activeChat?.counterpartyUserId ? { displayName: activeChat.counterpartyName } : null) : vendor;
         return (
-          <div className={`fixed inset-0 z-[80] flex flex-col ${theme.backdrop}`} role="dialog" aria-modal="true" aria-label="Trade night booth">
-            <div
-              className="flex items-center gap-3 border-b border-white/10 px-4 py-3"
-              style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' } : undefined}
-            >
-              <button
-                type="button"
-                onClick={() => setShowTradeNightBooth(false)}
-                aria-label="Leave trade floor"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              </button>
-              <div className="flex-1 text-center">
-                <p className={`text-[10px] font-bold uppercase tracking-[0.25em] ${theme.accent}`}>{theme.label}</p>
-                <h3 className="text-base font-black text-white">{activeTradeNight.title || 'Trade Night'}</h3>
+          <div className="fixed inset-0 z-[80] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Trade night booth">
+            {/* Themed background art */}
+            <img src={theme.image} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/70" />
+
+            {/* Avatar in the left-wall circular frame */}
+            <div className="absolute left-[7%] top-[26%] h-[92px] w-[92px] sm:h-[120px] sm:w-[120px]">
+              <div className={`h-full w-full overflow-hidden rounded-full border-4 ${theme.booth.split(' ')[0]} bg-black/60 ${theme.glow} flex items-center justify-center`}>
+                {framePerson?.photoURL ? (
+                  <img src={framePerson.photoURL} alt={framePerson.displayName || 'Trader'} className="h-full w-full object-cover" />
+                ) : (
+                  <span className={`text-3xl font-black ${theme.accent}`}>{(framePerson?.displayName || 'C')[0].toUpperCase()}</span>
+                )}
               </div>
-              <span className="h-10 w-10" />
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
-              {vendor ? (
-                <div className={`mx-auto w-full max-w-md rounded-3xl border ${theme.booth} ${theme.glow} p-5 transition-all`}>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-black/40 text-2xl font-black text-white">
-                      {(vendor.displayName || 'C')[0].toUpperCase()}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-lg font-black text-white">{vendor.displayName || 'Collector'}</p>
-                      <div className="mt-0.5 flex items-center gap-2">
-                        <span className={`rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${theme.accent}`}>
-                          {String(vendor.tradeRole || 'both') === 'both' ? 'Buyer & Seller' : String(vendor.tradeRole || 'Seller')}
-                        </span>
-                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/70">Lv {Math.max(1, Math.floor((vendor.completedTrades || 0) / 5) + 1)}</span>
-                      </div>
-                    </div>
+            {/* Floating top ribbon */}
+            <div className="absolute left-1/2 top-0 z-10 w-full max-w-md -translate-x-1/2 px-4" style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' } : { paddingTop: '0.75rem' }}>
+              <div className={`flex items-center gap-3 rounded-2xl border border-white/15 bg-black/55 px-3 py-2.5 backdrop-blur-xl ${theme.glow}`}>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-white">{framePerson?.displayName || 'Awaiting Trader'}</p>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className={`rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${theme.accent}`}>
+                      {iAmSeller ? 'Your Booth' : String(vendor?.tradeRole || 'Seller') === 'both' ? 'Buyer & Seller' : 'Seller'}
+                    </span>
+                    <span className="rounded-full bg-[#10B981]/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#10B981]">Room Live</span>
                   </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTradeNightBooth(false)}
+                  aria-label="Leave trade floor"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white hover:bg-white/20"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-4 w-4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" /></svg>
+                </button>
+              </div>
+            </div>
 
-                  <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">Vendor Binder</p>
-                  <div className="mt-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {(vendor.binder || []).length === 0 ? (
-                      <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-4 text-xs text-white/50">This vendor hasn't opened their binder yet.</p>
+            {/* Binder + actions over the glass counter (lower section) */}
+            <div className="absolute inset-x-0 bottom-0 z-10 px-4" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+              <div className="mx-auto w-full max-w-md">
+                <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-white/70">{iAmSeller ? 'Your Binder' : 'Vendor Binder'}</p>
+                <div className="mt-1.5 flex gap-2 overflow-x-auto rounded-2xl border border-white/15 bg-black/45 p-2.5 backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {(() => {
+                    const binderCards = iAmSeller ? myCollection : (vendor?.binder || []);
+                    return binderCards.length === 0 ? (
+                      <p className="px-2 py-5 text-xs text-white/60">{iAmSeller ? 'Your binder is empty.' : "This vendor hasn't opened their binder yet."}</p>
                     ) : (
-                      vendor.binder.map((card) => (
-                        <div key={card.id} className="w-[92px] shrink-0 overflow-hidden rounded-xl border border-white/15 bg-black/40">
-                          {card.imageUrl ? <img src={card.imageUrl} alt={card.title || 'Card'} className="h-24 w-full object-cover" /> : <div className="flex h-24 items-center justify-center text-2xl">🃏</div>}
-                          <p className="truncate px-1.5 py-1 text-[10px] text-white/80">{card.title || card.name}</p>
+                      binderCards.map((card) => (
+                        <div key={card.id} className="w-[84px] shrink-0 overflow-hidden rounded-lg border border-white/15 bg-black/50">
+                          {card.imageUrl ? <img src={card.imageUrl} alt={card.title || card.name || 'Card'} className="h-20 w-full object-cover" /> : <div className="flex h-20 items-center justify-center text-xl">🃏</div>}
+                          <p className="truncate px-1.5 py-1 text-[10px] text-white/85">{card.title || card.name}</p>
                         </div>
                       ))
-                    )}
-                  </div>
+                    );
+                  })()}
+                </div>
 
+                {!iAmSeller && vendor && (
                   <button
                     type="button"
                     onClick={() => { setShowTradeNightBooth(false); setShowTradeOfferModal(true); }}
-                    className="mt-4 w-full rounded-xl bg-[#10B981] py-3 text-sm font-bold text-black hover:bg-emerald-400"
+                    className="mt-2.5 w-full rounded-xl bg-[#10B981] py-3 text-sm font-bold text-black shadow-lg hover:bg-emerald-400"
                   >
                     Propose Trade
                   </button>
-                </div>
-              ) : (
-                <p className="mx-auto mt-16 max-w-xs rounded-2xl border border-white/10 bg-black/30 p-6 text-center text-sm text-white/60">No vendors are on the floor yet. Be the first to open a booth.</p>
-              )}
-            </div>
+                )}
 
-            <div className="border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-xl" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-              <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => setBoothVendorIndex((i) => Math.max(0, i - 1))}
-                  disabled={boothVendorIndex <= 0}
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/15 disabled:opacity-40"
-                >
-                  ‹ Prev Vendor
-                </button>
-                <span className="text-[11px] font-semibold text-white/60">{vendors.length ? `${Math.min(boothVendorIndex + 1, vendors.length)} / ${vendors.length}` : '0 / 0'}</span>
-                <button
-                  type="button"
-                  onClick={() => setBoothVendorIndex((i) => Math.min(vendors.length - 1, i + 1))}
-                  disabled={boothVendorIndex >= vendors.length - 1}
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/15 disabled:opacity-40"
-                >
-                  Next Vendor ›
-                </button>
+                <div className="mt-2.5 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBoothVendorIndex((i) => Math.max(0, i - 1))}
+                    disabled={boothVendorIndex <= 0}
+                    className="rounded-lg border border-white/20 bg-black/50 px-3 py-2 text-xs font-bold text-white backdrop-blur hover:bg-black/70 disabled:opacity-40"
+                  >
+                    ‹ Prev Booth
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTradeNightBooth(false)}
+                    className="rounded-lg border border-[#EF4444]/40 bg-[#EF4444]/15 px-3 py-2 text-xs font-bold text-[#EF4444] backdrop-blur hover:bg-[#EF4444]/25"
+                  >
+                    Leave Event
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBoothVendorIndex((i) => Math.min(vendors.length - 1, i + 1))}
+                    disabled={boothVendorIndex >= vendors.length - 1}
+                    className="rounded-lg border border-white/20 bg-black/50 px-3 py-2 text-xs font-bold text-white backdrop-blur hover:bg-black/70 disabled:opacity-40"
+                  >
+                    Next Booth ›
+                  </button>
+                </div>
               </div>
             </div>
           </div>
