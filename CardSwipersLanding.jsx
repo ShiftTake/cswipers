@@ -2626,7 +2626,10 @@ export default function CardSwipersLanding() {
               name: card.name,
               brand: card.brand,
               condition: card.condition,
-              imageUrl: card.imageUrl
+              imageUrl: card.imageUrl,
+              tradeValue: card.tradeValue,
+              value: card.tradeValue,
+              avgMarketValue: card.avgMarketValue
             }));
             return [...uploaded, ...localCards];
           });
