@@ -68,6 +68,10 @@
         "function": "resolveCardAuthentication"
       },
       {
+        "source": "/api/clubs/resolve-trade-authentication",
+        "function": "resolveTradeAuthentication"
+      },
+      {
         "source": "/api/escrow/release-trade",
         "function": "releaseTradeEscrow"
       },

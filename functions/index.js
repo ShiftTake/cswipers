@@ -357,8 +357,67 @@ async function createShippoTracker(carrier, trackingNumber) {
   return payload;
 }
 
-function extractShippoDestinationZip(shippoTracker) {
-  return String(
+function normalizeAddressForShippo(address = {}, fallback = {}) {
+  return {
+    name: String(address.name || fallback.name || 'CardSwipers Trader').trim(),
+    street1: String(address.street || address.line1 || address.street1 || '').trim(),
+    city: String(address.city || '').trim(),
+    state: String(address.state || '').trim().toUpperCase(),
+    zip: String(address.zip || address.postal_code || '').trim(),
+    country: String(address.country || 'US').trim().toUpperCase(),
+    email: String(address.email || fallback.email || '').trim()
+  };
+}
+
+function isShippoAddressValid(address) {
+  return Boolean(address && address.street1 && address.city && address.state && address.zip);
+}
+
+async function createShippingLabel({ fromAddress, toAddress, parcel, reference }) {
+  const apiKey = shippoApiKey.value() || process.env.SHIPPO_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing SHIPPO_API_KEY secret.');
+  }
+  if (!isShippoAddressValid(fromAddress) || !isShippoAddressValid(toAddress)) {
+    throw new Error('A complete sender and recipient address is required to create a shipping label.');
+  }
+
+  const shipmentResponse = await fetch('https://api.goshippo.com/shipments/', {
+    method: 'POST',
+    headers: { Authorization: `ShippoToken ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      address_from: fromAddress,
+      address_to: toAddress,
+      parcels: [parcel || { length: '8', width: '6', height: '2', distance_unit: 'in', weight: '0.5', mass_unit: 'lb' }],
+      async: false
+    })
+  });
+  const shipment = await shipmentResponse.json();
+  if (!shipmentResponse.ok || !Array.isArray(shipment.rates) || shipment.rates.length === 0) {
+    throw new Error(shipment?.detail || 'No shipping rates available for these addresses.');
+  }
+
+  const cheapest = [...shipment.rates].sort((a, b) => Number(a.amount) - Number(b.amount))[0];
+  const txResponse = await fetch('https://api.goshippo.com/transactions/', {
+    method: 'POST',
+    headers: { Authorization: `ShippoToken ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rate: cheapest.object_id, label_file_type: 'PDF', async: false, metadata: reference || '' })
+  });
+  const tx = await txResponse.json();
+  if (!txResponse.ok || String(tx.status || '').toUpperCase() !== 'SUCCESS') {
+    throw new Error(tx?.detail || 'Label purchase failed.');
+  }
+
+  return {
+    labelUrl: tx.label_url || null,
+    trackingNumber: tx.tracking_number || null,
+    trackingUrl: tx.tracking_url_provider || null,
+    carrier: cheapest.provider || null,
+    rate: cheapest.amount || null
+  };
+}
+
+function extractShippoDestinationZip(shippoTracker) {  return String(
     shippoTracker?.address_to?.zip ||
       shippoTracker?.address_to?.postal_code ||
       shippoTracker?.destination_zip ||
@@ -1745,6 +1804,108 @@ exports.resolveCardAuthentication = onRequest(async (req, res) => {
   } catch (error) {
     console.error('resolveCardAuthentication failed:', error);
     return sendJson(res, 400, { error: error.message || 'Unable to resolve card authentication.' });
+  }
+});
+
+// Trade-level authentication resolution (Owner / Super Agent verifier action).
+// decision 'approve' -> VERIFIED_FORWARDING + forward label + seller payout.
+// decision 'reject'  -> REJECTED_RETURNING + return label + buyer refund + notifications.
+exports.resolveTradeAuthentication = onRequest({ secrets: [stripeSecret, shippoApiKey] }, async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const verifier = await requireVerifierOrAdmin(req);
+    const offerId = String(req.body?.offerId || '').trim();
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    const reason = String(req.body?.reason || '').trim();
+    if (!offerId) throw new Error('offerId is required.');
+    if (!['approve', 'reject'].includes(decision)) throw new Error('decision must be approve or reject.');
+    if (decision === 'reject' && !reason) throw new Error('A rejection reason is required.');
+
+    const firestore = getDb();
+    const offerRef = firestore.collection('offers').doc(offerId);
+    const offerSnap = await offerRef.get();
+    if (!offerSnap.exists) throw new Error('Trade not found.');
+    const offer = offerSnap.data();
+    if (String(offer.status || '').toUpperCase() !== 'AWAITING_VERIFICATION') {
+      throw new Error('This trade is not awaiting verification.');
+    }
+
+    const orderId = String(offer.orderId || offer.order_id || '').trim();
+    const sellerUid = offer.sellerUid || offer.sellerId || null;
+    const buyerUid = offer.buyerUid || offer.buyerId || null;
+    const [sellerProfile, buyerProfile] = await Promise.all([getUserProfile(sellerUid), getUserProfile(buyerUid)]);
+
+    // Verifier's own address is the return origin for rejected shipments.
+    const verifierAddress = normalizeAddressForShippo(verifier.uid ? (await getUserProfile(verifier.uid))?.shippingAddress : {}, { name: verifier.name, email: verifier.email });
+
+    if (decision === 'approve') {
+      let forwardLabel = null;
+      const buyerAddress = normalizeAddressForShippo(buyerProfile?.shippingAddress, { name: buyerProfile?.displayName, email: buyerProfile?.email });
+      if (isShippoAddressValid(verifierAddress) && isShippoAddressValid(buyerAddress)) {
+        forwardLabel = await createShippingLabel({ fromAddress: verifierAddress, toAddress: buyerAddress, reference: `auth-forward-${offerId}` });
+      }
+
+      let payout = null;
+      if (orderId) {
+        try {
+          payout = await releaseFundsForOrder(orderId, undefined, { actor: verifier.uid, resolution: 'authentication_approved' });
+        } catch (payoutError) {
+          console.error('resolveTradeAuthentication payout failed:', payoutError);
+        }
+      }
+
+      await offerRef.set({
+        status: 'VERIFIED_FORWARDING',
+        verificationStatus: 'verified',
+        verifiedByUid: verifier.uid,
+        verifiedAt: serverTimestamp(),
+        forwardLabel,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      await notifyUser(sellerUid, 'authentication_passed', 'Your card passed authentication. It is being forwarded to the buyer and your payout has been released.', { offerId });
+      await notifyUser(buyerUid, 'authentication_passed', 'Your purchase passed authentication and is on its way to you.', { offerId });
+
+      return sendJson(res, 200, { ok: true, offerId, decision, forwardLabel, payoutReleased: Boolean(payout) });
+    }
+
+    // Reject path.
+    let returnLabel = null;
+    const sellerAddress = normalizeAddressForShippo(sellerProfile?.shippingAddress, { name: sellerProfile?.displayName, email: sellerProfile?.email });
+    if (isShippoAddressValid(verifierAddress) && isShippoAddressValid(sellerAddress)) {
+      returnLabel = await createShippingLabel({ fromAddress: verifierAddress, toAddress: sellerAddress, reference: `auth-return-${offerId}` });
+    }
+
+    let refund = null;
+    if (orderId) {
+      try {
+        refund = await refundBuyerForOrder(orderId, { actor: verifier.uid, resolution: 'authentication_rejected' });
+      } catch (refundError) {
+        console.error('resolveTradeAuthentication refund failed:', refundError);
+      }
+    }
+
+    await offerRef.set({
+      status: 'REJECTED_RETURNING',
+      verificationStatus: 'rejected',
+      verifiedByUid: verifier.uid,
+      verifiedAt: serverTimestamp(),
+      rejectionReason: reason,
+      returnLabel,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    await notifyUser(sellerUid, 'authentication_rejected', `Your card failed authentication (${reason}). It is being returned to you.`, { offerId, reason });
+    await notifyUser(buyerUid, 'authentication_refunded', `Your purchase failed authentication (${reason}). Your escrowed funds have been refunded.`, { offerId, reason });
+
+    return sendJson(res, 200, { ok: true, offerId, decision, returnLabel, refundIssued: Boolean(refund) });
+  } catch (error) {
+    console.error('resolveTradeAuthentication failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to resolve trade authentication.' });
   }
 });
 

@@ -296,6 +296,51 @@ function OfferCountdown({ offer, clubLobbyTick }) {
   );
 }
 
+function AuthQueueRow({ offer, busy, onApprove, onReject }) {
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const REASONS = ['Damaged', 'Fake', 'Mismatched Grade'];
+  const value = parseDollarValue(offer.tradeValue || offer.cashAmount || offer.amount || 0);
+  const receivedAt = toDateValue(offer.receivedAt || offer.updatedAt || offer.createdAt);
+  return (
+    <div className="space-y-2.5 rounded-2xl border border-white/10 bg-zinc-900 p-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-white">{offer.cardTitle || offer.title || 'Untitled Card'}</p>
+          <p className="text-[11px] text-white/50">Claimed value {formatMoney(value)}</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">Awaiting Verification</span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-white/60">
+        <span className="min-w-0 truncate">Seller: <span className="text-white/85">{offer.sellerName || offer.sellerUid || '—'}</span></span>
+        <span className="min-w-0 truncate">Buyer: <span className="text-white/85">{offer.buyerName || offer.buyerUid || '—'}</span></span>
+        <span className="min-w-0 truncate">Tracking #: <span className="font-mono text-white/85">{offer.inboundTracking || offer.trackingNumber || '—'}</span></span>
+        <span className="min-w-0 truncate">Received: <span className="text-white/85">{receivedAt ? receivedAt.toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—'}</span></span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy} onClick={onApprove} className="rounded-lg bg-[#10B981] px-3 py-1.5 text-xs font-bold text-black hover:bg-emerald-400 disabled:opacity-50">
+          {busy ? 'Working...' : 'Approve & Forward'}
+        </button>
+        <button type="button" disabled={busy} onClick={() => setRejectOpen((v) => !v)} className="rounded-lg bg-[#EF4444]/80 px-3 py-1.5 text-xs font-bold text-white hover:bg-[#EF4444] disabled:opacity-50">
+          Reject & Return
+        </button>
+      </div>
+      {rejectOpen && (
+        <div className="space-y-2 border-t border-white/10 pt-2">
+          <div className="flex flex-wrap gap-1.5">
+            {REASONS.map((r) => (
+              <button key={r} type="button" onClick={() => setReason(r)} className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${reason === r ? 'border-[#EF4444] bg-[#EF4444]/15 text-[#EF4444]' : 'border-white/15 bg-white/5 text-white/60'}`}>{r}</button>
+            ))}
+          </div>
+          <button type="button" disabled={!reason || busy} onClick={() => { onReject(reason); setRejectOpen(false); }} className="w-full rounded-lg bg-[#EF4444] px-3 py-2 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-50">
+            Confirm Reject & Return
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback }) {  const [side, setSide] = useState('front');
   const canFlip = Boolean(backImageUrl && backImageUrl !== frontImageUrl);
   const toggle = () => canFlip && setSide((previous) => (previous === 'front' ? 'back' : 'front'));
@@ -844,6 +889,18 @@ const resolveTradeNightTheme = (event = {}) => {
 
 const TRADE_OFFER_TTL_MS = 90 * 1000;
 
+// A shipping address is valid when it has a street, city, state, and zip.
+const hasValidShippingAddress = (address) => {
+  if (!address) return false;
+  const street = String(address.street || address.line1 || '').trim();
+  const city = String(address.city || '').trim();
+  const state = String(address.state || '').trim();
+  const zip = String(address.zip || address.postal_code || '').trim();
+  return Boolean(street && city && state && zip);
+};
+
+const AUTH_QUEUE_MIN_VALUE = 200;
+
 const formatMoney = (value) => {
   const amount = Number(value || 0);
   return new Intl.NumberFormat('en-US', {
@@ -1246,6 +1303,9 @@ export default function CardSwipersLanding() {
   const [selectedClubPosts, setSelectedClubPosts] = useState([]);
   const [selectedClubReports, setSelectedClubReports] = useState([]);
   const [selectedClubLedgers, setSelectedClubLedgers] = useState([]);
+  const [authQueueItems, setAuthQueueItems] = useState([]);
+  const [authQueueBusyId, setAuthQueueBusyId] = useState('');
+  const [showAuthQueuePanel, setShowAuthQueuePanel] = useState(false);
   const [clubFinancesTimeframe, setClubFinancesTimeframe] = useState('1M');
   const [showClubActionHub, setShowClubActionHub] = useState(false);
   const [clubLobbyTick, setClubLobbyTick] = useState(() => Date.now());
@@ -2534,6 +2594,27 @@ export default function CardSwipersLanding() {
       setSelectedClubLedgers([]);
     }
 
+    // Inbound Card Authentication Queue: trades awaiting verification for clubs
+    // the current user verifies (owner / super_agent). Cross-club via collectionGroup.
+    let unsubAuthQueue = () => {};
+    if (firebaseUser?.uid && (isClubSeniorRole(selectedClubRole) || hasAdminAccess)) {
+      const authQuery = query(collection(db, 'offers'), where('status', '==', 'AWAITING_VERIFICATION'), limit(200));
+      unsubAuthQueue = onSnapshot(
+        authQuery,
+        (snapshot) => {
+          setAuthQueueItems(snapshot.docs
+            .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            .filter((offer) => parseDollarValue(offer.tradeValue || offer.cashAmount || offer.amount || 0) >= AUTH_QUEUE_MIN_VALUE));
+        },
+        (error) => {
+          console.error('Failed loading authentication queue:', error);
+          setAuthQueueItems([]);
+        }
+      );
+    } else {
+      setAuthQueueItems([]);
+    }
+
     let unsubBan = () => {};
     if (firebaseUser?.uid) {
       unsubBan = onSnapshot(
@@ -2555,6 +2636,7 @@ export default function CardSwipersLanding() {
       unsubPosts();
       unsubReports();
       unsubLedgers();
+      unsubAuthQueue();
       unsubBan();
     };
   }, [selectedClubId, firebaseUser, canModerateClubPosts, selectedClubMembership?.uid, selectedClubMembership?.status, hasAdminAccess]);
@@ -5291,8 +5373,50 @@ export default function CardSwipersLanding() {
     setShowTradeNightForm(true);
   };
 
+  const handleResolveTradeAuth = async (offer, decision, reason = '') => {
+    if (!firebaseUser || !offer?.id || authQueueBusyId) return;
+    if (decision === 'reject' && !String(reason || '').trim()) {
+      setClubError('Select a rejection reason before rejecting.');
+      return;
+    }
+    setAuthQueueBusyId(offer.id);
+    setClubError('');
+    setClubInfo('');
+    try {
+      const response = await fetch('/api/clubs/resolve-trade-authentication', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({ offerId: offer.id, decision, reason: String(reason || '').trim() })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Could not resolve authentication.');
+      }
+      setClubInfo(decision === 'approve' ? 'Card approved. Forwarding label created and seller payout released.' : 'Card rejected. Return label created and buyer refunded.');
+    } catch (error) {
+      console.error('Failed resolving trade authentication:', error);
+      setClubError(error.message || 'Could not resolve authentication right now.');
+    } finally {
+      setAuthQueueBusyId('');
+    }
+  };
+
   const handleCreateTradeNight = async () => {
     if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubEventBusyId) return;
+
+    // Verifier address lock: Owners/Super Agents must have a shipping address on file
+    // to host Trade Nights (they receive authentication shipments).
+    if (isClubSeniorRole(selectedClubRole) && !hasValidShippingAddress(currentUserProfile?.shippingAddress)) {
+      setClubError('A verified shipping address is required to host Trade Nights and receive authentication shipments.');
+      addNotification({
+        title: 'Shipping address required',
+        message: 'A verified shipping address is required to host Trade Nights and receive authentication shipments.'
+      });
+      return;
+    }
 
     const title = tradeNightDraft.title.trim() || 'Trade Night';
     const scheduledFor = tradeNightDraft.scheduledFor ? new Date(tradeNightDraft.scheduledFor) : null;
@@ -9956,6 +10080,7 @@ export default function CardSwipersLanding() {
                 { id: 'members', label: 'Member Management', detail: `${selectedClubMembers.length} members`, isNew: selectedClubJoinRequests.length > 0, onClick: () => { setShowClubAdminView(false); setShowClubMembersView(true); } },
                 { id: 'agents', label: 'Agent Management', detail: `${selectedClubMembers.filter((member) => member.role === 'agent').length} agents`, isNew: false, onClick: () => { setShowClubAdminView(false); setClubMemberRoleFilter('agent'); setShowClubMembersView(true); } },
                 { id: 'events', label: 'Scheduled Trade Nights', detail: `${selectedClubEvents.length} scheduled`, isNew: false, onClick: () => { setShowClubAdminView(false); handleCreateTradeNight(); } },
+                { id: 'auth-queue', label: 'Card Authentication Queue', detail: `${authQueueItems.length} awaiting verification`, isNew: authQueueItems.length > 0, onClick: () => setShowAuthQueuePanel(true) },
                 { id: 'reports', label: 'Moderation Reports', detail: `${openSelectedClubReports.length} open`, isNew: openSelectedClubReports.length > 0, onClick: () => setShowClubAdminView(false) }
               ].map((item, index) => (
                 <button
@@ -9979,6 +10104,42 @@ export default function CardSwipersLanding() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showAuthQueuePanel && selectedClub && (
+        <div className="fixed inset-0 z-[72] flex flex-col bg-black" role="dialog" aria-modal="true" aria-labelledby="auth-queue-title">
+          <div
+            className="flex items-center gap-3 border-b border-white/10 px-4 py-3"
+            style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' } : undefined}
+          >
+            <button
+              type="button"
+              onClick={() => setShowAuthQueuePanel(false)}
+              aria-label="Back to club admin"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+            <h3 id="auth-queue-title" className="flex-1 text-center text-base font-black text-white">Card Authentication Queue</h3>
+            <span className="h-10 w-10" />
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3">
+            {authQueueItems.length === 0 ? (
+              <p className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-white/60">No trades are awaiting verification. Inbound cards valued at ${AUTH_QUEUE_MIN_VALUE}+ will appear here.</p>
+            ) : (
+              authQueueItems.map((offer) => (
+                <AuthQueueRow
+                  key={offer.id}
+                  offer={offer}
+                  busy={authQueueBusyId === offer.id}
+                  onApprove={() => handleResolveTradeAuth(offer, 'approve')}
+                  onReject={(reason) => handleResolveTradeAuth(offer, 'reject', reason)}
+                />
+              ))
+            )}
           </div>
         </div>
       )}
