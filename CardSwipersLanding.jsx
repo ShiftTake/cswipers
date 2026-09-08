@@ -261,8 +261,38 @@ function StatusPill({ label, status = 'pending', tone = 'neutral' }) {
   );
 }
 
-function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback }) {
-  const [side, setSide] = useState('front');
+function OfferCountdown({ offer, clubLobbyTick }) {
+  // Only live for pending offers that carry an expiry timestamp.
+  if (String(offer?.status || '').toLowerCase() !== 'pending') return null;
+  const expiryMs = offer?.expiresAt?.toMillis?.() || toDateValue(offer?.expiresAt)?.getTime() || 0;
+  if (!expiryMs) return null;
+  const remaining = Math.max(0, expiryMs - (clubLobbyTick || Date.now()));
+  const total = TRADE_OFFER_TTL_MS;
+  const ratio = Math.max(0, Math.min(1, remaining / total));
+  const secs = Math.ceil(remaining / 1000);
+  const mm = Math.floor(secs / 60);
+  const ss = String(secs % 60).padStart(2, '0');
+  const expired = remaining <= 0;
+  const R = 9;
+  const CIRC = 2 * Math.PI * R;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold ${expired ? 'border-rose-400/50 bg-rose-500/15 text-rose-300' : 'border-amber-400/40 bg-amber-500/10 text-amber-300'}`}>
+      {expired ? (
+        'EXPIRED'
+      ) : (
+        <>
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 -rotate-90" aria-hidden="true">
+            <circle cx="12" cy="12" r={R} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
+            <circle cx="12" cy="12" r={R} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - ratio)} />
+          </svg>
+          {mm}:{ss}
+        </>
+      )}
+    </span>
+  );
+}
+
+function CardFlipImage({ frontImageUrl, backImageUrl, title, fallback }) {  const [side, setSide] = useState('front');
   const canFlip = Boolean(backImageUrl && backImageUrl !== frontImageUrl);
   const toggle = () => canFlip && setSide((previous) => (previous === 'front' ? 'back' : 'front'));
   return (
@@ -754,6 +784,57 @@ const getClubAccessMode = (clubData = {}) => {
 
 const normalizeStateCode = (value) => String(value || '').trim().toUpperCase().slice(0, 2);
 
+// Trade Night room themes keyed by category / value tier.
+const TRADE_NIGHT_THEMES = {
+  grail: {
+    label: 'Grail Vault',
+    backdrop: 'bg-[radial-gradient(circle_at_50%_0%,rgba(212,175,55,0.28),transparent_55%),linear-gradient(180deg,#1a1508_0%,#0a0805_100%)]',
+    booth: 'border-[#d4af37]/50 bg-gradient-to-b from-[#2a2110] to-[#12100a]',
+    accent: 'text-[#f5d67b]',
+    glow: 'shadow-[0_0_60px_rgba(212,175,55,0.25)]'
+  },
+  basketball: {
+    label: 'Courtside Booth',
+    backdrop: 'bg-[radial-gradient(circle_at_50%_-10%,rgba(249,115,22,0.25),transparent_50%),linear-gradient(180deg,#1c1108_0%,#0a0605_100%)]',
+    booth: 'border-orange-500/40 bg-gradient-to-b from-[#241204] to-[#0e0704]',
+    accent: 'text-orange-400',
+    glow: 'shadow-[0_0_60px_rgba(249,115,22,0.22)]'
+  },
+  football: {
+    label: 'Stadium Lounge',
+    backdrop: 'bg-[radial-gradient(circle_at_50%_-10%,rgba(34,197,94,0.22),transparent_50%),linear-gradient(180deg,#0b1a10_0%,#050a07_100%)]',
+    booth: 'border-emerald-600/40 bg-gradient-to-b from-[#0c2416] to-[#050f09]',
+    accent: 'text-emerald-400',
+    glow: 'shadow-[0_0_60px_rgba(34,197,94,0.2)]'
+  },
+  tcg: {
+    label: 'Holo Arena',
+    backdrop: 'bg-[radial-gradient(circle_at_30%_0%,rgba(168,85,247,0.28),transparent_50%),radial-gradient(circle_at_75%_10%,rgba(59,130,246,0.25),transparent_45%),linear-gradient(180deg,#150a24_0%,#08050f_100%)]',
+    booth: 'border-purple-500/40 bg-gradient-to-b from-[#1d1030] to-[#0c0716]',
+    accent: 'text-purple-300',
+    glow: 'shadow-[0_0_60px_rgba(168,85,247,0.28)]'
+  },
+  standard: {
+    label: 'Card Shop Counter',
+    backdrop: 'bg-[radial-gradient(circle_at_50%_0%,rgba(148,163,184,0.14),transparent_55%),linear-gradient(180deg,#101216_0%,#060708_100%)]',
+    booth: 'border-white/15 bg-gradient-to-b from-[#17191d] to-[#0b0c0e]',
+    accent: 'text-slate-300',
+    glow: 'shadow-[0_0_40px_rgba(148,163,184,0.12)]'
+  }
+};
+
+const resolveTradeNightTheme = (event = {}) => {
+  const minValue = Number(event.minCardValue || 0);
+  if (minValue >= 1000) return TRADE_NIGHT_THEMES.grail;
+  const categories = (Array.isArray(event.categories) ? event.categories : []).map((c) => String(c).toLowerCase());
+  if (categories.some((c) => c.includes('pok') || c.includes('magic') || c.includes('tcg'))) return TRADE_NIGHT_THEMES.tcg;
+  if (categories.some((c) => c.includes('basketball'))) return TRADE_NIGHT_THEMES.basketball;
+  if (categories.some((c) => c.includes('football'))) return TRADE_NIGHT_THEMES.football;
+  return TRADE_NIGHT_THEMES.standard;
+};
+
+const TRADE_OFFER_TTL_MS = 90 * 1000;
+
 const formatMoney = (value) => {
   const amount = Number(value || 0);
   return new Intl.NumberFormat('en-US', {
@@ -1172,9 +1253,13 @@ export default function CardSwipersLanding() {
   const [showTradeNightForm, setShowTradeNightForm] = useState(false);
   const [activeTradeNightId, setActiveTradeNightId] = useState('');
   const [tradeNightRegistrations, setTradeNightRegistrations] = useState([]);
+  const [showTradeNightBooth, setShowTradeNightBooth] = useState(false);
+  const [boothVendorIndex, setBoothVendorIndex] = useState(0);
+  const [rolePromptEvent, setRolePromptEvent] = useState(null);
   const [tradeNightDraft, setTradeNightDraft] = useState({
     title: '',
     maxTraders: 'unlimited',
+    maxSellers: 8,
     passcode: '',
     scheduledFor: '',
     categories: [],
@@ -1292,6 +1377,7 @@ export default function CardSwipersLanding() {
   const canManageTraders = isClubSeniorRole(selectedClubRole) || hasAdminAccess;
   const isSelectedClubBanned = Boolean(selectedClubBanRecord);
   const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
+  const activeTradeNight = selectedClubEvents.find((event) => event.id === activeTradeNightId) || null;
   const clubActivityFeed = [
     ...selectedClubLedgers.map((entry) => ({
       id: `ledger-${entry.id}`,
@@ -2231,9 +2317,32 @@ export default function CardSwipersLanding() {
     });
   }, [selectedClubId, activeTradeNightId, tradeNightRegistrations, clubLobbyTick, canModerateClubPosts]);
 
+  // Auto-expire pending trade offers once their 90s clock runs out, then stamp
+  // the recipient's pendingOfferAt so the 120s idle-kick check can fire.
+  const expiredOffersRef = useRef(new Set());
   useEffect(() => {
-    setClubNoticeDraft(selectedClub?.notice || '');
-  }, [selectedClubId, selectedClub?.notice]);
+    if (!firebaseUser) return undefined;
+    const now = clubLobbyTick || Date.now();
+    const allOffers = [...(pendingOfferOffers.selling || []), ...(pendingOfferOffers.buying || [])];
+    allOffers.forEach((offer) => {
+      if (String(offer.status || '').toLowerCase() !== 'pending') return;
+      const expiryMs = offer.expiresAt?.toMillis?.() || toDateValue(offer.expiresAt)?.getTime() || 0;
+      if (!expiryMs || now < expiryMs) return;
+      if (expiredOffersRef.current.has(offer.id)) return;
+      // Only the recipient marks it expired to avoid both sides writing.
+      if (offer.toUserId !== firebaseUser.uid) return;
+      expiredOffersRef.current.add(offer.id);
+      updateDoc(doc(db, 'offers', offer.id), {
+        status: 'expired',
+        expiredAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }).catch((error) => console.error('Failed expiring offer:', error));
+    });
+    return undefined;
+  }, [firebaseUser, clubLobbyTick, pendingOfferOffers]);
+
+  useEffect(() => {
+    setClubNoticeDraft(selectedClub?.notice || '');  }, [selectedClubId, selectedClub?.notice]);
 
   useEffect(() => {
     // Drives the live "closes in" countdown on trade-night lobby rows.
@@ -4355,6 +4464,7 @@ export default function CardSwipersLanding() {
         cashAmount: offerDealType === 'pure_trade' ? 0 : amount,
         currency: 'USD',
         status: 'pending',
+        expiresAt: new Date(Date.now() + TRADE_OFFER_TTL_MS),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -5203,6 +5313,7 @@ export default function CardSwipersLanding() {
         status: 'registration',
         format: 'mtt-trade-night',
         capLimit: tradeNightDraft.maxTraders === 'unlimited' ? 0 : Number(tradeNightDraft.maxTraders),
+        maxSellersCount: Math.max(0, Number(tradeNightDraft.maxSellers || 0)),
         passcode: tradeNightDraft.passcode.trim() || null,
         categories: tradeNightDraft.categories,
         minCardValue: Math.max(0, Number(tradeNightDraft.minCardValue || 0)),
@@ -5224,17 +5335,23 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleRegisterForTradeNight = async (event) => {
+  const handleRegisterForTradeNight = (event) => {
     if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
     if (!selectedClubMembership || isSelectedClubBanned) {
       setClubError('Join the club before registering for a trade night.');
       return;
     }
-
     if ((event.bannedUserIds || []).includes(firebaseUser.uid)) {
       setClubError('You have been banned from this Trade Night by a moderator and cannot re-enter.');
       return;
     }
+    // Open the role picker; registration completes in confirmTradeNightRegistration.
+    setRolePromptEvent(event);
+  };
+
+  const confirmTradeNightRegistration = async (role) => {
+    const event = rolePromptEvent;
+    if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
 
     let passcode = '';
     if (event.passcode) {
@@ -5258,13 +5375,14 @@ export default function CardSwipersLanding() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
-        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id, passcode })
+        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id, passcode, tradeRole: role })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload.error || 'Registration could not be completed.');
       }
-      setClubInfo(`Registered for ${event.title || 'Trade Night'}.`);
+      setClubInfo(`Registered for ${event.title || 'Trade Night'} as ${role === 'both' ? 'Buyer & Seller' : role}.`);
+      setRolePromptEvent(null);
     } catch (error) {
       console.error('Failed registering for trade night:', error);
       setClubError(error.message || 'Could not register for this trade night.');
@@ -8458,6 +8576,16 @@ export default function CardSwipersLanding() {
                                         ? 'Select Binder & Register'
                                         : String(event.status || 'closed')}
                                 </button>
+
+                                {isLive && selectedClubMembership && !isSelectedClubBanned && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setActiveTradeNightId(event.id); setBoothVendorIndex(0); setShowTradeNightBooth(true); }}
+                                    className="mt-2 w-full rounded-lg border border-[#10B981]/50 bg-[#10B981]/10 py-2 text-xs font-bold text-[#10B981] hover:bg-[#10B981]/20"
+                                  >
+                                    Enter Trade Floor →
+                                  </button>
+                                )}
                                 </div>
                               </div>
                             );
@@ -9277,6 +9405,7 @@ export default function CardSwipersLanding() {
                                 status={offer.status || 'pending'}
                                 tone={offer.status === 'accepted' ? 'success' : ['declined', 'rejected'].includes(offer.status) ? 'error' : 'warning'}
                               />
+                              <OfferCountdown offer={offer} clubLobbyTick={clubLobbyTick} />
                               <span className="text-[11px] text-white/65">{offer.createdAt?.toDate ? formatMessageTime(offer.createdAt) : ''}</span>
                             </div>
                             {Array.isArray(offer.cards) && offer.cards.length > 0 && (
@@ -9889,6 +10018,17 @@ export default function CardSwipersLanding() {
                   ))}
                 </div>
               </div>
+
+              <label className="block">
+                <span className="text-xs font-semibold text-white/70">Max Sellers <span className="text-white/40">(booth cap, 0 = unlimited)</span></span>
+                <input
+                  type="number"
+                  min="0"
+                  value={tradeNightDraft.maxSellers}
+                  onChange={(event) => setTradeNightDraft((prev) => ({ ...prev, maxSellers: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-white focus:border-[#10B981] focus:outline-none"
+                />
+              </label>
 
               <label className="block">
                 <span className="text-xs font-semibold text-white/70">Entry Passcode <span className="text-white/40">(optional)</span></span>
@@ -10880,6 +11020,141 @@ export default function CardSwipersLanding() {
           </div>
         </div>
       )}
+
+      {showTradeNightBooth && activeTradeNight && (() => {
+        const theme = resolveTradeNightTheme(activeTradeNight);
+        const sellers = tradeNightRegistrations.filter((r) => ['seller', 'both'].includes(String(r.tradeRole || 'both').toLowerCase()) && r.status !== 'away');
+        const vendors = sellers.length ? sellers : tradeNightRegistrations.filter((r) => r.status !== 'away');
+        const vendor = vendors[Math.min(boothVendorIndex, Math.max(0, vendors.length - 1))] || null;
+        return (
+          <div className={`fixed inset-0 z-[80] flex flex-col ${theme.backdrop}`} role="dialog" aria-modal="true" aria-label="Trade night booth">
+            <div
+              className="flex items-center gap-3 border-b border-white/10 px-4 py-3"
+              style={isNativeApp ? { paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' } : undefined}
+            >
+              <button
+                type="button"
+                onClick={() => setShowTradeNightBooth(false)}
+                aria-label="Leave trade floor"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white hover:bg-white/15"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </button>
+              <div className="flex-1 text-center">
+                <p className={`text-[10px] font-bold uppercase tracking-[0.25em] ${theme.accent}`}>{theme.label}</p>
+                <h3 className="text-base font-black text-white">{activeTradeNight.title || 'Trade Night'}</h3>
+              </div>
+              <span className="h-10 w-10" />
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+              {vendor ? (
+                <div className={`mx-auto w-full max-w-md rounded-3xl border ${theme.booth} ${theme.glow} p-5 transition-all`}>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-black/40 text-2xl font-black text-white">
+                      {(vendor.displayName || 'C')[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-lg font-black text-white">{vendor.displayName || 'Collector'}</p>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <span className={`rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${theme.accent}`}>
+                          {String(vendor.tradeRole || 'both') === 'both' ? 'Buyer & Seller' : String(vendor.tradeRole || 'Seller')}
+                        </span>
+                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/70">Lv {Math.max(1, Math.floor((vendor.completedTrades || 0) / 5) + 1)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">Vendor Binder</p>
+                  <div className="mt-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {(vendor.binder || []).length === 0 ? (
+                      <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-4 text-xs text-white/50">This vendor hasn't opened their binder yet.</p>
+                    ) : (
+                      vendor.binder.map((card) => (
+                        <div key={card.id} className="w-[92px] shrink-0 overflow-hidden rounded-xl border border-white/15 bg-black/40">
+                          {card.imageUrl ? <img src={card.imageUrl} alt={card.title || 'Card'} className="h-24 w-full object-cover" /> : <div className="flex h-24 items-center justify-center text-2xl">🃏</div>}
+                          <p className="truncate px-1.5 py-1 text-[10px] text-white/80">{card.title || card.name}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => { setShowTradeNightBooth(false); setShowTradeOfferModal(true); }}
+                    className="mt-4 w-full rounded-xl bg-[#10B981] py-3 text-sm font-bold text-black hover:bg-emerald-400"
+                  >
+                    Propose Trade
+                  </button>
+                </div>
+              ) : (
+                <p className="mx-auto mt-16 max-w-xs rounded-2xl border border-white/10 bg-black/30 p-6 text-center text-sm text-white/60">No vendors are on the floor yet. Be the first to open a booth.</p>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-xl" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+              <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBoothVendorIndex((i) => Math.max(0, i - 1))}
+                  disabled={boothVendorIndex <= 0}
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/15 disabled:opacity-40"
+                >
+                  ‹ Prev Vendor
+                </button>
+                <span className="text-[11px] font-semibold text-white/60">{vendors.length ? `${Math.min(boothVendorIndex + 1, vendors.length)} / ${vendors.length}` : '0 / 0'}</span>
+                <button
+                  type="button"
+                  onClick={() => setBoothVendorIndex((i) => Math.min(vendors.length - 1, i + 1))}
+                  disabled={boothVendorIndex >= vendors.length - 1}
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-white hover:bg-white/15 disabled:opacity-40"
+                >
+                  Next Vendor ›
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {rolePromptEvent && (() => {
+        const maxSellers = Number(rolePromptEvent.maxSellersCount || 0);
+        const sellerCount = tradeNightRegistrations.filter((r) => ['seller', 'both'].includes(String(r.tradeRole || '').toLowerCase())).length;
+        const sellersFull = maxSellers > 0 && sellerCount >= maxSellers;
+        return (
+          <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="trade-role-title">
+            <div className="w-full max-w-sm space-y-4 rounded-2xl border border-white/15 bg-zinc-950 p-5 text-white shadow-2xl">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-[#10B981]">Trade Night</p>
+                <h2 id="trade-role-title" className="mt-1 text-xl font-bold">Choose Your Role</h2>
+                <p className="mt-1 text-xs text-white/55">For {rolePromptEvent.title || 'this event'} only. Seller booths {maxSellers > 0 ? `(${Math.min(sellerCount, maxSellers)}/${maxSellers} filled)` : 'are unlimited'}.</p>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { value: 'buyer', label: 'Buyer Only', desc: 'Browse booths and make offers.' },
+                  { value: 'seller', label: 'Seller Only', desc: 'Run a booth and field offers.', disabled: sellersFull },
+                  { value: 'both', label: 'Buyer & Seller', desc: 'Run a booth and buy from others.', disabled: sellersFull }
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={opt.disabled || Boolean(clubEventBusyId)}
+                    onClick={() => confirmTradeNightRegistration(opt.value)}
+                    className="w-full rounded-xl border border-white/15 bg-zinc-900 p-3.5 text-left transition-colors hover:border-[#10B981]/60 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold">{opt.label}</span>
+                      {opt.disabled && <span className="text-[10px] font-bold uppercase text-amber-400">Full</span>}
+                    </div>
+                    <p className="mt-0.5 text-xs text-white/55">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={() => setRolePromptEvent(null)} className="w-full py-2 text-xs font-semibold text-white/60 hover:text-white">Cancel</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {showTradeOfferModal && activeChat && (
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="trade-offer-title">

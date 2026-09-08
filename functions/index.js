@@ -1470,6 +1470,21 @@ exports.registerTradeNight = onRequest(async (req, res) => {
       const capLimit = Number(event.capLimit || 0);
       if (capLimit > 0 && currentRegistrations >= capLimit) throw new Error('This trade night is full.');
 
+      // Role selection & seller cap enforcement.
+      const tradeRole = ['buyer', 'seller', 'both'].includes(String(req.body?.tradeRole || '').toLowerCase())
+        ? String(req.body.tradeRole).toLowerCase()
+        : 'both';
+      const wantsSeller = tradeRole === 'seller' || tradeRole === 'both';
+      const maxSellers = Number(event.maxSellersCount || 0);
+      if (wantsSeller && maxSellers > 0) {
+        const sellersSnap = await transaction.get(
+          eventRef.collection('registrations').where('tradeRole', 'in', ['seller', 'both'])
+        );
+        if (sellersSnap.size >= maxSellers) {
+          throw new Error('Seller booths are full for this trade night. You may still register as Buyer Only.');
+        }
+      }
+
       transaction.update(eventRef, {
         currentRegistrations: currentRegistrations + 1,
         updatedAt: serverTimestamp()
@@ -1478,10 +1493,11 @@ exports.registerTradeNight = onRequest(async (req, res) => {
         userId: user.uid,
         displayName: member.displayName || user.name || user.email || 'Collector',
         status: 'registered',
+        tradeRole,
         pendingOfferAt: null,
         registeredAt: serverTimestamp()
       });
-      return { registered: true };
+      return { registered: true, tradeRole };
     });
 
     return sendJson(res, 200, { ok: true, ...result });
