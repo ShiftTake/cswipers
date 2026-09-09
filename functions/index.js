@@ -33,9 +33,18 @@ const USERS_COLLECTION = 'users';
 const WEBHOOK_EVENTS_COLLECTION = 'webhookEvents';
 const DEFAULT_CURRENCY = 'usd';
 const PLATFORM_FEE_RATE = 0.05;
+const PLATFORM_FLAT_FEE_CENTS = 0;
 const STANDARD_SHIPPING_FEE_CENTS = 599;
 const INSURED_SHIPPING_FEE_CENTS = 1299;
 const INSURED_SHIPPING_THRESHOLD_CENTS = 25000;
+// Stripe's standard card processing cut, passed through to the buyer so the
+// platform never nets less than what it actually collects.
+const STRIPE_PROCESSING_FEE_RATE = 0.029;
+const STRIPE_PROCESSING_FEE_FLAT_CENTS = 30;
+// Verifier compensation + secondary (return/forward) label cost for trades
+// that require card authentication.
+const AUTH_HANDLING_FEE_CENTS = 1000;
+const AUTH_HANDLING_THRESHOLD_CENTS = 20000;
 const DISPUTE_WINDOW_MS = 72 * 60 * 60 * 1000;
 const TOS_VERSION = 'v1.1';
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
@@ -142,6 +151,10 @@ function buildTransferGroup(orderId) {
 
 function platformFeeCentsFromBase(baseAmountCents) {
   return Math.round(baseAmountCents * PLATFORM_FEE_RATE);
+}
+
+function calculateStripeProcessingFeeCents(amountCents) {
+  return Math.round(amountCents * STRIPE_PROCESSING_FEE_RATE) + STRIPE_PROCESSING_FEE_FLAT_CENTS;
 }
 
 function nowTimestamp() {
@@ -571,6 +584,8 @@ function buildOrderRecord({
   shippingFeeCents,
   serviceFeeCents,
   taxCents,
+  authHandlingFeeCents,
+  stripeProcessingFeeCents,
   totalPaidCents,
   sellerNetPayoutCents
 }) {
@@ -588,6 +603,8 @@ function buildOrderRecord({
     shipping_fee: shippingFeeCents,
     service_fee: serviceFeeCents,
     tax: taxCents,
+    auth_handling_fee: authHandlingFeeCents || 0,
+    stripe_processing_fee: stripeProcessingFeeCents || 0,
     total_paid: totalPaidCents,
     seller_net_payout: sellerNetPayoutCents,
     shipping_allowance: shippingFeeCents,
@@ -652,7 +669,14 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       : STANDARD_SHIPPING_FEE_CENTS;
     const serviceFeeCents = platformFeeCentsFromBase(baseAmountCents);
     const taxCents = 0;
-    const totalAmountCents = baseAmountCents + shippingFeeCents + serviceFeeCents + taxCents;
+    // authHandlingFee compensates the Verifier and covers secondary label
+    // generation whenever the trade requires authentication ($200+ card value).
+    const authHandlingFeeCents = baseAmountCents >= AUTH_HANDLING_THRESHOLD_CENTS ? AUTH_HANDLING_FEE_CENTS : 0;
+    const preProcessingSubtotalCents = baseAmountCents + shippingFeeCents + serviceFeeCents + taxCents + authHandlingFeeCents;
+    // Stripe's processing cut is charged on the full amount collected, so it is
+    // computed last and passed through in full to keep the platform self-sufficient.
+    const stripeProcessingFeeCents = calculateStripeProcessingFeeCents(preProcessingSubtotalCents);
+    const totalAmountCents = preProcessingSubtotalCents + stripeProcessingFeeCents;
     const sellerNetPayoutCents = baseAmountCents + shippingFeeCents - serviceFeeCents;
     const normalizedCurrency = normalizeCurrency(currency);
     const orderId = buildOrderId(requestedOrderId);
@@ -680,6 +704,8 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
         shippingFeeCents: String(shippingFeeCents),
         serviceFeeCents: String(serviceFeeCents),
         taxCents: String(taxCents),
+        authHandlingFeeCents: String(authHandlingFeeCents),
+        stripeProcessingFeeCents: String(stripeProcessingFeeCents),
         pricingModel: 'separate_charges_and_transfers'
       }
     });
@@ -708,6 +734,8 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       shippingFeeCents,
       serviceFeeCents,
       taxCents,
+      authHandlingFeeCents,
+      stripeProcessingFeeCents,
       totalPaidCents: totalAmountCents,
       sellerNetPayoutCents
     });
@@ -749,10 +777,8 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       serviceFee: (serviceFeeCents / 100).toFixed(2),
       percentageFee: ((baseAmountCents * PLATFORM_FEE_RATE) / 100).toFixed(2),
       flatFee: (Math.min(PLATFORM_FLAT_FEE_CENTS, serviceFeeCents) / 100).toFixed(2),
-      shippingFee: (shippingFeeCents / 100).toFixed(2),
-      tax: (taxCents / 100).toFixed(2),
-      totalPaid: (totalAmountCents / 100).toFixed(2),
-      sellerNetPayout: (sellerNetPayoutCents / 100).toFixed(2),
+      authHandlingFee: (authHandlingFeeCents / 100).toFixed(2),
+      stripeProcessingFee: (stripeProcessingFeeCents / 100).toFixed(2),
       currency: normalizedCurrency,
       status: 'pending_payment'
     });
@@ -1998,7 +2024,12 @@ exports.releaseTradeEscrow = onRequest({ secrets: [stripeSecret] }, async (req, 
       throw new Error('Escrow release is held until delivery confirmation or receipt verification.');
     }
 
-    const grossAmount = Number(order.amount_base || order.total_paid || 0);
+    // Rake basis is strictly the card price (amount_base). It must never fall
+    // back to total_paid, which also carries the buyer's shipping/platform/
+    // Stripe-processing/auth-handling fees that Owners and Super Agents don't
+    // share in.
+    const grossAmount = Number(order.amount_base || 0);
+    if (!grossAmount) throw new Error('Order is missing a base card price to split.');
     const clubId = String(order.club_id || order.clubId || '').trim();
     let club = null;
     let agent = null;
