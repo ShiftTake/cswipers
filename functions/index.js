@@ -73,6 +73,20 @@ function getStripeClient() {
   return stripeClient;
 }
 
+// Blocks any seller payout unless the destination Connect account exists,
+// has completed onboarding, and has an active transfers capability.
+async function assertSellerPayoutAccountReady(stripe, accountId) {
+  if (!String(accountId || '').startsWith('acct_')) {
+    throw new Error('Seller payout account is missing. Payout is blocked until the seller connects Stripe.');
+  }
+  const account = await stripe.accounts.retrieve(accountId);
+  const transfersActive = account?.capabilities?.transfers === 'active';
+  if (!account.details_submitted || !transfersActive) {
+    throw new Error('Seller payout account is unverified or incomplete. Payout is blocked until Stripe onboarding is finished.');
+  }
+  return account;
+}
+
 function assertMethod(req, methods) {
   if (req.method === 'OPTIONS') {
     return 'options';
@@ -485,11 +499,9 @@ async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadat
   }
 
   const connectedAccountId = String(connectedAccountIdOverride || order.seller_id || '').trim();
-  if (!connectedAccountId.startsWith('acct_')) {
-    throw new Error('Seller connected account is missing for this order.');
-  }
-
   const stripe = getStripeClient();
+  await assertSellerPayoutAccountReady(stripe, connectedAccountId);
+
   if (order.stripe_payment_intent_id) {
     const paymentIntent = await stripe.paymentIntents.retrieve(order.stripe_payment_intent_id);
     if (paymentIntent.status !== 'succeeded') {
@@ -1876,11 +1888,13 @@ exports.resolveTradeAuthentication = onRequest({ secrets: [stripeSecret, shippoA
       }
 
       let payout = null;
+      let payoutError = null;
       if (orderId) {
         try {
           payout = await releaseFundsForOrder(orderId, undefined, { actor: verifier.uid, resolution: 'authentication_approved' });
-        } catch (payoutError) {
-          console.error('resolveTradeAuthentication payout failed:', payoutError);
+        } catch (error) {
+          payoutError = error.message || 'Seller payout failed.';
+          console.error('resolveTradeAuthentication payout failed:', error);
         }
       }
 
@@ -1890,6 +1904,8 @@ exports.resolveTradeAuthentication = onRequest({ secrets: [stripeSecret, shippoA
         verifiedByUid: verifier.uid,
         verifiedAt: serverTimestamp(),
         forwardLabel,
+        payoutBlocked: Boolean(payoutError),
+        payoutBlockedReason: payoutError,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
@@ -1913,6 +1929,33 @@ exports.resolveTradeAuthentication = onRequest({ secrets: [stripeSecret, shippoA
       } catch (refundError) {
         console.error('resolveTradeAuthentication refund failed:', refundError);
       }
+    }
+
+    // Every rejection is a terminal cancel-and-refund, regardless of whether the
+    // Stripe refund call itself succeeded (e.g. no payment intent yet), so the
+    // order never remains stuck in an open escrow state.
+    if (orderId) {
+      await firestore.collection(ORDERS_COLLECTION).doc(orderId).set({
+        status: 'CANCELLED_REFUNDED',
+        payout_frozen: false,
+        dispute_resolution: 'authentication_rejected',
+        updated_at: serverTimestamp()
+      }, { merge: true });
+    }
+
+    // Release the card back to the seller's active inventory.
+    const cardId = String(offer.cardId || offer.listingId || '').trim();
+    if (cardId) {
+      await firestore.collection('cards').doc(cardId).set({
+        isLocked: false,
+        lockedForCheckout: false,
+        lockedByOfferId: null,
+        flaggedForReturn: true,
+        requiresAuthentication: true,
+        verificationStatus: 'rejected',
+        rejectionReason: reason,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
     }
 
     await offerRef.set({
@@ -1976,10 +2019,14 @@ function computeEscrowSplit(grossCents, club, agent) {
   return { grossAmount, rakePercent, agentFeePercent, totalRake, agentPayout, ownerPayout, sellerPayout };
 }
 
-async function createStripeTransfer(amountCents, destinationAccountId, transferGroup, metadata) {
+async function createStripeTransfer(amountCents, destinationAccountId, transferGroup, metadata, options = {}) {
   if (!amountCents || amountCents <= 0) return null;
-  if (!String(destinationAccountId || '').startsWith('acct_')) return null;
   const stripe = getStripeClient();
+  if (options.requireVerifiedAccount) {
+    await assertSellerPayoutAccountReady(stripe, destinationAccountId);
+  } else if (!String(destinationAccountId || '').startsWith('acct_')) {
+    return null;
+  }
   const transfer = await stripe.transfers.create({
     amount: amountCents,
     currency: DEFAULT_CURRENCY,
@@ -2057,7 +2104,8 @@ exports.releaseTradeEscrow = onRequest({ secrets: [stripeSecret] }, async (req, 
       split.sellerPayout,
       order.seller_id,
       order.transfer_group,
-      { orderId, resolution: 'escrow_seller', actor: admin.uid }
+      { orderId, resolution: 'escrow_seller', actor: admin.uid },
+      { requireVerifiedAccount: true }
     );
 
     if (split.ownerPayout > 0 && ownerUid) {
