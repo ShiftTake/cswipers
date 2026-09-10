@@ -39,6 +39,7 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Script, TextRecognition } from '@capacitor-mlkit/text-recognition';
 import { auth, db, storage } from './firebase';
 import { fetchCardMetadata, parseCardText, summarizeOcrLines } from './cardScanner';
+import { searchCards } from './cardDataService';
 import { createOffer, getUserOffers } from './offersService';
 import authHeroImage from './image (3).png';
 import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
@@ -1203,6 +1204,10 @@ export default function CardSwipersLanding() {
   const [postImageError, setPostImageError] = useState('');
   const [isPostingCard, setIsPostingCard] = useState(false);
   const [postComposerStep, setPostComposerStep] = useState(1);
+  const [cardSearchResults, setCardSearchResults] = useState([]);
+  const [cardSearchBusy, setCardSearchBusy] = useState(false);
+  const [cardSearchOpen, setCardSearchOpen] = useState(false);
+  const [selectedCardComps, setSelectedCardComps] = useState(null);
   const [postFrontImageFile, setPostFrontImageFile] = useState(null);
   const [postBackImageFile, setPostBackImageFile] = useState(null);
   const [postFrontImagePreview, setPostFrontImagePreview] = useState('');
@@ -3729,6 +3734,38 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const handleCardTitleSearch = (value) => {
+    setNewCard((prev) => ({ ...prev, title: value }));
+    setSelectedCardComps(null);
+    const trimmed = value.trim();
+    if (trimmed.length < 2) {
+      setCardSearchResults([]);
+      setCardSearchOpen(false);
+      return;
+    }
+    setCardSearchBusy(true);
+    setCardSearchOpen(true);
+    searchCards(trimmed, newCard.brand)
+      .then((results) => setCardSearchResults(results))
+      .catch((error) => {
+        console.error('Card pricing search failed:', error);
+        setCardSearchResults([]);
+      })
+      .finally(() => setCardSearchBusy(false));
+  };
+
+  const handleSelectCardResult = (result) => {
+    setNewCard((prev) => ({
+      ...prev,
+      title: result.title || prev.title,
+      brand: result.setName || prev.brand,
+      estimatedValue: result.comps?.raw != null ? String(result.comps.raw) : prev.estimatedValue
+    }));
+    setSelectedCardComps(result);
+    setCardSearchOpen(false);
+    setCardSearchResults([]);
+  };
+
   const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.title || isPostingCard) return;
@@ -3792,6 +3829,7 @@ export default function CardSwipersLanding() {
         sellerVerified: sellerVerificationProfileStatus === 'verified',
         sellerVerificationStatus: sellerVerificationProfileStatus,
         verifiedSellerBadge: sellerVerificationProfileStatus === 'verified',
+        requiresAuthentication: parseDollarValue(newCard.estimatedValue) >= AUTH_QUEUE_MIN_VALUE,
         listedAt: serverTimestamp(),
         imageFrontUrl: frontImageUrl,
         imageBackUrl: backImageUrl,
@@ -7804,13 +7842,60 @@ export default function CardSwipersLanding() {
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🪪 Card Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., 2018 Shohei Ohtani Rookie Card"
-                    value={newCard.title}
-                    onChange={(e) => setNewCard({ ...newCard, title: e.target.value })}
-                    className="w-full px-4 py-3 text-base font-semibold bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="e.g., 2018 Shohei Ohtani Rookie Card"
+                      value={newCard.title}
+                      onChange={(e) => handleCardTitleSearch(e.target.value)}
+                      onFocus={() => cardSearchResults.length > 0 && setCardSearchOpen(true)}
+                      autoComplete="off"
+                      className="w-full px-4 py-3 text-base font-semibold bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                    />
+                    {cardSearchOpen && (cardSearchBusy || cardSearchResults.length > 0) && (
+                      <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0F131C] shadow-xl">
+                        {cardSearchBusy ? (
+                          <p className="px-4 py-3 text-xs text-white/55">Searching pricing data...</p>
+                        ) : (
+                          cardSearchResults.map((result) => (
+                            <button
+                              key={result.id || result.title}
+                              type="button"
+                              onClick={() => handleSelectCardResult(result)}
+                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-white/5"
+                            >
+                              {result.imageUrl ? (
+                                <img src={result.imageUrl} alt="" className="h-10 w-8 rounded object-cover" />
+                              ) : (
+                                <span className="flex h-10 w-8 items-center justify-center rounded bg-white/10 text-xs">🃏</span>
+                              )}
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-white">{result.title}</span>
+                                <span className="block truncate text-[11px] text-white/50">{result.setName}</span>
+                              </span>
+                              {result.comps?.raw != null && (
+                                <span className="shrink-0 text-xs font-bold text-emerald-400">${result.comps.raw.toFixed(2)}</span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {selectedCardComps && (
+                    <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-[#1A2230] p-2.5">
+                      {[
+                        { label: 'Raw', value: selectedCardComps.comps?.raw },
+                        { label: 'PSA 9', value: selectedCardComps.comps?.psa9 },
+                        { label: 'PSA 10', value: selectedCardComps.comps?.psa10 }
+                      ].map((comp) => (
+                        <div key={comp.label} className="text-center">
+                          <p className="text-[10px] uppercase tracking-wider text-white/45">{comp.label}</p>
+                          <p className="text-sm font-bold text-white">{comp.value != null ? `$${comp.value.toFixed(2)}` : '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4">
@@ -7917,6 +8002,11 @@ export default function CardSwipersLanding() {
                     />
                     <span className="text-[11px] uppercase tracking-[0.16em] text-white/45">USD</span>
                   </div>
+                  {parseDollarValue(newCard.estimatedValue) >= AUTH_QUEUE_MIN_VALUE && (
+                    <p className="text-[11px] text-amber-300">
+                      Cards valued at ${AUTH_QUEUE_MIN_VALUE}+ require third-party authentication. A $10 auth handling fee applies at checkout.
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4">

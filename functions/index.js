@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const admin = require('firebase-admin');
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
@@ -25,6 +25,7 @@ const stripeSecret = defineSecret('STRIPE_SECRET_KEY');
 const stripeWebhookSecret = defineSecret('STRIPE_WEBHOOK_SECRET');
 const shippoApiKey = defineSecret('SHIPPO_API_KEY');
 const shippingWebhookSecret = defineSecret('SHIPPING_WEBHOOK_SECRET');
+const sportsCardApiKey = defineSecret('SPORTS_CARD_API_KEY');
 let stripeClient = null;
 
 const ORDERS_COLLECTION = 'orders';
@@ -2160,4 +2161,58 @@ exports.releaseTradeEscrow = onRequest({ secrets: [stripeSecret] }, async (req, 
     console.error('releaseTradeEscrow failed:', error);
     return sendJson(res, 400, { error: error.message || 'Unable to release trade escrow.' });
   }
+});
+
+const PRICE_CHARTING_API_BASE = 'https://www.pricecharting.com/api';
+
+function centsToDollars(value) {
+  const cents = Number(value);
+  return Number.isFinite(cents) && cents > 0 ? Math.round(cents) / 100 : null;
+}
+
+function normalizePriceChartingProduct(product) {
+  return {
+    id: product.id || null,
+    title: product['product-name'] || '',
+    setName: product['console-name'] || '',
+    imageUrl: product['image-url'] || (product.image ? `https://www.pricecharting.com${product.image}` : null),
+    comps: {
+      raw: centsToDollars(product['loose-price']),
+      psa9: centsToDollars(product['graded-price']),
+      psa10: centsToDollars(product['manual-only-price'])
+    }
+  };
+}
+
+// Searches PriceCharting for matching cards and returns normalized comp pricing
+// (loose/graded/manual-only converted from cents to dollars as raw/PSA 9/PSA 10).
+exports.fetchCardComps = onCall({ secrets: [sportsCardApiKey] }, async (request) => {
+  const query = String(request.data?.query || '').trim();
+  const category = String(request.data?.category || '').trim();
+  if (query.length < 2) {
+    throw new HttpsError('invalid-argument', 'A search query of at least 2 characters is required.');
+  }
+
+  const apiKey = sportsCardApiKey.value() || process.env.SPORTS_CARD_API_KEY;
+  if (!apiKey) {
+    throw new HttpsError('failed-precondition', 'Missing SPORTS_CARD_API_KEY secret.');
+  }
+
+  const searchTerm = category ? `${query} ${category}` : query;
+  const url = `${PRICE_CHARTING_API_BASE}/products?t=${encodeURIComponent(apiKey)}&q=${encodeURIComponent(searchTerm)}`;
+
+  let payload;
+  try {
+    const response = await fetch(url);
+    payload = await response.json();
+    if (!response.ok || payload?.status === 'error') {
+      throw new Error(payload?.error || `Pricing lookup failed with status ${response.status}.`);
+    }
+  } catch (error) {
+    console.error('fetchCardComps failed:', error);
+    throw new HttpsError('internal', error.message || 'Unable to fetch card pricing.');
+  }
+
+  const results = Array.isArray(payload?.products) ? payload.products.slice(0, 10).map(normalizePriceChartingProduct) : [];
+  return { results };
 });
