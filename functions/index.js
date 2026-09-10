@@ -4,6 +4,7 @@ const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https')
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
+const { sendEmail, sendgridApiKey, sendgridFromEmail } = require('./services/emailService');
 
 admin.initializeApp();
 
@@ -2161,6 +2162,17 @@ exports.releaseTradeEscrow = onRequest({ secrets: [stripeSecret] }, async (req, 
     console.error('releaseTradeEscrow failed:', error);
     return sendJson(res, 400, { error: error.message || 'Unable to release trade escrow.' });
   }
+});
+
+exports.testSendGridEmail = onCall({ secrets: [sendgridApiKey, sendgridFromEmail] }, async () => {
+  await sendEmail({
+    to: 'nathanjohns309@gmail.com',
+    from: 'nathanjohns309@gmail.com',
+    subject: 'Sending with SendGrid is Fun',
+    text: 'and easy to do anywhere, even with Node.js',
+    html: '<strong>and easy to do anywhere, even with Node.js</strong>'
+  });
+  return { ok: true, message: 'SendGrid test email sent.' };
 });
 
 const PRICE_CHARTING_API_BASE = 'https://www.pricecharting.com/api';
