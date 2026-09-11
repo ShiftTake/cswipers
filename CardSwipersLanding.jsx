@@ -55,7 +55,6 @@ import AuthenticationQueue from './AuthenticationQueue.jsx';
 
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
-  .split(',')
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
 
@@ -514,8 +513,9 @@ function MakeOfferModal({ isOpen, listing, buyerId, isSubmitting, error, onClose
   if (!isOpen || !listing) return null;
 
   return (
-    <div className="fixed inset-0 z-[66] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="make-offer-title">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#171A22] p-5 text-white shadow-2xl space-y-4">
+    <div className="fixed inset-0 z-[66] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="make-offer-title">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+      <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-[#171A22] p-5 text-white shadow-2xl space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Offer</p>
@@ -548,6 +548,7 @@ function MakeOfferModal({ isOpen, listing, buyerId, isSubmitting, error, onClose
         >
           {isSubmitting ? 'Sending...' : 'Submit Offer'}
         </button>
+      </div>
       </div>
     </div>
   );
@@ -10383,13 +10384,14 @@ export default function CardSwipersLanding() {
       )}
 
       {showTransferOwnership && (
-        <div className="fixed inset-0 z-[69] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="transfer-ownership-title">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#171A22] p-5 space-y-4">
+        <div className="fixed inset-0 z-[69] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="transfer-ownership-title">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+          <div className="mx-auto w-full max-w-md space-y-4 rounded-2xl border border-white/10 bg-[#171A22] p-5">
             <div>
               <h3 id="transfer-ownership-title" className="text-lg font-bold text-white">Transfer Ownership</h3>
               <p className="mt-1 text-xs text-white/60">Select a successor. If left blank, ownership passes to the longest-tenured active agent.</p>
             </div>
-            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
               {clubSuccessionCandidates.length === 0 ? (
                 <p className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">No active agents or moderators available. Promote an agent first.</p>
               ) : (
@@ -10424,15 +10426,17 @@ export default function CardSwipersLanding() {
               </button>
             </div>
           </div>
+          </div>
         </div>
       )}
 
       {showNotificationsPanel && (
-        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4">
-          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="fixed inset-0 z-[66] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="notifications-panel-title">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+          <div className="mx-auto w-full max-w-xl space-y-4 rounded-2xl border border-white/10 bg-[#171A22] p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold">Notifications</h3>
+                <h3 id="notifications-panel-title" className="text-lg font-bold">Notifications</h3>
                 <p className="text-xs text-white/60">Realtime updates for interests, matches, and messages.</p>
               </div>
               <button
@@ -10470,7 +10474,7 @@ export default function CardSwipersLanding() {
               )}
             </div>
 
-            <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+            <div className="max-h-[70vh] overflow-y-auto space-y-2 pr-1">
               {notifications.length === 0 ? (
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">
                   No notifications yet.
@@ -10496,12 +10500,14 @@ export default function CardSwipersLanding() {
               )}
             </div>
           </div>
+          </div>
         </div>
       )}
 
       {viewingCollection && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[55] p-4 flex flex-col justify-between">
-          <div className="max-w-4xl w-full mx-auto">
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] flex-col overflow-hidden bg-black/95 p-4 backdrop-blur-sm">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="mx-auto w-full max-w-4xl">
             <div className="flex justify-between items-center border-b border-neutral-700 pb-4 mb-4">
               <div>
                 <span className="text-xs uppercase tracking-widest text-[#E50914] font-bold">Collector Showcase</span>
@@ -10520,7 +10526,7 @@ export default function CardSwipersLanding() {
               Swiping right in this view proposes an all-inclusive trade match to this collector.
             </p>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3 pr-1 md:grid-cols-3 lg:grid-cols-4">
               <div className="bg-neutral-900 border-2 border-amber-500/40 rounded-xl p-3 flex flex-col justify-between space-y-4">
                 <div className="h-32 w-full pt-2">
                   <CardFlipImage
@@ -10554,8 +10560,9 @@ export default function CardSwipersLanding() {
               ))}
             </div>
           </div>
+          </div>
 
-          <div className="max-w-4xl w-full mx-auto pt-4">
+          <div className="mx-auto w-full max-w-4xl shrink-0 pt-4" style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom))' }}>
             <button
               onClick={() => {
                 setViewingCollection(null);
@@ -10571,63 +10578,65 @@ export default function CardSwipersLanding() {
       )}
 
       {showInterestModal && currentCard && (
-        <div className="fixed inset-0 bg-black/70 z-[65] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Choose Action</h3>
-              <button
-                type="button"
-                onClick={() => setShowInterestModal(false)}
-                className="text-sm text-white/70 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-            <p className="text-sm text-white/75">
-              {ENABLE_PAYMENT_PIPELINE
-                ? `Choose whether you want to negotiate or buy ${currentCard.title} at the listed price.`
-                : `Choose whether you want to negotiate for ${currentCard.title}.`}
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {DEAL_TYPES.map((deal) => (
-                <button
-                  key={deal.value}
-                  type="button"
-                  onClick={() => {
-                    setPendingDealType(deal.value);
-                    setPendingInterestType(deal.value === 'cash_sale' ? INSTANT_PURCHASE_ACTION : MARKETPLACE_ACTION_TYPES[0]);
-                  }}
-                  className={`px-2 py-2 rounded-xl text-[11px] border ${pendingDealType === deal.value ? DEAL_TYPE_STYLES[deal.value] : 'bg-white/5 border-white/15 hover:border-white/30'}`}
-                >
-                  {deal.label}
-                </button>
-              ))}
-            </div>
-            {pendingDealType === 'hybrid_trade' && (
-              <label className="block text-xs text-white/70">
-                Cash difference
-                <div className="mt-1 flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2">
-                  <span className="text-white/50">$</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={pendingCashAmount}
-                    onChange={(event) => setPendingCashAmount(event.target.value)}
-                    placeholder="200"
-                      className="w-full bg-transparent text-base text-white focus:outline-none"
-                  />
-                </div>
-              </label>
-            )}
+        <div className="fixed inset-0 z-[65] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="interest-title">
+          <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+            <h3 id="interest-title" className="text-lg font-bold">Choose Action</h3>
             <button
               type="button"
-              disabled={interestBusy}
-              onClick={handleSendInterest}
-              className="min-h-11 w-full rounded-xl bg-[#FFD700] text-[#000000] hover:bg-[#FFE66D] font-semibold text-sm disabled:opacity-60"
+              onClick={() => setShowInterestModal(false)}
+              className="min-h-11 px-2 text-sm text-white/70 hover:text-white"
             >
-              {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
+              Close
             </button>
-            {interestError && <p className="text-xs text-red-300">{interestError}</p>}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            <div className="mx-auto w-full max-w-md space-y-4">
+              <p className="text-sm text-white/75">
+                {ENABLE_PAYMENT_PIPELINE
+                  ? `Choose whether you want to negotiate or buy ${currentCard.title} at the listed price.`
+                  : `Choose whether you want to negotiate for ${currentCard.title}.`}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {DEAL_TYPES.map((deal) => (
+                  <button
+                    key={deal.value}
+                    type="button"
+                    onClick={() => {
+                      setPendingDealType(deal.value);
+                      setPendingInterestType(deal.value === 'cash_sale' ? INSTANT_PURCHASE_ACTION : MARKETPLACE_ACTION_TYPES[0]);
+                    }}
+                    className={`px-2 py-2 rounded-xl text-[11px] border ${pendingDealType === deal.value ? DEAL_TYPE_STYLES[deal.value] : 'bg-white/5 border-white/15 hover:border-white/30'}`}
+                  >
+                    {deal.label}
+                  </button>
+                ))}
+              </div>
+              {pendingDealType === 'hybrid_trade' && (
+                <label className="block text-xs text-white/70">
+                  Cash difference
+                  <div className="mt-1 flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+                    <span className="text-white/50">$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={pendingCashAmount}
+                      onChange={(event) => setPendingCashAmount(event.target.value)}
+                      placeholder="200"
+                      className="w-full bg-transparent text-base text-white focus:outline-none"
+                    />
+                  </div>
+                </label>
+              )}
+              <button
+                type="button"
+                disabled={interestBusy}
+                onClick={handleSendInterest}
+                className="min-h-11 w-full rounded-xl bg-[#FFD700] text-[#000000] hover:bg-[#FFE66D] font-semibold text-sm disabled:opacity-60"
+              >
+                {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
+              </button>
+              {interestError && <p className="text-xs text-red-300">{interestError}</p>}
+            </div>
           </div>
         </div>
       )}
@@ -10646,22 +10655,22 @@ export default function CardSwipersLanding() {
       />
 
       {showDiscoverFilters && (
-        <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
+        <div className="fixed inset-0 z-[75] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="discover-filters-title">
           <button
             type="button"
             onClick={() => setShowDiscoverFilters(false)}
             className="absolute inset-0"
             aria-label="Close filters"
           />
-          <div className="relative w-full max-w-lg rounded-t-3xl border-t border-white/15 bg-zinc-950 text-white shadow-2xl flex flex-col max-h-[86vh]">
-            <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+          <div className="relative flex min-h-0 w-full flex-1 flex-col bg-zinc-950 text-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-5 py-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p>
                 <h2 id="discover-filters-title" className="mt-1 text-xl font-bold">Filter Listings</h2>
               </div>
               <button type="button" onClick={() => setDiscoverFilters({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' })} className="text-xs font-semibold text-red-400 hover:text-red-300">Reset All</button>
             </div>
-            <div className="overflow-y-auto px-5 space-y-5 flex-1 min-h-0">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-5" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
               <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-sm font-semibold text-white/80">Min Price<input type="number" min="0" value={discoverFilters.minPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minPrice: event.target.value }))} placeholder="$0" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
@@ -10692,7 +10701,7 @@ export default function CardSwipersLanding() {
                 </div>
               </div>
             </div>
-            <div className="px-5 py-4 border-t border-white/10">
+            <div className="shrink-0 border-t border-white/10 px-5 py-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
               <button type="button" onClick={() => setShowDiscoverFilters(false)} className="w-full py-3.5 bg-red-600 rounded-xl font-bold text-white shadow-lg shadow-red-600/30 hover:bg-red-500 transition-colors">Apply Filters</button>
             </div>
           </div>
@@ -10700,12 +10709,13 @@ export default function CardSwipersLanding() {
       )}
 
       {showOnboarding && (
-        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl bg-[#111827] border border-white/10 rounded-3xl p-7 space-y-6 my-8">
+        <div className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+          <div className="mx-auto w-full max-w-3xl space-y-6 rounded-3xl border border-white/10 bg-[#111827] p-5 sm:p-7">
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex-1">
-                  <h2 className="text-3xl font-black tracking-tight">Build Your Marketplace</h2>
+                  <h2 id="onboarding-title" className="text-3xl font-black tracking-tight">Build Your Marketplace</h2>
                   <p className="text-sm text-white/60 mt-1">We'll personalize your feed in under 30 seconds.</p>
                 </div>
               </div>
@@ -10989,14 +10999,16 @@ export default function CardSwipersLanding() {
               </>
             )}
           </div>
+          </div>
         </div>
       )}
 
       {showFlagModal && (
-        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#111827] border border-white/10 rounded-3xl p-7 space-y-6">
+        <div className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="flag-modal-title">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+          <div className="mx-auto w-full max-w-md space-y-6 rounded-3xl border border-white/10 bg-[#111827] p-7">
             <div>
-              <h2 className="text-2xl font-black">Report Inappropriate</h2>
+              <h2 id="flag-modal-title" className="text-2xl font-black">Report Inappropriate</h2>
               <p className="text-sm text-white/60 mt-1">Help us keep CardSwipers safe for collectors</p>
             </div>
 
@@ -11031,6 +11043,7 @@ export default function CardSwipersLanding() {
                 Submit Report
               </button>
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -11188,8 +11201,9 @@ export default function CardSwipersLanding() {
       )}
 
       {ENABLE_PAYMENT_PIPELINE && activePaymentSheet && stripePromise && (
-        <div className="fixed inset-0 z-[68] flex items-end justify-center overflow-y-auto bg-black/80 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:items-center">
-          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-[28px] border border-[#27272A] bg-[#000000] p-5 pb-8 text-white shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-[68] flex h-[100dvh] flex-col overflow-hidden bg-black">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+          <div className="mx-auto w-full max-w-lg space-y-4 rounded-[28px] border border-[#27272A] bg-[#000000] p-5 pb-8 text-white shadow-2xl">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-bold">Secure escrow checkout</h2>
@@ -11281,6 +11295,7 @@ export default function CardSwipersLanding() {
               />
             </Elements>
           </div>
+        </div>
         </div>
       )}
 
@@ -11434,25 +11449,30 @@ export default function CardSwipersLanding() {
       })()}
 
       {showTradeOfferModal && activeChat && (
-        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="trade-offer-title">
-          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-[#27272A] bg-[#000000] p-5 text-white shadow-2xl">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Trade builder</p><h2 id="trade-offer-title" className="mt-1 text-xl font-bold">Propose Trade</h2></div><button type="button" onClick={() => setShowTradeOfferModal(false)} className="min-h-11 min-w-11 rounded-full border border-[#27272A] text-white/75">x</button></div>
-            <p className="text-sm text-white/70">Select one or more cards from your binder to offer in this conversation.</p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEAL_TYPES.filter((deal) => ['pure_trade', 'hybrid_trade'].includes(deal.value)).map((deal) => (
-                <button key={deal.value} type="button" onClick={() => setOfferDealType(deal.value)} className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${offerDealType === deal.value ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/15 bg-[#18181B] text-white/75'}`}>
-                  {deal.label}
-                </button>
-              ))}
+        <div className="fixed inset-0 z-[85] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="trade-offer-title">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#27272A] px-5 py-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+            <div><p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Trade builder</p><h2 id="trade-offer-title" className="mt-1 text-xl font-bold">Propose Trade</h2></div>
+            <button type="button" onClick={() => setShowTradeOfferModal(false)} className="min-h-11 min-w-11 rounded-full border border-[#27272A] text-white/75">x</button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            <div className="mx-auto w-full max-w-lg space-y-4 text-white">
+              <p className="text-sm text-white/70">Select one or more cards from your binder to offer in this conversation.</p>
+              <div className="grid grid-cols-2 gap-2">
+                {DEAL_TYPES.filter((deal) => ['pure_trade', 'hybrid_trade'].includes(deal.value)).map((deal) => (
+                  <button key={deal.value} type="button" onClick={() => setOfferDealType(deal.value)} className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${offerDealType === deal.value ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/15 bg-[#18181B] text-white/75'}`}>
+                    {deal.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid max-h-[50vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+                {myCollection.length === 0 ? <p className="col-span-full rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm text-white/70">Your binder is empty.</p> : myCollection.map((card) => {
+                  const selected = selectedTradeCardIds.includes(card.id);
+                  return <button key={card.id} type="button" onClick={() => toggleTradeCard(card.id)} className={`rounded-xl border p-2 text-left ${selected ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-[#18181B]'}`}><div className="flex items-center gap-2">{card.imageUrl ? <img src={card.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <span className="flex h-14 w-10 items-center justify-center rounded bg-[#000000]">🃏</span>}<span className="min-w-0"><span className="block truncate text-xs font-semibold">{card.name || card.title}</span><span className="block truncate text-[10px] text-white/60">{card.brand}</span></span></div></button>;
+                })}
+              </div>
+              <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white disabled:opacity-50" /></label>
+              <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
             </div>
-            <div className="grid max-h-[42vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
-              {myCollection.length === 0 ? <p className="col-span-full rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm text-white/70">Your binder is empty.</p> : myCollection.map((card) => {
-                const selected = selectedTradeCardIds.includes(card.id);
-                return <button key={card.id} type="button" onClick={() => toggleTradeCard(card.id)} className={`rounded-xl border p-2 text-left ${selected ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-[#18181B]'}`}><div className="flex items-center gap-2">{card.imageUrl ? <img src={card.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <span className="flex h-14 w-10 items-center justify-center rounded bg-[#000000]">🃏</span>}<span className="min-w-0"><span className="block truncate text-xs font-semibold">{card.name || card.title}</span><span className="block truncate text-[10px] text-white/60">{card.brand}</span></span></div></button>;
-              })}
-            </div>
-            <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white disabled:opacity-50" /></label>
-            <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
           </div>
         </div>
       )}

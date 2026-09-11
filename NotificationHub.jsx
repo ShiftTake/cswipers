@@ -244,8 +244,8 @@ export default function NotificationHub({ userId, onClose }) {
   const offersForTab = activeTab === 'selling' ? sellingOffers : buyingOffers;
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[67] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="notification-hub-title">
-      <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
+    <div className="fixed inset-0 z-[67] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="notification-hub-title">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-5 py-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 id="notification-hub-title" className="text-lg font-bold text-white">Offer Notifications</h3>
@@ -256,6 +256,9 @@ export default function NotificationHub({ userId, onClose }) {
           </button>
         </div>
 
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+        <div className="mx-auto w-full max-w-xl space-y-4">
         <div className="flex gap-2">
           <button
             type="button"
@@ -279,7 +282,7 @@ export default function NotificationHub({ userId, onClose }) {
 
         {actionError && <p className="text-xs text-red-300">{actionError}</p>}
 
-        <div className="max-h-[55vh] overflow-y-auto space-y-2 pr-1">
+        <div className="space-y-2 pr-1">
           {offersForTab.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">
               {activeTab === 'selling' ? 'No offers received yet.' : 'No offers sent yet.'}
@@ -306,6 +309,7 @@ export default function NotificationHub({ userId, onClose }) {
               />
             ))
           )}
+        </div>
         </div>
       </div>
     </div>

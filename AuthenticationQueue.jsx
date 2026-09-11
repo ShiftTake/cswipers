@@ -136,9 +136,8 @@ export default function AuthenticationQueue({ firebaseUser, canAccess, onClose }
   if (!canAccess) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[68] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="auth-queue-title">
-      <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
-        <div className="flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-[68] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="auth-queue-title">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-5 py-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
           <div>
             <h3 id="auth-queue-title" className="text-lg font-bold text-white">Authentication Queue</h3>
             <p className="text-xs text-white/60">Review cards flagged for physical/digital authentication.</p>
@@ -146,11 +145,13 @@ export default function AuthenticationQueue({ firebaseUser, canAccess, onClose }
           <button type="button" onClick={onClose} className="text-sm text-white/70 hover:text-white">
             Close
           </button>
-        </div>
+      </div>
 
-        {actionError && <p className="text-xs text-red-300">{actionError}</p>}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+        <div className="mx-auto w-full max-w-xl space-y-4">
+          {actionError && <p className="text-xs text-red-300">{actionError}</p>}
 
-        <div className="max-h-[55vh] overflow-y-auto space-y-2 pr-1">
+          <div className="space-y-2 pr-1">
           {queuedCards.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">
               No cards awaiting authentication.
@@ -166,6 +167,7 @@ export default function AuthenticationQueue({ firebaseUser, canAccess, onClose }
               />
             ))
           )}
+          </div>
         </div>
       </div>
     </div>
