@@ -141,7 +141,7 @@ function CardSilhouettePlaceholder({ className = '', label = 'Card image unavail
     <div
       role="img"
       aria-label={label}
-      className={`relative flex items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(160deg,#111827,#1f2937)] ${className}`}
+      className={`relative flex items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(160deg,#18181B,#27272A)] ${className}`}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.16),transparent_40%),radial-gradient(circle_at_80%_90%,rgba(255,255,255,0.08),transparent_45%)]" />
       <svg viewBox="0 0 120 180" className="relative h-16 w-10 text-white/70" fill="none" aria-hidden="true">
@@ -765,7 +765,7 @@ const DEAL_TYPES = [
   { value: 'cash_sale', label: 'Buy With Cash' }
 ];
 const DEAL_TYPE_STYLES = {
-  pure_trade: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+  pure_trade: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
   hybrid_trade: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
   cash_sale: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
 };
@@ -810,14 +810,14 @@ const formatCountdown = (millis) => {
 };
 
 const CLUB_LOGO_PRESETS = [
-  { id: 'baseball', symbol: '⚾', className: 'from-sky-900 via-blue-700 to-slate-950' },
+  { id: 'baseball', symbol: '⚾', className: 'from-red-900 via-orange-700 to-zinc-950' },
   { id: 'basketball', symbol: '🏀', className: 'from-orange-900 via-orange-700 to-stone-950' },
   { id: 'football', symbol: '🏈', className: 'from-amber-950 via-orange-800 to-stone-950' },
   { id: 'soccer', symbol: '⚽', className: 'from-slate-800 via-zinc-600 to-black' },
   { id: 'lightning', symbol: '⚡', className: 'from-yellow-900 via-amber-600 to-slate-950' },
   { id: 'energy', symbol: '✦', className: 'from-red-900 via-orange-700 to-slate-950' },
-  { id: 'gem', symbol: '◇', className: 'from-cyan-900 via-blue-700 to-slate-950' },
-  { id: 'shield', symbol: '⬟', className: 'from-indigo-950 via-blue-800 to-slate-950' },
+  { id: 'gem', symbol: '◇', className: 'from-emerald-900 via-teal-700 to-zinc-950' },
+  { id: 'shield', symbol: '⬟', className: 'from-red-950 via-rose-800 to-zinc-950' },
   { id: 'star', symbol: '★', className: 'from-amber-950 via-yellow-700 to-slate-950' }
 ];
 const normalizeClubRole = (role) => {
@@ -874,7 +874,7 @@ const TRADE_NIGHT_THEMES = {
     image: sportsBoothBg,
     backdrop: 'bg-[radial-gradient(circle_at_50%_0%,rgba(148,163,184,0.14),transparent_55%),linear-gradient(180deg,#101216_0%,#060708_100%)]',
     booth: 'border-white/15 bg-gradient-to-b from-[#17191d] to-[#0b0c0e]',
-    accent: 'text-slate-300',
+    accent: 'text-white/65',
     glow: 'shadow-[0_0_40px_rgba(148,163,184,0.12)]'
   }
 };
@@ -3881,8 +3881,8 @@ export default function CardSwipersLanding() {
       listedAt: new Date(),
       listedAtLabel: `Listed ${new Date().toLocaleDateString()}`,
       detailLine: conditionLabel,
-      cardColor: 'from-blue-600/20 to-blue-500/20',
-      borderColor: 'border-blue-500/40',
+      cardColor: 'from-emerald-600/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/40',
       lookingFor: newCard.lookingFor || 'Good trades',
       seekingTags: (newCard.lookingFor || '')
         .split(',')
@@ -6960,7 +6960,7 @@ export default function CardSwipersLanding() {
                 <h1 className={`${isNativeApp ? 'text-[31px]' : 'text-[34px]'} leading-[1.08] font-bold tracking-[-0.03em] text-white`}>
                   {authMode === 'login' ? 'Sign in' : 'Create Account'}
                 </h1>
-                <p className={`${isNativeApp ? 'text-[11px]' : 'text-sm'} text-slate-300`}>
+                <p className={`${isNativeApp ? 'text-[11px]' : 'text-sm'} text-white/65`}>
                   {authMode === 'login' ? 'Enter your credentials to continue.' : 'Set up your account in less than a minute.'}
                 </p>
               </div>
@@ -6975,7 +6975,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-slate-300 hover:text-white'}`}
+                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'login' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-white/65 hover:text-white'}`}
                   >
                     Log In
                   </button>
@@ -6987,7 +6987,7 @@ export default function CardSwipersLanding() {
                       setAuthInfo('');
                       setAuthConfirmPassword('');
                     }}
-                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-slate-300 hover:text-white'}`}
+                    className={`${isNativeApp ? 'h-10' : 'h-12'} rounded-xl transition-colors ${authMode === 'create' ? 'bg-[#E60028] text-white font-semibold shadow-[0_8px_22px_rgba(230,0,40,0.28)]' : 'text-white/65 hover:text-white'}`}
                   >
                     Create Account
                   </button>
@@ -7071,7 +7071,7 @@ export default function CardSwipersLanding() {
                       onChange={(event) => setHasAcceptedEscrowTerms(event.target.checked)}
                       className="mt-1 h-4 w-4 rounded border-[#D1D5DB] text-[#E60028]"
                     />
-                    <span className="text-xs leading-5 text-slate-200">
+                    <span className="text-xs leading-5 text-white/75">
                       {ESCROW_TERMS_LABEL}{' '}
                       <button
                         type="button"
@@ -7133,7 +7133,7 @@ export default function CardSwipersLanding() {
                 </button>
 
                 {isNativeApp && (
-                  <p className={`${isNativeApp ? 'text-[9px] leading-4' : 'text-[11px] leading-5'} text-slate-300`}>
+                  <p className={`${isNativeApp ? 'text-[9px] leading-4' : 'text-[11px] leading-5'} text-white/65`}>
                     On iPhone, Google sign-in may open Safari to finish authentication and return to the app.
                   </p>
                 )}
@@ -7669,7 +7669,7 @@ export default function CardSwipersLanding() {
                 </div>
 
                 <aside className="space-y-3 md:space-y-4 xl:sticky xl:top-24">
-                  <div className="rounded-[24px] md:rounded-[28px] bg-[#111827] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
+                  <div className="rounded-[24px] md:rounded-[28px] bg-[#18181B] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Collector Profile</p>
                       <h3 className="mt-2 text-xl sm:text-2xl font-bold">{currentCard.owner}</h3>
@@ -7688,7 +7688,7 @@ export default function CardSwipersLanding() {
                     </div>
                   </div>
 
-                  <div className="rounded-[24px] md:rounded-[28px] bg-[#111827] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] space-y-4">
+                  <div className="rounded-[24px] md:rounded-[28px] bg-[#18181B] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] space-y-4">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 mb-3">Seeking</p>
                       <div className="flex flex-wrap gap-2">
@@ -7851,7 +7851,7 @@ export default function CardSwipersLanding() {
                       onChange={(e) => handleCardTitleSearch(e.target.value)}
                       onFocus={() => cardSearchResults.length > 0 && setCardSearchOpen(true)}
                       autoComplete="off"
-                      className="w-full px-4 py-3 text-base font-semibold bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-base font-semibold bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     />
                     {cardSearchOpen && (cardSearchBusy || cardSearchResults.length > 0) && (
                       <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0F131C] shadow-xl">
@@ -7884,7 +7884,7 @@ export default function CardSwipersLanding() {
                     )}
                   </div>
                   {selectedCardComps && (
-                    <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-[#1A2230] p-2.5">
+                    <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-[#18181B] p-2.5">
                       {[
                         { label: 'Raw', value: selectedCardComps.comps?.raw },
                         { label: 'PSA 9', value: selectedCardComps.comps?.psa9 },
@@ -7907,7 +7907,7 @@ export default function CardSwipersLanding() {
                       placeholder="e.g., 025"
                       value={newCard.cardNumber || ''}
                       onChange={(e) => setNewCard({ ...newCard, cardNumber: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     />
                   </div>
                   <div className="space-y-2">
@@ -7917,7 +7917,7 @@ export default function CardSwipersLanding() {
                       placeholder="e.g., 182"
                       value={newCard.setNumber || ''}
                       onChange={(e) => setNewCard({ ...newCard, setNumber: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     />
                   </div>
                 </div>
@@ -7928,7 +7928,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.brand}
                       onChange={(e) => setNewCard({ ...newCard, brand: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {PUBLISHERS.map((group) => (
                         <optgroup key={group.label} label={group.label}>
@@ -7947,7 +7947,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.gradingCompany}
                       onChange={(e) => setNewCard({ ...newCard, gradingCompany: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {GRADING_COMPANIES.map((company) => (
                         <option key={company} value={company}>
@@ -7964,7 +7964,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.rawCondition}
                       onChange={(e) => setNewCard({ ...newCard, rawCondition: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-3 text-sm bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {RAW_CONDITIONS.map((condition) => (
                         <option key={condition} value={condition}>
@@ -7979,7 +7979,7 @@ export default function CardSwipersLanding() {
                     <select
                       value={newCard.grade}
                       onChange={(e) => setNewCard({ ...newCard, grade: e.target.value })}
-                      className="w-full px-4 py-4 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
+                      className="w-full px-4 py-4 text-sm bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all"
                     >
                       {NUMERIC_GRADES.map((grade) => (
                         <option key={grade} value={grade}>
@@ -7992,7 +7992,7 @@ export default function CardSwipersLanding() {
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">💵 Estimated Market Value</label>
-                  <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
+                  <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#18181B] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
                     <span className="text-white/65 font-semibold">$</span>
                     <input
                       type="text"
@@ -8013,7 +8013,7 @@ export default function CardSwipersLanding() {
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">💸 Buy Now Price</label>
-                    <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
+                    <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#18181B] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
                       <span className="text-white/65 font-semibold">$</span>
                       <input
                         type="text"
@@ -8031,7 +8031,7 @@ export default function CardSwipersLanding() {
                       placeholder={normalizeStateCode(currentUserProfile?.state || currentUserProfile?.shippingState || '') || 'CA'}
                       value={newCard.sellerState}
                       onChange={(e) => setNewCard({ ...newCard, sellerState: e.target.value })}
-                      className="w-full px-4 py-3 text-sm bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
+                      className="w-full px-4 py-3 text-sm bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 transition-all uppercase"
                     />
                   </div>
                 </div>
@@ -8091,7 +8091,7 @@ export default function CardSwipersLanding() {
                     placeholder="Add more details or specific trade targets"
                     value={newCard.lookingFor}
                     onChange={(e) => setNewCard({ ...newCard, lookingFor: e.target.value })}
-                    className="w-full px-4 py-3.5 bg-[#1A2230] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 text-sm resize-none transition-all"
+                    className="w-full px-4 py-3.5 bg-[#18181B] border border-white/10 rounded-[18px] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/55 focus:border-[#E11D48]/55 text-sm resize-none transition-all"
                     rows={3}
                   />
                 </div>
@@ -8192,9 +8192,9 @@ export default function CardSwipersLanding() {
                   placeholder="Please enter your club name."
                   maxLength={20}
                   autoFocus
-                  className="mt-4 h-[76px] w-full rounded-xl border border-white/10 bg-zinc-900 px-5 text-base text-white placeholder:text-slate-500 focus:border-red-500 focus:outline-none sm:h-[94px] sm:px-6 sm:text-xl"
+                  className="mt-4 h-[76px] w-full rounded-xl border border-white/10 bg-zinc-900 px-5 text-base text-white placeholder:text-white/40 focus:border-red-500 focus:outline-none sm:h-[94px] sm:px-6 sm:text-xl"
                 />
-                <p className="mt-2 text-right text-xs text-slate-400">{clubDraftName.trim().length}/20</p>
+                <p className="mt-2 text-right text-xs text-white/50">{clubDraftName.trim().length}/20</p>
               </div>
 
               <div className="mt-8">
@@ -8211,7 +8211,7 @@ export default function CardSwipersLanding() {
                     <button
                       type="button"
                       onClick={() => clubLogoInputRef.current?.click()}
-                      className={`aspect-square rounded-2xl border-2 border-dashed bg-zinc-900/80 p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-white/10 hover:border-slate-500'}`}
+                      className={`aspect-square rounded-2xl border-2 border-dashed bg-zinc-900/80 p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-white/10 hover:border-white/30'}`}
                     >
                       {clubDraftLogoPreview ? (
                         <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
@@ -8219,7 +8219,7 @@ export default function CardSwipersLanding() {
                         <span className="flex h-full flex-col items-center justify-center text-center text-white/80">
                           <span className="text-4xl leading-none">↑</span>
                           <span className="mt-3 text-sm font-medium">Add Image</span>
-                          <span className="mt-1 text-xs text-slate-400">640 x 640</span>
+                          <span className="mt-1 text-xs text-white/50">640 x 640</span>
                         </span>
                       )}
                     </button>
@@ -8274,7 +8274,7 @@ export default function CardSwipersLanding() {
                     );
                   })}
                 </div>
-                <p className="mt-2 text-xs text-slate-400">This setting is permanent and cannot be changed after the club is created.</p>
+                <p className="mt-2 text-xs text-white/50">This setting is permanent and cannot be changed after the club is created.</p>
               </div>
 
               {clubDraftError && <p className="mt-5 text-sm font-medium text-rose-300">{clubDraftError}</p>}
@@ -9643,7 +9643,7 @@ export default function CardSwipersLanding() {
                               </div>
                             )}
                             {(cashPaymentPending || pureTradePaymentPending) && (
-                              <div className={`mt-2 rounded-lg border px-2.5 py-2 ${fromSelf ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-500/30 bg-slate-500/10 text-slate-300'}`}>
+                              <div className={`mt-2 rounded-lg border px-2.5 py-2 ${fromSelf ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-white/15 bg-white/5 text-white/65'}`}>
                                 <p className="font-semibold">{pureTradePaymentPending ? 'Trade Protection Fee Required · $2.99' : 'Awaiting Buyer Payment'}</p>
                                 {((cashPaymentPending && isBuyer) || pureTradePaymentPending) && (
                                   <button
@@ -9657,7 +9657,7 @@ export default function CardSwipersLanding() {
                               </div>
                             )}
                             {pureTradeAccepted && currentProtectionPaid && !paymentHeld && (
-                              <p className="mt-2 rounded-lg border border-slate-500/30 bg-slate-500/10 px-2.5 py-2 font-semibold text-slate-300">
+                              <p className="mt-2 rounded-lg border border-white/15 bg-white/5 px-2.5 py-2 font-semibold text-white/65">
                                 {isBuyer ? 'Your protection fee is paid. Awaiting the other party.' : 'Awaiting the other party’s Trade Protection Fee.'}
                               </p>
                             )}
@@ -10711,7 +10711,7 @@ export default function CardSwipersLanding() {
       {showOnboarding && (
         <div className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
-          <div className="mx-auto w-full max-w-3xl space-y-6 rounded-3xl border border-white/10 bg-[#111827] p-5 sm:p-7">
+          <div className="mx-auto w-full max-w-3xl space-y-6 rounded-3xl border border-white/10 bg-[#18181B] p-5 sm:p-7">
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex-1">
@@ -11006,7 +11006,7 @@ export default function CardSwipersLanding() {
       {showFlagModal && (
         <div className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="flag-modal-title">
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
-          <div className="mx-auto w-full max-w-md space-y-6 rounded-3xl border border-white/10 bg-[#111827] p-7">
+          <div className="mx-auto w-full max-w-md space-y-6 rounded-3xl border border-white/10 bg-[#18181B] p-7">
             <div>
               <h2 id="flag-modal-title" className="text-2xl font-black">Report Inappropriate</h2>
               <p className="text-sm text-white/60 mt-1">Help us keep CardSwipers safe for collectors</p>
@@ -11471,7 +11471,7 @@ export default function CardSwipersLanding() {
                 })}
               </div>
               <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white disabled:opacity-50" /></label>
-              <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
+              <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] disabled:bg-zinc-800 disabled:text-white/50">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
             </div>
           </div>
         </div>

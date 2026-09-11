@@ -6,7 +6,7 @@ const formatCurrency = (value) => `$${Number(value || 0).toFixed(2)}`;
 function OfferStatusBadge({ status }) {
   const styles = {
     pending: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
-    countered: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+    countered: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
     accepted: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
     declined: 'bg-red-500/15 text-red-300 border-red-500/30'
   };
@@ -154,7 +154,7 @@ function SellingOfferCard({ offer, onAccept, onDecline, onCounter, busyOfferId }
             type="button"
             disabled={isBusy}
             onClick={handleSubmitCounter}
-            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white disabled:opacity-50"
+            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-black disabled:opacity-50"
           >
             Submit
           </button>
