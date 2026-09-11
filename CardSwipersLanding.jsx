@@ -10235,15 +10235,18 @@ export default function CardSwipersLanding() {
       )}
 
       {showTradeNightForm && selectedClub && (
-        <div className="fixed inset-0 z-[71] flex items-end justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="trade-night-form-title">
+        <div className="fixed inset-0 z-[100] flex h-[100dvh] items-stretch justify-center overflow-hidden bg-black" role="dialog" aria-modal="true" aria-labelledby="trade-night-form-title">
           <button type="button" onClick={() => setShowTradeNightForm(false)} className="absolute inset-0" aria-label="Close trade night form" />
-          <div className="relative flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-3xl border-t border-white/15 bg-zinc-950 text-white shadow-2xl">
-            <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+          <div className="relative z-10 flex h-full w-full max-w-lg flex-col bg-zinc-950 text-white shadow-2xl">
+            <div
+              className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-5 pb-3"
+              style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top))' }}
+            >
               <h3 id="trade-night-form-title" className="text-lg font-bold">Create Trade Night</h3>
               <button type="button" onClick={() => setShowTradeNightForm(false)} className="text-sm text-white/70 hover:text-white">Close</button>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4 pb-6 [touch-action:pan-y]">
               <label className="block">
                 <span className="text-xs font-semibold text-white/70">Event Title</span>
                 <input
@@ -10365,7 +10368,7 @@ export default function CardSwipersLanding() {
               {clubError && <p className="text-xs text-red-300">{clubError}</p>}
             </div>
 
-            <div className="border-t border-white/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <div className="shrink-0 border-t border-white/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
               <button
                 type="button"
                 onClick={handleCreateTradeNight}
