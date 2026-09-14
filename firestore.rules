@@ -232,6 +232,15 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    match /tradeSpotlights/{spotlightId} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid in resource.data.participants);
+      allow create: if signedIn() && request.auth.uid in request.resource.data.participants;
+      allow update: if signedIn() && request.auth.uid in resource.data.participants &&
+        request.resource.data.participants == resource.data.participants &&
+        request.resource.data.acceptedBy.size() <= 2;
+      allow delete: if false;
+    }
+
     match /clubs/{clubId} {
       // Listing clubs (queries) can't run per-doc ban lookups, so allow any
       // signed-in user to list; single-doc reads still enforce the ban check.
