@@ -1387,7 +1387,8 @@ export default function CardSwipersLanding() {
   const [verificationSessionBusy, setVerificationSessionBusy] = useState(false);
   const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [showDiscoverFilters, setShowDiscoverFilters] = useState(false);
-  const [discoverFilters, setDiscoverFilters] = useState({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' });
+  const [discoverFilters, setDiscoverFilters] = useState({ search: '', category: 'all', tradeNightStatus: 'all', minMembers: '' });
+  const [publicClubLiveEvents, setPublicClubLiveEvents] = useState([]);
   const verificationDocInputRef = useRef(null);
   const splashStartTimeRef = useRef(Date.now());
   const hasHydratedPendingInterests = useRef(false);
@@ -1397,20 +1398,31 @@ export default function CardSwipersLanding() {
   const unreadMatchIdsRef = useRef(new Set());
   const clubReportIdsRef = useRef(new Set());
   const clubReportsHydratedRef = useRef(false);
-  const filteredDiscoverDeck = personalizedDeck.filter((card) => {
-    const search = discoverFilters.search.trim().toLowerCase();
-    const cardText = `${card.title || ''} ${card.name || ''} ${card.brand || ''} ${card.playerName || card.player || ''}`.toLowerCase();
-    const price = parseDollarValue(card.tradeValue || card.value || card.avgMarketValue);
-    const year = String(card.releaseYear || card.year || card.release_year || '');
-    const isGraded = Boolean(card.grade && !String(card.gradingCompany || '').toLowerCase().includes('raw') && !String(card.grade).toLowerCase().includes('ungraded'));
-    return (!search || cardText.includes(search))
-      && (!discoverFilters.minPrice || price >= Number(discoverFilters.minPrice))
-      && (!discoverFilters.maxPrice || price <= Number(discoverFilters.maxPrice))
-      && (!discoverFilters.year || year === String(discoverFilters.year).trim())
-      && (discoverFilters.gradeStatus === 'all' || (discoverFilters.gradeStatus === 'graded' ? isGraded : !isGraded));
-  });
+  // Discover no longer filters individual card listings by price/year/grade —
+  // the Discover tab is for finding Public Clubs, so the deck is unfiltered.
+  const filteredDiscoverDeck = personalizedDeck;
   const currentCard = filteredDiscoverDeck[cardIndex] || null;
-  const publicClubs = clubs.filter((club) => getClubAccessMode(club) === 'public');
+  const liveTradeNightClubIds = new Set(
+    publicClubLiveEvents
+      .filter((event) => {
+        const start = toDateValue(event.scheduledFor)?.getTime() || 0;
+        const windowMs = Math.max(1, Number(event.roundMinutes || 60)) * 60 * 1000;
+        return start > 0 && clubLobbyTick >= start && clubLobbyTick <= start + windowMs;
+      })
+      .map((event) => event.clubId)
+  );
+  const publicClubs = clubs.filter((club) => getClubAccessMode(club) === 'public').filter((club) => {
+    const search = discoverFilters.search.trim().toLowerCase();
+    const nameMatch = !search || String(club.name || '').toLowerCase().includes(search);
+    const categories = (Array.isArray(club.categories) && club.categories.length ? club.categories : [club.category, club.brand].filter(Boolean)).map((value) => String(value).toLowerCase());
+    const categoryMatch = discoverFilters.category === 'all' || categories.includes(discoverFilters.category.toLowerCase());
+    const isLive = liveTradeNightClubIds.has(club.id);
+    const tradeNightMatch = discoverFilters.tradeNightStatus === 'all'
+      || (discoverFilters.tradeNightStatus === 'live' ? isLive : !isLive);
+    const memberCount = Number(club.memberCount || club.membersCount || 0);
+    const minMembersMatch = !discoverFilters.minMembers || memberCount >= Number(discoverFilters.minMembers);
+    return nameMatch && categoryMatch && tradeNightMatch && minMembersMatch;
+  });
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
   const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
@@ -2053,7 +2065,7 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     setCardIndex((previous) => (filteredDiscoverDeck.length === 0 ? 0 : Math.min(previous, filteredDiscoverDeck.length - 1)));
-  }, [filteredDiscoverDeck.length, discoverFilters.search, discoverFilters.minPrice, discoverFilters.maxPrice, discoverFilters.year, discoverFilters.gradeStatus]);
+  }, [filteredDiscoverDeck.length]);
 
   useEffect(() => {
     if (!isAdmin || currentTab !== 'admin') {
@@ -2268,6 +2280,32 @@ export default function CardSwipersLanding() {
       unsubLedgers();
     };
   }, [isAdmin, currentTab]);
+
+  useEffect(() => {
+    // Powers the Discover tab's "Trade Night Live" badge/filter across all
+    // public clubs (not just the one currently selected).
+    if (!firebaseUser || currentTab !== 'swipe') {
+      setPublicClubLiveEvents([]);
+      return undefined;
+    }
+
+    const unsubEvents = onSnapshot(
+      query(collectionGroup(db, 'events'), where('status', '==', 'registration'), limit(500)),
+      (snapshot) => {
+        setPublicClubLiveEvents(snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          clubId: docSnap.ref.parent.parent?.id || '',
+          ...docSnap.data()
+        })));
+      },
+      (error) => {
+        console.error('Failed loading public club trade nights:', error);
+        setPublicClubLiveEvents([]);
+      }
+    );
+
+    return () => unsubEvents();
+  }, [firebaseUser, currentTab]);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -7365,12 +7403,7 @@ export default function CardSwipersLanding() {
                 <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {publicClubs.map((club) => {
                     const memberCount = Number(club.memberCount || club.membersCount || 0);
-                    const clubEvents = selectedClubId === club.id ? selectedClubEvents : [];
-                    const activeTradeNight = clubEvents.find((event) => {
-                      const start = toDateValue(event.scheduledFor)?.getTime() || 0;
-                      const windowMs = Math.max(1, Number(event.roundMinutes || 60)) * 60 * 1000;
-                      return start > 0 && Date.now() >= start && Date.now() <= start + windowMs;
-                    });
+                    const activeTradeNight = liveTradeNightClubIds.has(club.id);
                     const tags = Array.isArray(club.categories) && club.categories.length
                       ? club.categories
                       : [club.category, club.brand].filter(Boolean);
@@ -8592,42 +8625,27 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-3">
-                        {[
-                          { id: 'activeTrades', label: 'Active Trades' },
-                          { id: 'hideFull', label: 'Hide Full' }
-                        ].map((filter) => (
-                          <button
-                            key={filter.id}
-                            type="button"
-                            onClick={() => setClubQuickFilters((prev) => ({ ...prev, [filter.id]: !prev[filter.id] }))}
-                            className="flex items-center gap-1.5 text-xs text-white/70 hover:text-white"
-                          >
-                            <span className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${clubQuickFilters[filter.id] ? 'border-[#10B981] bg-[#10B981]' : 'border-white/25 bg-transparent'}`}>
-                              {clubQuickFilters[filter.id] && (
-                                <svg viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3.5" className="h-2.5 w-2.5" aria-hidden="true">
-                                  <path d="m5 12 5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                              )}
-                            </span>
-                            {filter.label}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowDiscoverFilters(true)}
-                        className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white/70 hover:text-white"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5" aria-hidden="true">
-                          <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
-                        </svg>
-                        Filter
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3" aria-hidden="true">
-                          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {[
+                        { id: 'activeTrades', label: 'Active Trades' },
+                        { id: 'hideFull', label: 'Hide Full' }
+                      ].map((filter) => (
+                        <button
+                          key={filter.id}
+                          type="button"
+                          onClick={() => setClubQuickFilters((prev) => ({ ...prev, [filter.id]: !prev[filter.id] }))}
+                          className="flex items-center gap-1.5 text-xs text-white/70 hover:text-white"
+                        >
+                          <span className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${clubQuickFilters[filter.id] ? 'border-[#10B981] bg-[#10B981]' : 'border-white/25 bg-transparent'}`}>
+                            {clubQuickFilters[filter.id] && (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3.5" className="h-2.5 w-2.5" aria-hidden="true">
+                                <path d="m5 12 5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </span>
+                          {filter.label}
+                        </button>
+                      ))}
                     </div>
 
                     {canModerateClubPosts && (
@@ -10667,31 +10685,22 @@ export default function CardSwipersLanding() {
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-5 py-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p>
-                <h2 id="discover-filters-title" className="mt-1 text-xl font-bold">Filter Listings</h2>
+                <h2 id="discover-filters-title" className="mt-1 text-xl font-bold">Filter Public Clubs</h2>
               </div>
-              <button type="button" onClick={() => setDiscoverFilters({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' })} className="text-xs font-semibold text-red-400 hover:text-red-300">Reset All</button>
+              <button type="button" onClick={() => setDiscoverFilters({ search: '', category: 'all', tradeNightStatus: 'all', minMembers: '' })} className="text-xs font-semibold text-red-400 hover:text-red-300">Reset All</button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-5" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
-              <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm font-semibold text-white/80">Min Price<input type="number" min="0" value={discoverFilters.minPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minPrice: event.target.value }))} placeholder="$0" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
-                <label className="text-sm font-semibold text-white/80">Max Price<input type="number" min="0" value={discoverFilters.maxPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, maxPrice: event.target.value }))} placeholder="$5,000" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
-              </div>
-              <label className="block text-sm font-semibold text-white/80">Year<input type="number" min="1880" max="2100" value={discoverFilters.year} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, year: event.target.value }))} placeholder="2024" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
+              <label className="block text-sm font-semibold text-white/80">Club Name<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Diamond Collectors Club" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
               <div>
-                <p className="text-sm font-semibold text-white/80 mb-2">Grade Status</p>
-                <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {[
-                    { value: 'all', label: 'All' },
-                    { value: 'ungraded', label: 'Raw' },
-                    { value: 'graded', label: 'Graded' }
-                  ].map((option) => (
+                <p className="text-sm font-semibold text-white/80 mb-2">Category</p>
+                <div className="flex flex-wrap gap-2">
+                  {[{ value: 'all', label: 'All' }, ...TRADE_NIGHT_CATEGORIES.map((category) => ({ value: category, label: category }))].map((option) => (
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => setDiscoverFilters((previous) => ({ ...previous, gradeStatus: option.value }))}
+                      onClick={() => setDiscoverFilters((previous) => ({ ...previous, category: option.value }))}
                       className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold border transition-colors ${
-                        discoverFilters.gradeStatus === option.value
+                        discoverFilters.category === option.value
                           ? 'bg-red-600 border-red-600 text-white'
                           : 'bg-zinc-900 border-white/10 text-white/80 hover:border-white/25'
                       }`}
@@ -10701,6 +10710,30 @@ export default function CardSwipersLanding() {
                   ))}
                 </div>
               </div>
+              <div>
+                <p className="text-sm font-semibold text-white/80 mb-2">Trade Night Status</p>
+                <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {[
+                    { value: 'all', label: 'All' },
+                    { value: 'live', label: 'Live Now' },
+                    { value: 'none', label: 'No Live Trade Night' }
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setDiscoverFilters((previous) => ({ ...previous, tradeNightStatus: option.value }))}
+                      className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold border transition-colors ${
+                        discoverFilters.tradeNightStatus === option.value
+                          ? 'bg-red-600 border-red-600 text-white'
+                          : 'bg-zinc-900 border-white/10 text-white/80 hover:border-white/25'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="block text-sm font-semibold text-white/80">Min Members<input type="number" min="0" value={discoverFilters.minMembers} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minMembers: event.target.value }))} placeholder="0" className="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-base text-white focus:border-red-500 focus:outline-none" /></label>
             </div>
             <div className="shrink-0 border-t border-white/10 px-5 py-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
               <button type="button" onClick={() => setShowDiscoverFilters(false)} className="w-full py-3.5 bg-red-600 rounded-xl font-bold text-white shadow-lg shadow-red-600/30 hover:bg-red-500 transition-colors">Apply Filters</button>
