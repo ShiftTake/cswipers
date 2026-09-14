@@ -55,6 +55,7 @@ import AuthenticationQueue from './AuthenticationQueue.jsx';
 
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
+  .split(',')
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
 
