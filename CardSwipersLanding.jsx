@@ -1331,6 +1331,7 @@ export default function CardSwipersLanding() {
   const [tradeNightRegistrations, setTradeNightRegistrations] = useState([]);
   const [showTradeNightBooth, setShowTradeNightBooth] = useState(false);
   const [boothVendorIndex, setBoothVendorIndex] = useState(0);
+  const [boothTradeBusy, setBoothTradeBusy] = useState(false);
   const [rolePromptEvent, setRolePromptEvent] = useState(null);
   const [tradeNightDraft, setTradeNightDraft] = useState({
     title: '',
@@ -4625,6 +4626,9 @@ export default function CardSwipersLanding() {
         })),
         buyerUid,
         sellerUid,
+        buyerId: buyerUid,
+        sellerId: sellerUid,
+        roundCount: 1,
         fromUserId,
         fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
         toUserId,
@@ -4663,6 +4667,53 @@ export default function CardSwipersLanding() {
       setAuthError('Unable to send offer right now. Please try again.');
     } finally {
       setOfferBusy(false);
+    }
+  };
+
+  const handleProposeBoothTrade = async (vendor) => {
+    if (!firebaseUser || !vendor?.id || boothTradeBusy) return;
+    setBoothTradeBusy(true);
+    setAuthError('');
+    try {
+      const vendorUid = vendor.id || vendor.userId;
+      const currentName = firebaseUser.displayName || firebaseUser.email || 'Collector';
+      const vendorName = vendor.displayName || 'Vendor';
+
+      // Reuse an existing match with this vendor if one is already open.
+      const existingMatch = matches.find((match) =>
+        Array.isArray(match.participants) && match.participants.includes(vendorUid)
+      );
+
+      let match = existingMatch;
+      if (!match) {
+        const matchRef = await addDoc(collection(db, 'matches'), {
+          cardId: null,
+          cardTitle: 'Trade Night',
+          ownerUserId: vendorUid,
+          requesterUserId: firebaseUser.uid,
+          participants: [firebaseUser.uid, vendorUid],
+          participantNames: {
+            [firebaseUser.uid]: currentName,
+            [vendorUid]: vendorName
+          },
+          counterpartyName: vendorName,
+          status: 'active',
+          lastMessage: `${currentName} started a Trade Night negotiation.`,
+          unreadBy: [vendorUid],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        match = { id: matchRef.id, ownerUserId: vendorUid, requesterUserId: firebaseUser.uid, participants: [firebaseUser.uid, vendorUid], counterpartyName: vendorName };
+      }
+
+      setActiveChat(match);
+      setShowTradeNightBooth(false);
+      setShowTradeOfferModal(true);
+    } catch (error) {
+      console.error('Failed to start booth trade:', error);
+      setAuthError('Unable to start a trade with this vendor right now.');
+    } finally {
+      setBoothTradeBusy(false);
     }
   };
 
@@ -4745,12 +4796,22 @@ export default function CardSwipersLanding() {
 
       let summaryMessage = `Offer ${nextStatus}: ${formatMoney(offer.amount || 0)}`;
       if (isCounter && counterAmount) {
+        const nextRoundCount = Number(offer.roundCount || 1) + 1;
+        if (nextRoundCount > 3) {
+          setAuthError('Counter-offers are capped at 3 rounds.');
+          return;
+        }
+        const counterBuyerUid = offer.buyerUid || activeChat.requesterUserId || null;
+        const counterSellerUid = offer.sellerUid || activeChat.ownerUserId || null;
         await addDoc(collection(db, 'offers'), {
           matchId: activeChat.id,
           cardId: offer.cardId || activeChat.cardId || null,
           cardTitle: offer.cardTitle || activeChat.cardTitle || '',
-          buyerUid: offer.buyerUid || activeChat.requesterUserId || null,
-          sellerUid: offer.sellerUid || activeChat.ownerUserId || null,
+          buyerUid: counterBuyerUid,
+          sellerUid: counterSellerUid,
+          buyerId: counterBuyerUid,
+          sellerId: counterSellerUid,
+          roundCount: nextRoundCount,
           fromUserId,
           fromUserName: firebaseUser.displayName || firebaseUser.email || 'Collector',
           toUserId,
@@ -10467,6 +10528,19 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
+            {pendingOfferCount > 0 && (
+              <button
+                type="button"
+                onClick={() => { setShowNotificationsPanel(false); setShowNotificationHub(true); }}
+                className="flex w-full items-center justify-between rounded-xl border border-[#10B981]/30 bg-[#10B981]/10 px-4 py-3 text-left hover:bg-[#10B981]/15"
+              >
+                <span className="text-sm font-semibold text-[#10B981]">
+                  You have {pendingOfferCount} pending offer{pendingOfferCount === 1 ? '' : 's'} to review
+                </span>
+                <span className="text-xs font-bold text-[#10B981]">Review →</span>
+              </button>
+            )}
+
             <div className="flex gap-2">
               <button
                 type="button"
@@ -11405,10 +11479,11 @@ export default function CardSwipersLanding() {
                 {!iAmSeller && vendor && (
                   <button
                     type="button"
-                    onClick={() => { setShowTradeNightBooth(false); setShowTradeOfferModal(true); }}
-                    className="mt-2.5 w-full rounded-xl bg-[#10B981] py-3 text-sm font-bold text-black shadow-lg hover:bg-emerald-400"
+                    disabled={boothTradeBusy}
+                    onClick={() => handleProposeBoothTrade(vendor)}
+                    className="mt-2.5 w-full rounded-xl bg-[#10B981] py-3 text-sm font-bold text-black shadow-lg hover:bg-emerald-400 disabled:opacity-60"
                   >
-                    Propose Trade
+                    {boothTradeBusy ? 'Opening Trade...' : 'Propose Trade'}
                   </button>
                 )}
 

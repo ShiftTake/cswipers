@@ -139,11 +139,14 @@ service cloud.firestore {
       // status == 'AWAITING_VERIFICATION'; participant dashboards filter by their
       // own uid. (Client queries enforce the narrowing filter.)
       allow list: if signedIn();
+      // Initial offers must come from the buyer; counter-offers may come from
+      // either party continuing an existing negotiation, capped at 3 rounds.
       allow create: if signedIn() &&
-        request.resource.data.buyerId == request.auth.uid &&
         request.resource.data.fromUserId == request.auth.uid &&
+        (request.resource.data.buyerId == request.auth.uid || request.resource.data.sellerId == request.auth.uid) &&
         request.resource.data.status == 'pending' &&
-        request.resource.data.roundCount == 1;
+        request.resource.data.roundCount >= 1 &&
+        request.resource.data.roundCount <= 3;
       allow update: if signedIn() && (
         resource.data.buyerId == request.auth.uid ||
         resource.data.sellerId == request.auth.uid ||
