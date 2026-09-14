@@ -6863,9 +6863,9 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-28 md:pb-32' : 'pb-24 md:pb-28'}`}`}
+        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen || isInClubRoom ? 'h-full overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-28 md:pb-32' : 'pb-24 md:pb-28'}`}`}
       >
-        <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full max-w-full flex flex-col min-h-0 overflow-x-hidden`}>
+        <div className={`${isAuthScreen || isCreateClubScreen || isInClubRoom ? 'h-full' : 'max-w-6xl mx-auto'} w-full max-w-full flex flex-col min-h-0 overflow-x-hidden`}>
         {currentTab === 'landing' && (
           <div className="w-full px-4 py-16 sm:py-24">
             <section className="min-h-[calc(100vh-130px)] flex flex-col justify-center items-center text-center">
@@ -8390,7 +8390,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className={`mx-auto w-full flex flex-1 flex-col gap-2 md:gap-3 overflow-y-auto overscroll-y-contain ${!selectedClub ? 'max-w-md justify-center py-6 pb-28 md:pb-32' : 'max-w-3xl py-4 pb-28 md:pb-32'}`}>
+          <div className={`mx-auto w-full flex flex-1 min-h-0 flex-col gap-2 md:gap-3 ${!selectedClub ? 'max-w-md justify-center overflow-y-auto overscroll-y-contain py-6 pb-28 md:pb-32' : 'max-w-3xl overflow-y-auto overscroll-y-contain py-4 pb-28 md:pb-32 [touch-action:pan-y]'}`}>
             <div className={`gap-2.5 md:gap-4 min-h-0 ${!selectedClub ? 'flex flex-col items-center justify-center w-full' : 'flex flex-col w-full flex-1'}`}>
               {!selectedClub && (
               <section className="flex flex-col gap-4 min-h-0 mx-auto w-full max-w-xl items-center justify-center">
