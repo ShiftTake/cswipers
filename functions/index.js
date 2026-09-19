@@ -1764,6 +1764,38 @@ exports.autoReleaseDeliveredOrders = onSchedule({ schedule: 'every 15 minutes', 
   }
 });
 
+exports.cleanExpiredSpotlights = onSchedule({ schedule: 'every 24 hours' }, async () => {
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
+  const collectionRef = getDb().collection('tradeSpotlights');
+  const queries = [
+    collectionRef.where('status', '==', 'expired').limit(500),
+    collectionRef.where('createdAt', '<', cutoff).limit(500)
+  ];
+
+  const seen = new Set();
+  const docsToDelete = [];
+
+  for (const queryRef of queries) {
+    const snapshot = await queryRef.get();
+    for (const docSnap of snapshot.docs) {
+      if (seen.has(docSnap.id)) continue;
+      seen.add(docSnap.id);
+      docsToDelete.push(docSnap.ref);
+    }
+  }
+
+  if (docsToDelete.length === 0) {
+    console.log('cleanExpiredSpotlights: no expired spotlight docs found.');
+    return;
+  }
+
+  const batch = getDb().batch();
+  docsToDelete.slice(0, 500).forEach((ref) => batch.delete(ref));
+
+  await batch.commit();
+  console.log(`cleanExpiredSpotlights: deleted ${docsToDelete.slice(0, 500).length} expired spotlight documents.`);
+});
+
 exports.createPaymentIntent = exports.createOrderPaymentIntent;
 exports.releaseSellerFunds = exports.acceptDelivery;
 exports.stripeCreateCheckoutSession = exports.createOrderPaymentIntent;
