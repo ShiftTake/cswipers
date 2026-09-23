@@ -1780,6 +1780,7 @@ exports.cleanExpiredSpotlights = onSchedule({ schedule: 'every 24 hours' }, asyn
   const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
   const collectionRef = getDb().collection('tradeSpotlights');
   const queries = [
+    collectionRef.where('status', '==', 'EXPIRED').limit(500),
     collectionRef.where('status', '==', 'expired').limit(500),
     collectionRef.where('createdAt', '<', cutoff).limit(500)
   ];

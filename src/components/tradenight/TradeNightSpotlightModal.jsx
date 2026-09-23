@@ -7,6 +7,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where
 } from 'firebase/firestore';
@@ -106,21 +107,27 @@ const getCardValueRange = (card) => {
   };
 };
 
-export default function TradeNightSpotlightModal({ eventId, clubId, currentUserId, vendor, myBinder, onClose, onConfirmed }) {
-  const [spotlightId, setSpotlightId] = useState('');
-  const [spotlight, setSpotlight] = useState(null);
+export default function TradeNightSpotlightModal({ eventId, clubId, currentUserId, currentUserName = '', vendor, myBinder, onClose, onConfirmed, initialSpotlightId = '', initialSpotlight = null }) {
+  const [spotlightId, setSpotlightId] = useState(initialSpotlightId || '');
+  const [spotlight, setSpotlight] = useState(initialSpotlight || null);
   const [secondsLeft, setSecondsLeft] = useState(30);
   const [busy, setBusy] = useState(false);
   const [loadedVendorBinder, setLoadedVendorBinder] = useState([]);
   const [selectedBuyerCardIds, setSelectedBuyerCardIds] = useState([]);
   const [selectedSellerCardIds, setSelectedSellerCardIds] = useState([]);
-  const [offerSent, setOfferSent] = useState(false);
+  const [offerSent, setOfferSent] = useState(Boolean(initialSpotlightId));
   const [isHoldingHandshake, setIsHoldingHandshake] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
   const hasConfirmedRef = useRef(false);
   const holdTimerRef = useRef(null);
   const holdIntervalRef = useRef(null);
   const vendorBinder = loadedVendorBinder.length ? loadedVendorBinder : (Array.isArray(vendor?.binder) ? vendor.binder : []);
+
+  useEffect(() => {
+    setSpotlightId(initialSpotlightId || '');
+    setSpotlight(initialSpotlight || null);
+    setOfferSent(Boolean(initialSpotlightId));
+  }, [initialSpotlightId, initialSpotlight]);
 
   useEffect(() => {
     hasConfirmedRef.current = false;
@@ -275,6 +282,8 @@ export default function TradeNightSpotlightModal({ eventId, clubId, currentUserI
         participants: [currentUserId, vendor.id],
         buyerUid: currentUserId,
         sellerUid: vendor.id,
+        buyerName: currentUserName || 'Trader',
+        sellerName: vendor.displayName || vendor.name || 'Trader',
         offeredCards: {
           buyer: selectedOfferCards.map((card) => ({
             id: card.id,
@@ -358,14 +367,46 @@ export default function TradeNightSpotlightModal({ eventId, clubId, currentUserI
     setBusy(true);
     try {
       const heldBy = Array.from(new Set([...(spotlight?.heldBy || spotlight?.acceptedBy || []), currentUserId]));
+      const nextStatus = heldBy.length >= 2 ? 'HANDSHAKE_LOCKED' : 'HANDSHAKE_PENDING';
+      const offeredCards = spotlight?.offeredCards || {};
+      const currentSide = currentUserId === spotlight?.buyerUid ? 'buyer' : currentUserId === spotlight?.sellerUid ? 'seller' : '';
+      const cardsToLock = Array.isArray(offeredCards[currentSide]) ? offeredCards[currentSide] : [];
+
+      await Promise.all(cardsToLock.map((card) => updateDoc(doc(db, 'cards', card.id), {
+        isLocked: true,
+        lockedForTradeNight: true,
+        lockedBySpotlightId: spotlightId,
+        lockedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }).catch(() => null)));
+
       await updateDoc(doc(db, 'tradeSpotlights', spotlightId), {
         acceptedBy: heldBy,
         heldBy,
-        status: heldBy.length >= 2 ? 'HANDSHAKE_LOCKED' : 'HANDSHAKE_PENDING',
-        lockedAt: heldBy.length >= 2 ? serverTimestamp() : null,
+        status: nextStatus,
+        lockedAt: nextStatus === 'HANDSHAKE_LOCKED' ? serverTimestamp() : null,
         updatedAt: serverTimestamp()
       });
-      buzz(heldBy.length >= 2 ? [30, 40, 90, 40, 140] : [80]);
+      if (nextStatus === 'HANDSHAKE_LOCKED') {
+        await setDoc(doc(db, 'tradeNightEscrows', spotlightId), {
+          spotlightId,
+          eventId: spotlight?.eventId || eventId,
+          clubId: spotlight?.clubId || clubId,
+          participants: spotlight?.participants || [currentUserId, vendor?.id].filter(Boolean),
+          buyerUid: spotlight?.buyerUid || currentUserId,
+          sellerUid: spotlight?.sellerUid || vendor?.id || null,
+          buyerName: spotlight?.buyerName || '',
+          sellerName: spotlight?.sellerName || vendor?.displayName || '',
+          offeredCards,
+          dealMeter: spotlight?.dealMeter || dealSnapshot || null,
+          status: 'AGENT_ESCROW_VAULT',
+          escrowStatus: 'awaiting_physical_verification',
+          lockedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        }, { merge: true });
+      }
+      buzz(nextStatus === 'HANDSHAKE_LOCKED' ? [30, 40, 90, 40, 140] : [80]);
     } finally {
       setBusy(false);
       setIsHoldingHandshake(false);
@@ -401,9 +442,17 @@ export default function TradeNightSpotlightModal({ eventId, clubId, currentUserI
   const offerExpired = spotlight?.status === 'EXPIRED' || (offerSent && secondsLeft <= 0);
   const handshakeLocked = spotlight?.status === 'HANDSHAKE_LOCKED' || spotlight?.status === 'confirmed';
   const tradeLocked = offerSent || Boolean(spotlightId);
-  const dealMeterColor = dealSnapshot?.quality === 'Fair Swap'
+  const persistedBuyerCards = Array.isArray(spotlight?.offeredCards?.buyer) ? spotlight.offeredCards.buyer : [];
+  const persistedSellerCards = Array.isArray(spotlight?.offeredCards?.seller) ? spotlight.offeredCards.seller : [];
+  const hasPersistedOfferCards = persistedBuyerCards.length > 0 && persistedSellerCards.length > 0;
+  const effectiveDealSnapshot = spotlight?.dealMeter || dealSnapshot;
+  const displayPair = hasPersistedOfferCards ? {
+    mine: currentUserId === spotlight?.buyerUid ? persistedBuyerCards[0] : persistedSellerCards[0],
+    theirs: currentUserId === spotlight?.buyerUid ? persistedSellerCards[0] : persistedBuyerCards[0]
+  } : pairedCards;
+  const dealMeterColor = effectiveDealSnapshot?.quality === 'Fair Swap'
     ? 'from-[#10B981] via-[#FFD700] to-[#10B981]'
-    : dealSnapshot?.quality === 'Trader Advantage'
+    : effectiveDealSnapshot?.quality === 'Trader Advantage'
       ? 'from-[#F59E0B] via-[#FFD700] to-[#F97316]'
       : 'from-[#EF4444] via-[#F97316] to-[#EF4444]';
 
@@ -426,18 +475,18 @@ export default function TradeNightSpotlightModal({ eventId, clubId, currentUserI
           </div>
         </div>
 
-        {dealSnapshot && (
+        {effectiveDealSnapshot && (
           <div className="mt-5 w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-3">
             <div className="flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">
               <span>Deal meter</span>
-              <span>{dealSnapshot.equityRatio}% equity</span>
+              <span>{effectiveDealSnapshot.equityRatio}% equity</span>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-              <div className={`h-full rounded-full bg-gradient-to-r ${dealMeterColor}`} style={{ width: `${dealSnapshot.score}%` }} />
+              <div className={`h-full rounded-full bg-gradient-to-r ${dealMeterColor}`} style={{ width: `${effectiveDealSnapshot.score}%` }} />
             </div>
             <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-white/70">
-              <span>{dealSnapshot.quality}</span>
-              <span>{dealSnapshot.bonus} · {formatMoney(dealSnapshot.spread)} spread</span>
+              <span>{effectiveDealSnapshot.quality}</span>
+              <span>{effectiveDealSnapshot.bonus} · {formatMoney(effectiveDealSnapshot.spread)} spread</span>
             </div>
           </div>
         )}
@@ -500,8 +549,8 @@ export default function TradeNightSpotlightModal({ eventId, clubId, currentUserI
 
         <div className="mt-6 flex w-full max-w-md items-center justify-center gap-3 sm:gap-6">
           {[
-            { card: pairedCards?.mine, label: 'Your Card', fallback: 'Your Binder' },
-            { card: pairedCards?.theirs, label: `${vendor?.displayName || 'Vendor'}'s Card`, fallback: 'Vendor Binder' }
+            { card: displayPair?.mine, label: 'Your Card', fallback: 'Your Binder' },
+            { card: displayPair?.theirs, label: `${vendor?.displayName || 'Trader'}'s Card`, fallback: 'Trader Binder' }
           ].map((side) => (
             <div key={side.label} className="min-w-0 flex-1 text-center">
               <p className="mb-2 truncate text-[10px] font-bold uppercase tracking-wider text-white/55">{side.label}</p>
@@ -540,7 +589,7 @@ export default function TradeNightSpotlightModal({ eventId, clubId, currentUserI
         </div>
 
         <p className="mt-5 text-center text-xs text-white/55">
-          {offerExpired ? 'Offer expired. Cards return to the trade floor.' : pairedCards ? 'Algorithm matched a trade range that is within the shot clock.' : 'Both binders need active valued cards for an automatic pairing.'}
+          {offerExpired ? 'Offer expired. Cards return to the trade floor.' : (pairedCards || hasPersistedOfferCards) ? 'Algorithm matched a trade range that is within the shot clock.' : 'Both binders need active valued cards for an automatic pairing.'}
         </p>
 
         {!offerSent ? (
@@ -559,7 +608,7 @@ export default function TradeNightSpotlightModal({ eventId, clubId, currentUserI
             onPointerUp={cancelHandshakeHold}
             onPointerCancel={cancelHandshakeHold}
             onPointerLeave={cancelHandshakeHold}
-            disabled={busy || offerExpired || !pairedCards || spotlight?.acceptedBy?.includes(currentUserId) || handshakeLocked}
+            disabled={busy || offerExpired || !(pairedCards || hasPersistedOfferCards) || spotlight?.acceptedBy?.includes(currentUserId) || handshakeLocked}
             className="mt-7 min-h-12 w-full max-w-md rounded-2xl bg-[#10B981] px-5 py-3 text-base font-black text-black shadow-[0_12px_30px_rgba(16,185,129,0.25)] transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           >
             {handshakeLocked ? 'Handshake Locked' : spotlight?.acceptedBy?.includes(currentUserId) ? 'Waiting for the other trader...' : isHoldingHandshake ? 'Hold...' : 'Hold to Handshake'}

@@ -1345,6 +1345,7 @@ export default function CardSwipersLanding() {
   const [showTradeNightBooth, setShowTradeNightBooth] = useState(false);
   const [showTradeNightSpotlight, setShowTradeNightSpotlight] = useState(false);
   const [spotlightVendor, setSpotlightVendor] = useState(null);
+  const [incomingTradeNightSpotlight, setIncomingTradeNightSpotlight] = useState(null);
   const [boothVendorIndex, setBoothVendorIndex] = useState(0);
   const [boothTradeBusy, setBoothTradeBusy] = useState(false);
   const [rolePromptEvent, setRolePromptEvent] = useState(null);
@@ -2472,6 +2473,33 @@ export default function CardSwipersLanding() {
       }).catch((error) => console.error('Failed marking trader away:', error));
     });
   }, [selectedClubId, activeTradeNightId, tradeNightRegistrations, clubLobbyTick, canModerateClubPosts]);
+
+  useEffect(() => {
+    if (!firebaseUser?.uid) {
+      setIncomingTradeNightSpotlight(null);
+      return undefined;
+    }
+
+    const spotlightsQuery = query(collection(db, 'tradeSpotlights'), where('participants', 'array-contains', firebaseUser.uid), limit(25));
+    return onSnapshot(
+      spotlightsQuery,
+      (snapshot) => {
+        const now = Date.now();
+        const incoming = snapshot.docs
+          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+          .filter((spotlight) => {
+            const status = String(spotlight.status || '').toUpperCase();
+            const expiresAt = toDateValue(spotlight.expiresAt)?.getTime() || 0;
+            return spotlight.buyerUid !== firebaseUser.uid &&
+              ['OFFER_PENDING', 'HANDSHAKE_PENDING'].includes(status) &&
+              (!expiresAt || expiresAt > now);
+          })
+          .sort((a, b) => (toDateValue(b.createdAt)?.getTime() || 0) - (toDateValue(a.createdAt)?.getTime() || 0))[0] || null;
+        setIncomingTradeNightSpotlight(incoming);
+      },
+      (error) => console.error('Failed loading incoming trade night spotlight:', error)
+    );
+  }, [firebaseUser?.uid]);
 
   // Auto-expire pending trade offers once their 90s clock runs out, then stamp
   // the recipient's pendingOfferAt so the 120s idle-kick check can fire.
@@ -4762,10 +4790,17 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleSpotlightConfirmed = async () => {
-    const vendor = spotlightVendor;
+  const handleSpotlightConfirmed = async (spotlight = null) => {
+    const counterpartyId = spotlight && firebaseUser?.uid
+      ? (spotlight.participants || []).find((uid) => uid !== firebaseUser.uid)
+      : null;
+    const vendor = spotlightVendor || (counterpartyId ? {
+      id: counterpartyId,
+      displayName: counterpartyId === spotlight?.buyerUid ? spotlight?.buyerName || 'Trader' : spotlight?.sellerName || 'Trader'
+    } : null);
     setShowTradeNightSpotlight(false);
     setSpotlightVendor(null);
+    setIncomingTradeNightSpotlight(null);
     if (vendor) await handleProposeBoothTrade(vendor);
   };
 
@@ -4809,6 +4844,10 @@ export default function CardSwipersLanding() {
         ['pure_trade', 'hybrid_trade', 'cash_sale'].includes(normalizedDealType) &&
         (normalizedDealType === 'pure_trade' || offer.buyerUid === firebaseUser.uid);
       if (requiresProtectionCheckout) {
+        if (normalizedDealType === 'pure_trade') {
+          const confirmed = window.confirm('Accepting this card-for-card trade starts the $2.99 Trade Protection checkout. Continue?');
+          if (!confirmed) return;
+        }
         const checkoutCard = {
           id: offer.cardId || activeChat.cardId || null,
           title: offer.cardTitle || activeChat.cardTitle || 'Card trade',
@@ -11772,17 +11811,30 @@ export default function CardSwipersLanding() {
         );
       })()}
 
-      {showTradeNightSpotlight && spotlightVendor && activeTradeNight && (
+      {(incomingTradeNightSpotlight || (showTradeNightSpotlight && spotlightVendor && activeTradeNight)) && (() => {
+        const activeSpotlight = incomingTradeNightSpotlight;
+        const counterpartyId = activeSpotlight && firebaseUser?.uid
+          ? (activeSpotlight.participants || []).find((uid) => uid !== firebaseUser.uid)
+          : null;
+        const modalVendor = activeSpotlight ? {
+          id: counterpartyId,
+          displayName: counterpartyId === activeSpotlight.buyerUid ? activeSpotlight.buyerName || 'Trader' : activeSpotlight.sellerName || 'Trader'
+        } : spotlightVendor;
+        return (
         <TradeNightSpotlightModal
-          eventId={activeTradeNight.id}
-          clubId={selectedClubId}
+          eventId={activeSpotlight?.eventId || activeTradeNight.id}
+          clubId={activeSpotlight?.clubId || selectedClubId}
           currentUserId={firebaseUser?.uid}
-          vendor={spotlightVendor}
+          currentUserName={firebaseUser?.displayName || firebaseUser?.email || 'Trader'}
+          vendor={modalVendor}
           myBinder={myCollection}
-          onClose={() => { setShowTradeNightSpotlight(false); setSpotlightVendor(null); }}
+          initialSpotlightId={activeSpotlight?.id || ''}
+          initialSpotlight={activeSpotlight}
+          onClose={() => { setShowTradeNightSpotlight(false); setSpotlightVendor(null); setIncomingTradeNightSpotlight(null); }}
           onConfirmed={handleSpotlightConfirmed}
         />
-      )}
+        );
+      })()}
 
       {rolePromptEvent && (() => {
         const maxSellers = Number(rolePromptEvent.maxSellersCount || 0);
