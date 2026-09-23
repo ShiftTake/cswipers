@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 import {
@@ -780,6 +780,12 @@ const ESCROW_API_BASE = '/api';
 const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community marketplace rules.';
 
 const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const buildClubInviteUrl = (club) => {
+  if (typeof window === 'undefined') return '';
+  const inviteCode = club?.code || club?.id || '';
+  const basePath = window.location.pathname.replace(/\/+$/, '') || '/';
+  return inviteCode ? `${window.location.origin}${basePath}?club=${encodeURIComponent(inviteCode)}` : `${window.location.origin}${basePath}`;
+};
 const buildAgentRefCode = (clubCode, member) => {
   const nameSlug = String(member?.displayName || member?.email || 'agent')
     .replace(/[^a-zA-Z0-9]/g, '')
@@ -1181,6 +1187,11 @@ export default function CardSwipersLanding() {
   const [viewingCollection, setViewingCollection] = useState(null);
   const [swipeFeedback, setSwipeFeedback] = useState(null);
   const [myCollection, setMyCollection] = useState([]);
+  const [binders, setBinders] = useState([]);
+  const [selectedBinderId, setSelectedBinderId] = useState('');
+  const [binderDraftName, setBinderDraftName] = useState('');
+  const [binderCreateBusy, setBinderCreateBusy] = useState(false);
+  const [showBinderSelector, setShowBinderSelector] = useState(false);
   const [messages, setMessages] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
   const [chatOffers, setChatOffers] = useState([]);
@@ -1300,6 +1311,7 @@ export default function CardSwipersLanding() {
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
+  const clubInviteHandledRef = useRef(false);
   const clubCarouselRef = useRef(null);
   const selectedClubDetailRef = useRef(null);
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
@@ -1406,6 +1418,32 @@ export default function CardSwipersLanding() {
   // the Discover tab is for finding Public Clubs, so the deck is unfiltered.
   const filteredDiscoverDeck = personalizedDeck;
   const currentCard = filteredDiscoverDeck[cardIndex] || null;
+  const normalizeBinders = (items, fallbackId = firebaseUser?.uid || 'default-binder') => {
+    const fallback = [{ id: fallbackId, name: 'Main Binder', icon: '🗂️', isDefault: true }];
+    if (!Array.isArray(items) || items.length === 0) return fallback;
+    const cleaned = items
+      .map((binder) => ({
+        id: binder?.id || `${fallbackId}-${Math.random().toString(36).slice(2, 8)}`,
+        name: String(binder?.name || '').trim() || 'Binder',
+        icon: binder?.icon || '🗂️',
+        isDefault: Boolean(binder?.isDefault)
+      }))
+      .filter((binder) => binder && binder.name);
+    if (cleaned.length === 0) return fallback;
+    const hasDefault = cleaned.some((binder) => binder.isDefault);
+    if (!hasDefault) cleaned[0].isDefault = true;
+    return cleaned;
+  };
+  const availableBinders = normalizeBinders(binders, firebaseUser?.uid || 'default-binder');
+  const selectedBinder = availableBinders.find((binder) => binder.id === selectedBinderId) || availableBinders[0] || null;
+  const selectedBinderCards = useMemo(() => {
+    if (!selectedBinderId) return myCollection;
+    return myCollection.filter((card) => {
+      const binderMatches = card?.binderId === selectedBinderId;
+      const isDefaultBinder = selectedBinder?.isDefault && (!card?.binderId || card?.binderId === selectedBinderId);
+      return binderMatches || isDefaultBinder;
+    });
+  }, [myCollection, selectedBinderId, selectedBinder]);
   const liveTradeNightClubIds = new Set(
     publicClubLiveEvents
       .filter((event) => {
@@ -2844,6 +2882,7 @@ export default function CardSwipersLanding() {
                 recentComps: data.recentComps || data.value || '$0',
                 owner: data.ownerName || 'Collector',
                 ownerUid: data.ownerUid || null,
+                binderId: data.binderId || data.ownerUid || firebaseUser?.uid || 'default-binder',
                 seekingTags: data.seekingTags || [],
                 detailLine: data.condition || 'Card listing',
                 cardColor: 'from-red-600/20 to-orange-500/20',
@@ -2878,7 +2917,8 @@ export default function CardSwipersLanding() {
               imageUrl: card.imageUrl,
               tradeValue: card.tradeValue,
               value: card.tradeValue,
-              avgMarketValue: card.avgMarketValue
+              avgMarketValue: card.avgMarketValue,
+              binderId: card.binderId || card.ownerUid || firebaseUser?.uid || 'default-binder'
             }));
             return [...uploaded, ...localCards];
           });
@@ -3912,6 +3952,7 @@ export default function CardSwipersLanding() {
       imageUrl: frontImageUrl,
       owner: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
       ownerUid: firebaseUser?.uid || null,
+      binderId: selectedBinderId || firebaseUser?.uid || 'default-binder',
       tradeValue: newCard.estimatedValue || '$0',
       avgMarketValue: newCard.estimatedValue || '$0',
       recentComps: newCard.estimatedValue || '$0',
@@ -3948,7 +3989,8 @@ export default function CardSwipersLanding() {
         name: newCard.title,
         brand: newCard.brand,
         condition: conditionLabel,
-        imageUrl: frontImageUrl
+        imageUrl: frontImageUrl,
+        binderId: selectedBinderId || firebaseUser?.uid || 'default-binder'
       },
       ...prevCollection
     ]);
@@ -5218,12 +5260,22 @@ export default function CardSwipersLanding() {
         status: 'active'
       };
 
-      if (clubAccessMode === 'public') {
+      const isAutoApproved = Boolean(clubData?.autoApproveJoins);
+      if (clubAccessMode === 'public' || isAutoApproved) {
         await setDoc(doc(clubDoc.ref, 'members', firebaseUser.uid), memberProfile, { merge: true });
+        await updateDoc(clubDoc.ref, {
+          memberCount: Number(clubData.memberCount || clubData.membersCount || 0) + 1,
+          membersCount: Number(clubData.membersCount || clubData.memberCount || 0) + 1,
+          updatedAt: serverTimestamp()
+        });
 
         setSelectedClubId(clubDoc.id);
         setClubJoinCode('');
-        setClubInfo(`Joined ${clubData?.name || 'club'}. You can now enter trade nights that match your binder value.`);
+        setClubInfo(
+          isAutoApproved
+            ? `Approved into ${clubData?.name || 'the club'} automatically. Welcome!`
+            : `Joined ${clubData?.name || 'club'}. You can now enter trade nights that match your binder value.`
+        );
         return;
       }
 
@@ -5253,7 +5305,8 @@ export default function CardSwipersLanding() {
     if (!firebaseUser || !target?.id || clubJoinBusy) return;
 
     const clubAccessMode = getClubAccessMode(target);
-    if (clubAccessMode === 'public') {
+    const isAutoApproved = Boolean(target.autoApproveJoins);
+    if (clubAccessMode === 'public' || isAutoApproved) {
       setClubJoinBusy(true);
       setClubError('');
       setClubInfo('');
@@ -5281,8 +5334,13 @@ export default function CardSwipersLanding() {
           }
         }
         await setDoc(doc(db, 'clubs', target.id, 'members', firebaseUser.uid), memberProfile, { merge: true });
+        await updateDoc(doc(db, 'clubs', target.id), {
+          memberCount: Number(target.memberCount || target.membersCount || 0) + 1,
+          membersCount: Number(target.membersCount || target.memberCount || 0) + 1,
+          updatedAt: serverTimestamp()
+        });
         setSelectedClubId(target.id);
-        setClubInfo(`Joined ${target.name || 'club'}. Welcome!`);
+        setClubInfo(isAutoApproved ? `Approved into ${target.name || 'the club'} automatically. Welcome!` : `Joined ${target.name || 'club'}. Welcome!`);
       } catch (err) {
         console.error('Failed joining club directly:', err);
         setClubError('Could not join this club right now.');
@@ -5310,9 +5368,41 @@ export default function CardSwipersLanding() {
         return;
       }
       const clubDoc = clubSnapshot.docs[0];
+      const clubData = clubDoc.data();
       const banSnapshot = await getDoc(doc(clubDoc.ref, 'bans', firebaseUser.uid));
       if (banSnapshot.exists()) {
         setClubError('You have been blocked from this club by its moderators.');
+        return;
+      }
+      if (Boolean(clubData.autoApproveJoins)) {
+        const memberProfile = {
+          uid: firebaseUser.uid,
+          displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
+          email: firebaseUser.email || '',
+          role: 'member',
+          joinedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          status: 'active'
+        };
+        const refInput = window.prompt('Agent referral code (optional):', '');
+        if (refInput !== null) {
+          const normalizedRef = refInput.trim().toUpperCase();
+          if (normalizedRef) {
+            const agentSnap = await getDocs(query(collection(db, 'clubs', target.id, 'members'), where('referralCode', '==', normalizedRef), where('role', 'in', ['owner', 'super_agent', 'agent']), limit(1)));
+            if (!agentSnap.empty) {
+              memberProfile.referredByAgentId = agentSnap.docs[0].data().uid;
+              memberProfile.referralCode = normalizedRef;
+            }
+          }
+        }
+        await setDoc(doc(db, 'clubs', target.id, 'members', firebaseUser.uid), memberProfile, { merge: true });
+        await updateDoc(doc(db, 'clubs', target.id), {
+          memberCount: Number(clubData.memberCount || clubData.membersCount || 0) + 1,
+          membersCount: Number(clubData.membersCount || clubData.memberCount || 0) + 1,
+          updatedAt: serverTimestamp()
+        });
+        setSelectedClubId(target.id);
+        setClubInfo(`Approved into ${target.name || 'the club'} automatically. Welcome!`);
         return;
       }
       const joinRequestPayload = {
@@ -5617,23 +5707,80 @@ export default function CardSwipersLanding() {
     }
   };
 
+  const handleCreateBinder = async () => {
+    const trimmedName = binderDraftName.trim();
+    if (!firebaseUser || !trimmedName) return;
+    setBinderCreateBusy(true);
+    try {
+      const newBinder = {
+        id: `${firebaseUser.uid}-${Date.now()}`,
+        name: trimmedName,
+        icon: '🗂️',
+        isDefault: false
+      };
+      const nextBinders = [...availableBinders, newBinder];
+      setBinders(nextBinders);
+      setSelectedBinderId(newBinder.id);
+      setBinderDraftName('');
+      setShowBinderSelector(false);
+      await updateDoc(doc(db, 'users', firebaseUser.uid), {
+        binders: nextBinders,
+        selectedBinderId: newBinder.id,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed creating binder:', error);
+      setClubError('Could not create that binder. Please try again.');
+    } finally {
+      setBinderCreateBusy(false);
+    }
+  };
+
+  const handleSelectBinder = async (binderId) => {
+    if (!binderId || !firebaseUser) return;
+    setSelectedBinderId(binderId);
+    setShowBinderSelector(false);
+    const binder = availableBinders.find((entry) => entry.id === binderId);
+    if (!binder) return;
+    try {
+      await updateDoc(doc(db, 'users', firebaseUser.uid), {
+        selectedBinderId: binderId,
+        binders: availableBinders,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Failed setting active binder:', error);
+    }
+  };
+
   const handleRegisterForTradeNight = (event) => {
     if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
     if (!selectedClubMembership || isSelectedClubBanned) {
       setClubError('Join the club before registering for a trade night.');
       return;
     }
+    if (!selectedBinderId) {
+      setClubError('Select a binder before registering for a trade night.');
+      return;
+    }
+    if (!selectedBinderCards.length) {
+      setClubError('Add at least one card to the selected binder before registering for a trade night.');
+      return;
+    }
     if ((event.bannedUserIds || []).includes(firebaseUser.uid)) {
       setClubError('You have been banned from this Trade Night by a moderator and cannot re-enter.');
       return;
     }
-    // Open the role picker; registration completes in confirmTradeNightRegistration.
     setRolePromptEvent(event);
   };
 
   const confirmTradeNightRegistration = async (role) => {
     const event = rolePromptEvent;
     if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
+    if (!selectedBinderId) {
+      setClubError('Select a binder before registering for a trade night.');
+      return;
+    }
 
     let passcode = '';
     if (event.passcode) {
@@ -5657,7 +5804,13 @@ export default function CardSwipersLanding() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
-        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id, passcode, tradeRole: role })
+        body: JSON.stringify({
+          clubId: selectedClubId,
+          eventId: event.id,
+          passcode,
+          tradeRole: role,
+          binderId: selectedBinderId
+        })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -5928,15 +6081,68 @@ export default function CardSwipersLanding() {
   };
 
   const handleCopyClubId = async () => {
-    if (!selectedClub?.id) return;
+    if (!selectedClub?.id && !selectedClub?.code) return;
+    const inviteUrl = buildClubInviteUrl(selectedClub);
     try {
-      await navigator.clipboard.writeText(selectedClub.id);
-      setClubInfo('Club ID copied to clipboard.');
+      await navigator.clipboard.writeText(inviteUrl);
+      setClubInfo('Club invite link copied to clipboard.');
     } catch (error) {
-      console.error('Failed copying club ID:', error);
-      setClubError('Could not copy the Club ID.');
+      console.error('Failed copying club invite link:', error);
+      setClubError('Could not copy the club invite link.');
     }
   };
+
+  const handleJoinClubInvite = useCallback(async () => {
+    if (!firebaseUser || clubInviteHandledRef.current) return;
+
+    const params = new URLSearchParams(window.location.search || '');
+    const inviteCode = (params.get('club') || params.get('clubCode') || params.get('code') || '').trim();
+    if (!inviteCode) return;
+
+    clubInviteHandledRef.current = true;
+    try {
+      const clubMatches = await getDocs(query(collection(db, 'clubs'), where('code', '==', inviteCode.toUpperCase()), limit(1)));
+      if (!clubMatches.empty) {
+        const clubDoc = clubMatches.docs[0];
+        const clubData = clubDoc.data();
+        if (clubData?.name) {
+          setClubInfo(`Joining club invite for ${clubData.name}...`);
+        }
+        await handleJoinSpecificClub({ id: clubDoc.id, ...clubData });
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete('club');
+        nextUrl.searchParams.delete('clubCode');
+        nextUrl.searchParams.delete('code');
+        window.history.replaceState({}, '', nextUrl.toString());
+        return;
+      }
+
+      const clubById = await getDoc(doc(db, 'clubs', inviteCode));
+      if (clubById.exists()) {
+        const clubData = clubById.data();
+        if (clubData?.name) {
+          setClubInfo(`Joining club invite for ${clubData.name}...`);
+        }
+        await handleJoinSpecificClub({ id: clubById.id, ...clubData });
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete('club');
+        nextUrl.searchParams.delete('clubCode');
+        nextUrl.searchParams.delete('code');
+        window.history.replaceState({}, '', nextUrl.toString());
+        return;
+      }
+
+      setClubError('This club invite link is invalid or no longer available.');
+    } catch (error) {
+      console.error('Failed processing club invite URL:', error);
+      setClubError('Could not join from the club invite link.');
+    }
+  }, [firebaseUser, handleJoinSpecificClub]);
+
+  useEffect(() => {
+    if (!firebaseUser || !window || clubInviteHandledRef.current) return;
+    handleJoinClubInvite();
+  }, [firebaseUser, handleJoinClubInvite]);
 
   const handleKickTrader = async (event, member) => {
     if (!firebaseUser || !selectedClubId || !event?.id || !member?.uid || !canManageTraders) return;
@@ -8400,8 +8606,8 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className={`mx-auto w-full flex flex-1 min-h-0 flex-col gap-2 md:gap-3 ${!selectedClub ? 'max-w-md justify-center overflow-y-auto overscroll-y-contain py-6 pb-28 md:pb-32' : 'max-w-3xl overflow-y-auto overscroll-y-contain py-4 pb-28 md:pb-32 [touch-action:pan-y]'}`}>
-            <div className={`gap-2.5 md:gap-4 min-h-0 ${!selectedClub ? 'flex flex-col items-center justify-center w-full' : 'flex flex-col w-full flex-1'}`}>
+          <div className={`mx-auto w-full flex flex-1 min-h-0 flex-col gap-2 md:gap-3 overflow-hidden ${!selectedClub ? 'max-w-md justify-center overscroll-y-none py-6 pb-28 md:pb-32' : 'max-w-3xl overscroll-y-none py-4 pb-28 md:pb-32 [touch-action:pan-y]'}`}>
+            <div className={`gap-2.5 md:gap-4 min-h-0 ${!selectedClub ? 'flex flex-col items-center justify-center w-full' : 'flex flex-col w-full flex-1 overflow-hidden'}`}>
               {!selectedClub && (
               <section className="flex flex-col gap-4 min-h-0 mx-auto w-full max-w-xl items-center justify-center">
                 {/* Search Club bar — floating above the card deck */}
@@ -8544,7 +8750,8 @@ export default function CardSwipersLanding() {
               )}
 
               {selectedClub && (
-              <section ref={selectedClubDetailRef} className="flex flex-col gap-3 min-h-0 w-full">
+              <section ref={selectedClubDetailRef} className="flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden">
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-none [touch-action:pan-y] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <>
                     <div
                       className="sticky top-0 z-30 -mx-3 flex items-center gap-3 border-b border-white/10 bg-black/95 px-3 py-2.5 backdrop-blur-xl sm:-mx-5 sm:px-5"
@@ -8741,9 +8948,9 @@ export default function CardSwipersLanding() {
                             const registrationOpen = status === 'registration';
                             const windowMs = Math.max(1, Number(event.roundMinutes || 60)) * 60 * 1000;
                             const startMs = eventDate ? eventDate.getTime() : 0;
-                            const closesInMs = startMs ? startMs - clubLobbyTick : 0;
+                            const timeUntilStartMs = startMs ? startMs - clubLobbyTick : 0;
                             const isLive = startMs > 0 && clubLobbyTick >= startMs && clubLobbyTick <= startMs + windowMs;
-                            const countdown = closesInMs > 0 ? formatCountdown(closesInMs) : '';
+                            const countdown = timeUntilStartMs > 0 ? formatCountdown(timeUntilStartMs) : '';
                             const liveRemaining = isLive ? formatCountdown(startMs + windowMs - clubLobbyTick) : '';
                             const minCardValue = Number(event.minCardValue || 0);
                             const eventCategories = Array.isArray(event.categories) ? event.categories : [];
@@ -8755,10 +8962,12 @@ export default function CardSwipersLanding() {
                             const badge = isLive
                               ? { label: `Closes in ${liveRemaining}`, className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
                               : registrationOpen && countdown
-                                ? { label: `Starts in ${countdown}`, className: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
+                                ? { label: `Register closes in ${countdown}`, className: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
                                 : registrationOpen
-                                  ? { label: 'Registering', className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
-                                  : { label: String(event.status || 'Closed'), className: 'bg-white/10 text-white/60 border-white/15' };
+                                  ? { label: 'Registration open', className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
+                                  : startMs > 0 && timeUntilStartMs > 0
+                                    ? { label: `Starts in ${formatCountdown(timeUntilStartMs)}`, className: 'bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30' }
+                                    : { label: String(event.status || 'Closed'), className: 'bg-white/10 text-white/60 border-white/15' };
 
                             const ribbon = isLive
                               ? { label: 'LIVE', className: 'bg-[#10B981] text-black' }
@@ -9068,6 +9277,7 @@ export default function CardSwipersLanding() {
                       </div>
                     )}
                   </>
+                </div>
               </section>
               )}
             </div>
@@ -9137,6 +9347,40 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
+            <div className="rounded-2xl border border-[#27272A] bg-[#18181B] p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">Active binder</p>
+                  <select
+                    value={selectedBinderId || availableBinders[0]?.id || ''}
+                    onChange={(event) => handleSelectBinder(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/15 bg-[#000000] px-3 py-2 text-sm font-semibold text-white focus:border-[#FFD700] focus:outline-none"
+                  >
+                    {availableBinders.map((binder) => (
+                      <option key={binder.id} value={binder.id}>{binder.icon} {binder.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="button" onClick={() => setShowBinderSelector((previous) => !previous)} className="min-h-11 rounded-xl border border-[#FFD700]/70 bg-transparent px-3 text-xs font-bold text-[#FFE66D]">
+                  + New Binder
+                </button>
+              </div>
+              {showBinderSelector && (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={binderDraftName}
+                    onChange={(event) => setBinderDraftName(event.target.value)}
+                    placeholder="New binder name"
+                    className="min-w-0 flex-1 rounded-xl border border-white/15 bg-[#000000] px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-[#FFD700] focus:outline-none"
+                  />
+                  <button type="button" disabled={binderCreateBusy || !binderDraftName.trim()} onClick={handleCreateBinder} className="min-h-11 rounded-xl bg-[#FFD700] px-3 text-xs font-bold text-[#000000] disabled:opacity-50">
+                    {binderCreateBusy ? 'Saving...' : 'Create'}
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-3 rounded-xl border border-[#27272A] bg-[#18181B] p-1">
               {[
                 ['active', 'Active'],
@@ -9171,7 +9415,7 @@ export default function CardSwipersLanding() {
                 {userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid && ['completed', 'released', 'fulfilled', 'shipped', 'payment_held', 'payment_pending'].includes(String(order.status || order.escrowStatus || '').toLowerCase())).length === 0 ? <p className="rounded-2xl border border-[#27272A] bg-[#18181B] p-4 text-sm text-white/70">No sales history yet.</p> : userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid).map((order) => <button key={order.id} type="button" onClick={() => setActiveReceipt({ ...order, isSeller: true, orderId: order.orderId || order.id, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#27272A] bg-[#18181B] p-3 text-left hover:border-[#FFD700]/60"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{order.cardTitle || 'Sold card'}</p><p className="mt-1 text-xs text-white/65">Order {order.orderId || order.id} · {order.status || order.escrowStatus || 'pending'}</p></div><span className="text-sm font-bold text-[#FFE66D]">{formatMoney(order.sellerNetPayout || order.sellerPayoutAmount || order.listingPrice || 0)}</span></button>)}</div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-                {myCollection.map((card) => (
+                {(selectedBinderId ? selectedBinderCards : myCollection).map((card) => (
                   <div
                     key={card.id}
                     className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group"

@@ -1539,7 +1539,18 @@ exports.registerTradeNight = onRequest(async (req, res) => {
     const user = await requireAuth(req);
     const clubId = String(req.body?.clubId || '').trim();
     const eventId = String(req.body?.eventId || '').trim();
+    const binderId = String(req.body?.binderId || '').trim();
     if (!clubId || !eventId) throw new Error('clubId and eventId are required.');
+    if (!binderId) throw new Error('Select a binder before registering for a trade night.');
+
+    const binderOwnerSnapshot = await db.collection('cards')
+      .where('ownerUid', '==', user.uid)
+      .where('binderId', '==', binderId)
+      .limit(1)
+      .get();
+    if (binderOwnerSnapshot.empty) {
+      throw new Error('Your selected binder is empty or no longer available for trade night registration.');
+    }
 
     const result = await db.runTransaction(async (transaction) => {
       const clubRef = db.collection('clubs').doc(clubId);
@@ -1592,6 +1603,7 @@ exports.registerTradeNight = onRequest(async (req, res) => {
         userId: user.uid,
         displayName: member.displayName || user.name || user.email || 'Collector',
         status: 'registered',
+        binderId,
         tradeRole,
         pendingOfferAt: null,
         registeredAt: serverTimestamp()
