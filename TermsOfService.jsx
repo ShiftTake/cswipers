@@ -52,6 +52,18 @@ export default function TermsOfService({ onClose, isModal = false }) {
           <p>
             <strong>2.4 Shipping Requirements:</strong> Sellers are required to enter valid, scannable tracking numbers within 5 calendar days of order placement. Orders lacking valid carrier tracking after 5 days are subject to automatic cancellation and buyer refund.
           </p>
+          <p>
+            <strong>2.5 Shipping Information:</strong> Buyers must provide a complete and accurate shipping address before checkout. For physical fulfillment, CardSwipers may display the buyer's ship-to name, city, state, postal code, country, and street address to the seller, club agent, authenticator, carrier, payment processor, or administrator strictly as needed to complete delivery, authentication, dispute review, fraud prevention, or legal compliance.
+          </p>
+          <p>
+            <strong>2.6 Sender Information:</strong> Sellers, trade partners, and club agents must maintain accurate return/sender address information when shipping cards, submitting tracking, or participating in Trade Night authentication. Inaccurate sender or recipient information may delay payouts, trigger cancellation, or require administrator review.
+          </p>
+          <p>
+            <strong>2.7 Trade Night Escrow Vault:</strong> When both parties complete a Trade Night digital handshake, selected cards may be locked from active binders and queued for club-agent escrow, physical inspection, authentication, settlement, or shipment according to the event rules shown in the app.
+          </p>
+          <p>
+            <strong>2.8 Operational Records:</strong> CardSwipers records transaction participants, buyer/seller identifiers, card details, offered cards, shipping addresses, tracking data, dispute evidence, payment status, and escrow status so administrators can operate the marketplace, resolve disputes, and comply with safety, tax, and payment obligations.
+          </p>
         </div>
       </section>
 

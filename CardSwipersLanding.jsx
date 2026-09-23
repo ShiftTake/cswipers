@@ -609,7 +609,7 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
           )}
         </div>
 
-        {!isSeller && order.buyerShippingAddress && <div className="rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm"><p className="font-semibold">Shipping address</p><p className="mt-2 text-white/75">{order.buyerShippingAddress.line1 || order.buyerShippingAddress.street}<br />{order.buyerShippingAddress.city}, {order.buyerShippingAddress.state} {order.buyerShippingAddress.postal_code || order.buyerShippingAddress.zip}<br />{order.buyerShippingAddress.country || 'US'}</p></div>}
+        {order.buyerShippingAddress && <div className="rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm"><p className="font-semibold">{isSeller ? 'Ship to buyer' : 'Shipping address'}</p><p className="mt-2 text-white/75">{order.buyerShippingAddress.line1 || order.buyerShippingAddress.street}<br />{order.buyerShippingAddress.city}, {order.buyerShippingAddress.state} {order.buyerShippingAddress.postal_code || order.buyerShippingAddress.zip}<br />{order.buyerShippingAddress.country || 'US'}</p></div>}
 
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#000000] hover:bg-[#FFE66D]">Download / Print Receipt</button>
