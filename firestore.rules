@@ -45,13 +45,26 @@ service cloud.firestore {
       );
     }
 
+    function usernameChangeAllowed() {
+      return request.resource.data.get('username', '') == resource.data.get('username', '') ||
+        (
+          resource.data.get('username', '') == '' &&
+          request.resource.data.get('usernameChanged', false) == false
+        ) ||
+        (
+          resource.data.get('usernameChanged', false) == false &&
+          request.resource.data.get('usernameChanged', false) == true
+        );
+    }
+
     match /users/{userId} {
       allow create: if isSelf(userId);
       allow read: if isSelf(userId) || isAdmin();
       allow update: if isSelf(userId) &&
         request.resource.data.uid == resource.data.uid &&
         request.resource.data.role == resource.data.role &&
-        request.resource.data.status == resource.data.status;
+        request.resource.data.status == resource.data.status &&
+        usernameChangeAllowed();
       allow delete: if false;
     }
 
@@ -244,8 +257,7 @@ service cloud.firestore {
         allow update, delete: if isAdmin() || isClubModerator(clubId);
 
         match /registrations/{memberId} {
-          allow read: if isAdmin() || isClubModerator(clubId) ||
-            (isClubMember(clubId) && memberId == request.auth.uid);
+          allow read: if isAdmin() || isClubModerator(clubId) || isClubMember(clubId);
           allow write: if false;
         }
       }

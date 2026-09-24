@@ -1438,6 +1438,8 @@ exports.registerTradeNight = onRequest(async (req, res) => {
       transaction.set(registrationRef, {
         userId: user.uid,
         displayName: member.displayName || user.name || user.email || 'Collector',
+        username: member.username || '',
+        profileImageUrl: member.profileImageUrl || '',
         status: 'registered',
         buyInCredits,
         escrowStatus: 'held',
