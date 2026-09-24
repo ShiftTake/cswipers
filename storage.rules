@@ -19,6 +19,11 @@ service firebase.storage {
       allow write: if isAdmin() || (signedIn() && request.auth.uid == userId);
     }
 
+    match /profile-images/{userId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if isAdmin() || (signedIn() && request.auth.uid == userId && request.resource.size < 10 * 1024 * 1024);
+    }
+
     match /verification-docs/{userId}/{allPaths=**} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
       allow write: if isAdmin() || (signedIn() && request.auth.uid == userId);
