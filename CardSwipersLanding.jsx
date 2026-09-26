@@ -44,6 +44,12 @@ import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 import TermsOfService from './TermsOfService.jsx';
+import TradeNightTable, {
+  TradeNightEntryModal,
+  TRADE_NIGHT_DEFAULT_MIN_BINDER_VALUE,
+  TRADE_NIGHT_DEFAULT_MIN_CARD_COUNT,
+  getEntryCriteria
+} from './TradeNightTable.jsx';
 
 const DEFAULT_ADMIN_EMAIL = 'nathanjohns309@gmail.com';
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || DEFAULT_ADMIN_EMAIL)
@@ -1117,6 +1123,9 @@ export default function CardSwipersLanding() {
   });
   const [clubPostBusy, setClubPostBusy] = useState(false);
   const [clubEventBusyId, setClubEventBusyId] = useState('');
+  const [tradeNightEntryEvent, setTradeNightEntryEvent] = useState(null);
+  const [activeTradeNightEventId, setActiveTradeNightEventId] = useState('');
+  const [tradeNightDraft, setTradeNightDraft] = useState(null);
   const [clubReportBusy, setClubReportBusy] = useState(false);
   const [chatReportBusy, setChatReportBusy] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
@@ -4850,6 +4859,7 @@ export default function CardSwipersLanding() {
           profileImageUrl: requestData.profileImageUrl || '',
           email: requestData.userEmail || '',
           role: 'member',
+          agentUid: selectedClubRole === 'agent' ? firebaseUser.uid : null,
           joinedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           credits: 0,
@@ -4944,7 +4954,14 @@ export default function CardSwipersLanding() {
   };
 
   const handleCreateTradeNight = async () => {
-    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubEventBusyId) return;
+    if (!firebaseUser || !selectedClubId || !canModerateClubPosts || clubEventBusyId || !tradeNightDraft) return;
+
+    const minBinderValue = Number(tradeNightDraft.minBinderValue);
+    const minCardCount = Math.floor(Number(tradeNightDraft.minCardCount));
+    if (!Number.isFinite(minBinderValue) || minBinderValue < 0 || !Number.isFinite(minCardCount) || minCardCount < 1) {
+      setClubError('Enter a valid minimum binder value and card count.');
+      return;
+    }
 
     setClubEventBusyId('create');
     setClubError('');
@@ -4952,7 +4969,7 @@ export default function CardSwipersLanding() {
 
     try {
       const config = selectedClub?.defaultEventConfig || {};
-      const buyInCredits = Math.max(1, Number(config.buyInCredits || 50));
+      const buyInCredits = Math.max(1, Math.floor(Number(tradeNightDraft.buyInCredits || config.buyInCredits || 50)));
       const capLimit = Math.max(2, Number(config.capLimit || 64));
       const guaranteedPool = Math.max(0, Number(config.guaranteedPool || 0));
       const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -4967,6 +4984,8 @@ export default function CardSwipersLanding() {
         currentRegistrations: 0,
         escrowTotal: 0,
         roundMinutes: Math.max(1, Number(config.roundMinutes || 10)),
+        entryCriteria: { minBinderValue, minCardCount },
+        bootedUids: [],
         scheduledFor,
         createdByUid: firebaseUser.uid,
         createdByName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Moderator',
@@ -4974,6 +4993,7 @@ export default function CardSwipersLanding() {
         updatedAt: serverTimestamp()
       });
       setClubInfo('Trade night opened for registration. Buy-ins will be held in club escrow.');
+      setTradeNightDraft(null);
     } catch (error) {
       console.error('Failed creating trade night:', error);
       setClubError('Could not create the trade night.');
@@ -4982,33 +5002,47 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleRegisterForTradeNight = async (event) => {
+  const handleRegisterForTradeNight = (event) => {
     if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
     if (!selectedClubMembership || isSelectedClubBanned) {
       setClubError('Join the club before registering for a trade night.');
       return;
     }
+    if ((event.bootedUids || []).includes(firebaseUser.uid)) {
+      setClubError('You were removed from this trade night by a table vote and cannot re-enter.');
+      return;
+    }
+    setTradeNightEntryEvent(event);
+  };
+
+  const postClubApi = async (path, body) => {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await firebaseUser.getIdToken()}`
+      },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Request failed.');
+    return payload;
+  };
+
+  const handleSubmitTradeNightEntry = async (event, binderCardIds) => {
+    if (!firebaseUser || !selectedClubId || !event?.id || clubEventBusyId) return;
 
     setClubEventBusyId(`register-${event.id}`);
     setClubError('');
     setClubInfo('');
 
     try {
-      const response = await fetch('/api/clubs/register-trade-night', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${await firebaseUser.getIdToken()}`
-        },
-        body: JSON.stringify({ clubId: selectedClubId, eventId: event.id })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Registration could not be completed.');
-      }
+      const payload = await postClubApi('/api/clubs/register-trade-night', { clubId: selectedClubId, eventId: event.id, binderCardIds });
+      setTradeNightEntryEvent(null);
       setClubInfo(`Registered for ${event.title || 'Trade Night'}. ${payload.buyInCredits} credits are held in escrow.`);
     } catch (error) {
       console.error('Failed registering for trade night:', error);
+      setTradeNightEntryEvent(null);
       setClubError(error.message || 'Could not register for this trade night.');
     } finally {
       setClubEventBusyId('');
@@ -7597,7 +7631,11 @@ export default function CardSwipersLanding() {
                         {canModerateClubPosts && (
                           <button
                             type="button"
-                            onClick={handleCreateTradeNight}
+                            onClick={() => setTradeNightDraft({
+                              minBinderValue: String(selectedClub?.defaultEventConfig?.minBinderValue ?? TRADE_NIGHT_DEFAULT_MIN_BINDER_VALUE),
+                              minCardCount: String(selectedClub?.defaultEventConfig?.minCardCount ?? TRADE_NIGHT_DEFAULT_MIN_CARD_COUNT),
+                              buyInCredits: String(selectedClub?.defaultEventConfig?.buyInCredits ?? 50)
+                            })}
                             disabled={Boolean(clubEventBusyId)}
                             className="px-3 py-2 rounded-lg text-xs font-bold bg-[#22C55E] hover:bg-[#16A34A] disabled:opacity-55 disabled:cursor-not-allowed"
                           >
@@ -7613,8 +7651,10 @@ export default function CardSwipersLanding() {
                             const eventDate = toDateValue(event.scheduledFor);
                             const registrationOpen = String(event.status || '').toLowerCase() === 'registration';
                             const registrations = tradeNightRegistrationsByEvent[event.id] || [];
-                            const activeSeatIndex = registrations.length > 0 ? Math.floor(offerClockNow / (TRADE_NIGHT_SHOT_CLOCK_SECONDS * 1000)) % registrations.length : -1;
-                            const tableClockStartedAt = offerClockNow - ((offerClockNow / 1000) % TRADE_NIGHT_SHOT_CLOCK_SECONDS) * 1000;
+                            const eventStatus = String(event.status || '').toLowerCase();
+                            const entryCriteria = getEntryCriteria(event);
+                            const isBootedFromEvent = (event.bootedUids || []).includes(firebaseUser?.uid);
+                            const isRegisteredForEvent = registrations.some((registration) => (registration.userId || registration.id) === firebaseUser?.uid);
                             return (
                               <div key={event.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -7624,52 +7664,35 @@ export default function CardSwipersLanding() {
                                       {event.buyInCredits || 0} credits · {event.currentRegistrations || 0}/{event.capLimit || '∞'} registered
                                       {eventDate ? ` · ${eventDate.toLocaleDateString()}` : ''}
                                     </p>
+                                    <p className="mt-0.5 text-[11px] text-emerald-200/80">
+                                      Entry binder: {entryCriteria.minCardCount}+ cards · ${entryCriteria.minBinderValue.toLocaleString()}+ value
+                                    </p>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => handleRegisterForTradeNight(event)}
-                                    disabled={!registrationOpen || !selectedClubMembership || isSelectedClubBanned || Boolean(clubEventBusyId)}
+                                    disabled={!registrationOpen || isRegisteredForEvent || isBootedFromEvent || !selectedClubMembership || isSelectedClubBanned || Boolean(clubEventBusyId)}
                                     className="px-3 py-2 rounded-lg text-xs font-bold bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-55 disabled:cursor-not-allowed"
                                   >
-                                    {clubEventBusyId === `register-${event.id}` ? 'Registering...' : registrationOpen ? 'Register' : String(event.status || 'closed')}
+                                    {clubEventBusyId === `register-${event.id}` ? 'Registering...' : isBootedFromEvent ? 'Booted' : isRegisteredForEvent ? 'Registered' : registrationOpen ? 'Select Binder & Register' : String(event.status || 'closed')}
                                   </button>
                                 </div>
-                                <div className="mt-3 rounded-2xl border border-emerald-400/20 bg-[#020617] p-3">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div>
-                                      <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300">Tournament Table</p>
-                                      <p className="text-[11px] text-white/55">10 second action clock · recommended counters ready</p>
-                                    </div>
-                                    <ShotClock clock={getShotClockState(tableClockStartedAt, offerClockNow)} size={42} />
+                                <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-emerald-400/20 bg-[#0f3d1a]/60 px-3 py-2.5">
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300">Poker Table</p>
+                                    <p className="truncate text-[11px] text-white/60">
+                                      {registrations.filter((registration) => registration.status !== 'booted').length} seated
+                                      {eventStatus === 'live' ? ` · Orbit ${event.table?.orbit || 1}` : ' · waiting for host'}
+                                    </p>
                                   </div>
-                                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                    {(registrations.length > 0 ? registrations : [{ id: 'empty-1' }, { id: 'empty-2' }, { id: 'empty-3' }, { id: 'empty-4' }]).slice(0, 8).map((registration, index) => {
-                                      const memberProfile = selectedClubMembers.find((member) => member.uid === registration.userId) || {};
-                                      const memberUsername = registration.username || memberProfile.username || '';
-                                      const memberName = registration.displayName || memberProfile.displayName || '';
-                                      const seatName = memberUsername ? `@${memberUsername}` : memberName || 'Open Seat';
-                                      const seatImage = registration.profileImageUrl || memberProfile.profileImageUrl || '';
-                                      const isActiveSeat = index === activeSeatIndex;
-                                      return (
-                                        <div key={registration.id || `seat-${index}`} className={`rounded-xl border px-2.5 py-2 ${isActiveSeat ? 'border-emerald-300 bg-emerald-400/10 shadow-[0_0_18px_rgba(52,211,153,0.22)]' : 'border-white/10 bg-white/[0.04]'}`}>
-                                          <div className="flex items-center gap-2">
-                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/10 text-[11px] font-black">
-                                              {seatImage ? <img src={seatImage} alt="" className="h-full w-full object-cover" /> : getInitials(seatName)}
-                                            </div>
-                                            <div className="min-w-0">
-                                              <p className="truncate text-xs font-bold text-white">{seatName}</p>
-                                              <p className="text-[10px] text-white/50">Seat {index + 1}{isActiveSeat ? ' · action' : ''}</p>
-                                            </div>
-                                          </div>
-                                          {isActiveSeat && (
-                                            <div className="mt-2 flex flex-wrap gap-1">
-                                              {[25, 50, 75].map((amount) => <span key={amount} className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold text-amber-100">+{amount}</span>)}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveTradeNightEventId(event.id)}
+                                    disabled={isBootedFromEvent || (!isRegisteredForEvent && !canModerateClubPosts)}
+                                    className="shrink-0 rounded-lg bg-[#22C55E] px-3 py-2 text-xs font-bold text-black hover:bg-[#16A34A] disabled:opacity-50"
+                                  >
+                                    {eventStatus === 'live' ? 'Open Table' : 'View Table'}
+                                  </button>
                                 </div>
                               </div>
                             );
@@ -9537,6 +9560,62 @@ export default function CardSwipersLanding() {
             </Elements>
           </div>
         </div>
+      )}
+
+      {tradeNightDraft && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 sm:items-center" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-t-3xl border border-white/10 bg-[#0D1117] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-3xl">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-300">Open Trade Night</p>
+            <h3 className="mt-1 text-lg font-black">Entry Binder Requirements</h3>
+            {[
+              { key: 'minBinderValue', label: 'Minimum binder total value ($)', min: 0 },
+              { key: 'minCardCount', label: 'Minimum card count', min: 1 },
+              { key: 'buyInCredits', label: 'Buy-in credits', min: 1 }
+            ].map((field) => (
+              <label key={field.key} className="mt-3 block text-xs text-white/70">
+                {field.label}
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={field.min}
+                  value={tradeNightDraft[field.key]}
+                  onChange={(changeEvent) => setTradeNightDraft((previous) => ({ ...previous, [field.key]: changeEvent.target.value }))}
+                  className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-black/30 px-3 text-base text-white focus:border-white/35 focus:outline-none"
+                />
+              </label>
+            ))}
+            {clubError && <p className="mt-2 text-xs text-red-300">{clubError}</p>}
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setTradeNightDraft(null)} className="min-h-11 flex-1 rounded-xl border border-white/15 bg-white/5 text-sm font-semibold">Cancel</button>
+              <button type="button" onClick={handleCreateTradeNight} disabled={Boolean(clubEventBusyId)} className="min-h-11 flex-1 rounded-xl bg-[#22C55E] text-sm font-bold text-black disabled:opacity-60">
+                {clubEventBusyId === 'create' ? 'Opening...' : 'Open Registration'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tradeNightEntryEvent && firebaseUser && (
+        <TradeNightEntryModal
+          event={tradeNightEntryEvent}
+          currentUid={firebaseUser.uid}
+          busy={clubEventBusyId === `register-${tradeNightEntryEvent.id}`}
+          onCancel={() => setTradeNightEntryEvent(null)}
+          onSubmit={(binderCardIds) => handleSubmitTradeNightEntry(tradeNightEntryEvent, binderCardIds)}
+        />
+      )}
+
+      {activeTradeNightEventId && firebaseUser && selectedClubEvents.some((event) => event.id === activeTradeNightEventId) && (
+        <TradeNightTable
+          clubId={selectedClubId}
+          event={selectedClubEvents.find((event) => event.id === activeTradeNightEventId)}
+          registrations={tradeNightRegistrationsByEvent[activeTradeNightEventId] || []}
+          members={selectedClubMembers}
+          currentUid={firebaseUser.uid}
+          canModerate={canModerateClubPosts}
+          apiPost={postClubApi}
+          onClose={() => setActiveTradeNightEventId('')}
+        />
       )}
 
       {showTradeOfferModal && activeChat && (

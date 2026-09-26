@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 
 admin.initializeApp();
@@ -1390,9 +1391,10 @@ exports.registerTradeNight = onRequest(async (req, res) => {
     const clubId = String(req.body?.clubId || '').trim();
     const eventId = String(req.body?.eventId || '').trim();
     if (!clubId || !eventId) throw new Error('clubId and eventId are required.');
+    const binderCardIds = sanitizeCardIds(req.body?.binderCardIds);
 
-    const result = await db.runTransaction(async (transaction) => {
-      const clubRef = db.collection('clubs').doc(clubId);
+    const result = await getDb().runTransaction(async (transaction) => {
+      const clubRef = getDb().collection('clubs').doc(clubId);
       const memberRef = clubRef.collection('members').doc(user.uid);
       const eventRef = clubRef.collection('events').doc(eventId);
       const registrationRef = eventRef.collection('registrations').doc(user.uid);
@@ -1403,12 +1405,26 @@ exports.registerTradeNight = onRequest(async (req, res) => {
         transaction.get(registrationRef)
       ]);
       if (!clubSnap.exists || !memberSnap.exists || !eventSnap.exists) throw new Error('Club, membership, or event was not found.');
+      const event = eventSnap.data();
+      if ((event.bootedUids || []).includes(user.uid) || registrationSnap.data()?.status === 'booted') {
+        throw new Error('You were removed from this trade night by a table vote and cannot re-enter.');
+      }
       if (registrationSnap.exists) throw new Error('You are already registered for this trade night.');
 
       const member = memberSnap.data();
-      const event = eventSnap.data();
       if (member.status && member.status !== 'active') throw new Error('Your club membership is not active.');
       if (String(event.status || '').toLowerCase() !== 'registration') throw new Error('Registration is closed for this trade night.');
+
+      const cardSnaps = binderCardIds.length
+        ? await transaction.getAll(...binderCardIds.map((cardId) => getDb().collection('cards').doc(cardId)))
+        : [];
+      const binderCards = cardSnaps
+        .filter((snap) => snap.exists && snap.data().ownerUid === user.uid)
+        .map((snap) => toBinderCardSnapshot(snap.id, snap.data()));
+      const binderCheck = evaluateBinderCriteria(binderCards, getEntryCriteria(event));
+      if (!binderCheck.ok) {
+        throw new Error(`Entry binder does not meet requirements: ${binderCheck.missing.join(' ')}`);
+      }
       const buyInCredits = Math.max(1, Math.floor(Number(event.buyInCredits || 0)));
       const currentRegistrations = Number(event.currentRegistrations || 0);
       const capLimit = Number(event.capLimit || 0);
@@ -1443,6 +1459,10 @@ exports.registerTradeNight = onRequest(async (req, res) => {
         status: 'registered',
         buyInCredits,
         escrowStatus: 'held',
+        binderCardIds: binderCards.map((card) => card.id),
+        binderCards,
+        binderValue: binderCheck.totalValue,
+        binderCardCount: binderCheck.cardCount,
         registeredAt: serverTimestamp()
       });
       transaction.update(clubRef, {
@@ -1458,6 +1478,393 @@ exports.registerTradeNight = onRequest(async (req, res) => {
     console.error('registerTradeNight failed:', error);
     return sendJson(res, 400, { error: error.message || 'Could not register for trade night.' });
   }
+});
+
+const TRADE_NIGHT_DEFAULT_MIN_BINDER_VALUE = 500;
+const TRADE_NIGHT_DEFAULT_MIN_CARD_COUNT = 6;
+const TRADE_NIGHT_VENDOR_TURN_MS = 30 * 1000;
+const TRADE_NIGHT_OFFER_MS = 45 * 1000;
+const TRADE_NIGHT_MAX_BINDER_CARDS = 100;
+const TRADE_NIGHT_BOOT_REASON_MAX = 280;
+
+function sanitizeCardIds(value, max = TRADE_NIGHT_MAX_BINDER_CARDS) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((id) => String(id || '').trim()).filter((id) => /^[A-Za-z0-9_-]{1,128}$/.test(id)))).slice(0, max);
+}
+
+function parseDollarValue(value) {
+  const parsed = Number(String(value || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toBinderCardSnapshot(id, data = {}) {
+  return {
+    id,
+    name: String(data.name || data.title || 'Card').slice(0, 120),
+    imageUrl: data.imageFrontUrl || data.imageUrl || '',
+    value: parseDollarValue(data.tradeValue || data.value || data.avgMarketValue)
+  };
+}
+
+function getEntryCriteria(event = {}) {
+  const criteria = event.entryCriteria || {};
+  return {
+    minBinderValue: Math.max(0, Number(criteria.minBinderValue ?? TRADE_NIGHT_DEFAULT_MIN_BINDER_VALUE)),
+    minCardCount: Math.max(0, Math.floor(Number(criteria.minCardCount ?? TRADE_NIGHT_DEFAULT_MIN_CARD_COUNT)))
+  };
+}
+
+function evaluateBinderCriteria(cards, criteria) {
+  const totalValue = Number(cards.reduce((sum, card) => sum + Number(card.value || 0), 0).toFixed(2));
+  const cardCount = cards.length;
+  const missing = [];
+  if (cardCount < criteria.minCardCount) missing.push(`Needs ${criteria.minCardCount - cardCount} more card(s) (minimum ${criteria.minCardCount}).`);
+  if (totalValue < criteria.minBinderValue) missing.push(`Needs $${(criteria.minBinderValue - totalValue).toFixed(2)} more binder value (minimum $${criteria.minBinderValue}).`);
+  return { ok: missing.length === 0, missing, totalValue, cardCount };
+}
+
+function getTableTurn(table = {}) {
+  const seats = table.seats || [];
+  if (seats.length < 2) return { vendorUid: seats[0] || null, recipientUid: null };
+  const dealerSeat = ((table.dealerSeat || 0) % seats.length + seats.length) % seats.length;
+  const offset = Math.min(Math.max(1, table.targetOffset || 1), seats.length - 1);
+  return { vendorUid: seats[dealerSeat], recipientUid: seats[(dealerSeat + offset) % seats.length] };
+}
+
+// Moves to the next recipient; once the vendor has dealt to every seat, the button passes to the next seat.
+function advanceTable(table, nowMs) {
+  const seats = table.seats || [];
+  let dealerSeat = table.dealerSeat || 0;
+  let targetOffset = (table.targetOffset || 1) + 1;
+  let round = table.round || 1;
+  let orbit = table.orbit || 1;
+  if (targetOffset >= seats.length) {
+    dealerSeat = seats.length ? (dealerSeat + 1) % seats.length : 0;
+    targetOffset = 1;
+    round += 1;
+    if (dealerSeat === 0) orbit += 1;
+  }
+  return {
+    ...table,
+    dealerSeat,
+    targetOffset,
+    round,
+    orbit,
+    activeDealId: null,
+    turnStartedAt: admin.firestore.Timestamp.fromMillis(nowMs),
+    turnExpiresAt: admin.firestore.Timestamp.fromMillis(nowMs + TRADE_NIGHT_VENDOR_TURN_MS)
+  };
+}
+
+function removeSeatFromTable(table, uid, nowMs) {
+  const seats = table.seats || [];
+  const removedIndex = seats.indexOf(uid);
+  if (removedIndex < 0) return { table, affectedTurn: false };
+  const { vendorUid, recipientUid } = getTableTurn(table);
+  const nextSeats = seats.filter((seatUid) => seatUid !== uid);
+  const next = { ...table, seats: nextSeats };
+  const resetTurn = {
+    activeDealId: null,
+    turnStartedAt: admin.firestore.Timestamp.fromMillis(nowMs),
+    turnExpiresAt: admin.firestore.Timestamp.fromMillis(nowMs + TRADE_NIGHT_VENDOR_TURN_MS)
+  };
+  if (!nextSeats.length) return { table: { ...next, dealerSeat: 0, targetOffset: 1, ...resetTurn }, affectedTurn: true };
+
+  if (uid === vendorUid) {
+    return { table: { ...next, dealerSeat: removedIndex % nextSeats.length, targetOffset: 1, ...resetTurn }, affectedTurn: true };
+  }
+  const dealerSeat = nextSeats.indexOf(vendorUid);
+  if (uid === recipientUid) {
+    const targetOffset = table.targetOffset || 1;
+    if (targetOffset >= nextSeats.length) return { table: advanceTable({ ...next, dealerSeat, targetOffset: nextSeats.length }, nowMs), affectedTurn: true };
+    return { table: { ...next, dealerSeat, targetOffset, ...resetTurn }, affectedTurn: true };
+  }
+  const recipientIndex = nextSeats.indexOf(recipientUid);
+  const targetOffset = ((recipientIndex - dealerSeat) % nextSeats.length + nextSeats.length) % nextSeats.length || 1;
+  return { table: { ...next, dealerSeat, targetOffset }, affectedTurn: false };
+}
+
+async function loadTradeNightContext(transaction, clubId, eventId, uid) {
+  const clubRef = getDb().collection('clubs').doc(clubId);
+  const eventRef = clubRef.collection('events').doc(eventId);
+  const [clubSnap, eventSnap, memberSnap] = await Promise.all([
+    transaction.get(clubRef),
+    transaction.get(eventRef),
+    transaction.get(clubRef.collection('members').doc(uid))
+  ]);
+  if (!clubSnap.exists || !eventSnap.exists) throw new Error('Trade night was not found.');
+  if (!memberSnap.exists || (memberSnap.data().status && memberSnap.data().status !== 'active')) {
+    throw new Error('An active club membership is required.');
+  }
+  return { clubRef, eventRef, club: clubSnap.data(), event: eventSnap.data(), member: memberSnap.data() };
+}
+
+exports.tradeNightTableAction = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    const eventId = String(req.body?.eventId || '').trim();
+    const action = String(req.body?.action || '').trim();
+    if (!clubId || !eventId) throw new Error('clubId and eventId are required.');
+    if (!['start', 'propose', 'decline', 'accept', 'expire'].includes(action)) throw new Error('Unsupported table action.');
+
+    const result = await getDb().runTransaction(async (transaction) => {
+      const { eventRef, event, member } = await loadTradeNightContext(transaction, clubId, eventId, user.uid);
+      const nowMs = Date.now();
+      const dealsRef = eventRef.collection('deals');
+
+      if (action === 'start') {
+        if (!['owner', 'agent'].includes(String(member.role || '').toLowerCase())) throw new Error('Only club owners and agents can start the table.');
+        if (String(event.status || '').toLowerCase() !== 'registration') throw new Error('This trade night has already started or closed.');
+        const registrationsSnap = await transaction.get(eventRef.collection('registrations').orderBy('registeredAt', 'asc'));
+        const booted = new Set(event.bootedUids || []);
+        const seats = registrationsSnap.docs
+          .filter((snap) => snap.data().status !== 'booted' && !booted.has(snap.id))
+          .map((snap) => snap.id);
+        if (seats.length < 2) throw new Error('At least two seated traders are required to start the table.');
+        transaction.update(eventRef, {
+          status: 'live',
+          table: {
+            seats,
+            dealerSeat: 0,
+            targetOffset: 1,
+            round: 1,
+            orbit: 1,
+            activeDealId: null,
+            turnStartedAt: admin.firestore.Timestamp.fromMillis(nowMs),
+            turnExpiresAt: admin.firestore.Timestamp.fromMillis(nowMs + TRADE_NIGHT_VENDOR_TURN_MS)
+          },
+          updatedAt: serverTimestamp()
+        });
+        return { status: 'live' };
+      }
+
+      if (String(event.status || '').toLowerCase() !== 'live' || !event.table) throw new Error('The table is not live.');
+      const table = event.table;
+      const seats = table.seats || [];
+      if (!seats.includes(user.uid)) throw new Error('You are not seated at this table.');
+      const { vendorUid, recipientUid } = getTableTurn(table);
+      const dealRef = table.activeDealId ? dealsRef.doc(table.activeDealId) : null;
+      const dealSnap = dealRef ? await transaction.get(dealRef) : null;
+      const deal = dealSnap?.exists ? dealSnap.data() : null;
+
+      if (action === 'expire') {
+        if (deal && deal.status === 'pending') {
+          if (deal.expiresAt.toMillis() > nowMs) throw new Error('Offer has not expired yet.');
+          transaction.update(dealRef, { status: 'expired', resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        } else if (table.turnExpiresAt && table.turnExpiresAt.toMillis() > nowMs) {
+          throw new Error('Vendor turn has not expired yet.');
+        }
+        transaction.update(eventRef, { table: advanceTable(table, nowMs), updatedAt: serverTimestamp() });
+        return { status: 'advanced' };
+      }
+
+      if (action === 'decline') {
+        if (deal && deal.status === 'pending') {
+          if (![deal.vendorUid, deal.recipientUid].includes(user.uid)) throw new Error('Only deal participants can decline.');
+          transaction.update(dealRef, { status: 'declined', declinedByUid: user.uid, resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        } else if (user.uid !== vendorUid) {
+          throw new Error('There is no active deal to decline.');
+        }
+        transaction.update(eventRef, { table: advanceTable(table, nowMs), updatedAt: serverTimestamp() });
+        return { status: 'declined' };
+      }
+
+      if (action === 'accept') {
+        if (!deal || deal.status !== 'pending') throw new Error('There is no active deal to accept.');
+        if (deal.awaitingUid !== user.uid) throw new Error('It is not your turn to respond.');
+        if (deal.expiresAt.toMillis() <= nowMs) throw new Error('This offer has expired.');
+        transaction.update(dealRef, { status: 'accepted', acceptedByUid: user.uid, resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        transaction.update(eventRef, { table: advanceTable(table, nowMs), updatedAt: serverTimestamp() });
+        return { status: 'accepted' };
+      }
+
+      // propose: vendor opens a deal on their turn, or the awaiting party counters.
+      const note = String(req.body?.note || '').trim().slice(0, 200);
+      const vendorCardIds = sanitizeCardIds(req.body?.vendorCardIds, 20);
+      const recipientCardIds = sanitizeCardIds(req.body?.recipientCardIds, 20);
+      if (!vendorCardIds.length && !recipientCardIds.length) throw new Error('Select at least one card for the deal.');
+      const participantUids = deal && deal.status === 'pending' ? [deal.vendorUid, deal.recipientUid] : [vendorUid, recipientUid];
+      if (!participantUids[1]) throw new Error('No trader is available to receive a deal.');
+      const [vendorRegSnap, recipientRegSnap] = await Promise.all(participantUids.map((uid) => transaction.get(eventRef.collection('registrations').doc(uid))));
+      const pickCards = (regSnap, ids) => {
+        const byId = new Map((regSnap.data()?.binderCards || []).map((card) => [card.id, card]));
+        if (ids.some((id) => !byId.has(id))) throw new Error('Deals can only include cards from entry binders.');
+        return ids.map((id) => byId.get(id));
+      };
+      const terms = {
+        vendorCardIds,
+        vendorCards: pickCards(vendorRegSnap, vendorCardIds),
+        recipientCardIds,
+        recipientCards: pickCards(recipientRegSnap, recipientCardIds),
+        note,
+        proposedByUid: user.uid,
+        proposedAt: admin.firestore.Timestamp.fromMillis(nowMs)
+      };
+      const expiresAt = admin.firestore.Timestamp.fromMillis(nowMs + TRADE_NIGHT_OFFER_MS);
+
+      if (deal && deal.status === 'pending') {
+        if (deal.awaitingUid !== user.uid) throw new Error('It is not your turn to respond.');
+        if (deal.expiresAt.toMillis() <= nowMs) throw new Error('This offer has expired.');
+        transaction.update(dealRef, {
+          ...terms,
+          awaitingUid: user.uid === deal.vendorUid ? deal.recipientUid : deal.vendorUid,
+          counterCount: Number(deal.counterCount || 0) + 1,
+          history: admin.firestore.FieldValue.arrayUnion({ vendorCardIds, recipientCardIds, note, proposedByUid: user.uid, proposedAt: terms.proposedAt, type: 'counter' }),
+          expiresAt,
+          updatedAt: serverTimestamp()
+        });
+        return { status: 'countered', dealId: dealRef.id };
+      }
+
+      if (user.uid !== vendorUid) throw new Error('Only the active vendor can open a deal.');
+      if (table.turnExpiresAt && table.turnExpiresAt.toMillis() <= nowMs) throw new Error('Your vendor turn for this trader has expired.');
+      const newDealRef = dealsRef.doc();
+      transaction.set(newDealRef, {
+        ...terms,
+        vendorUid,
+        recipientUid,
+        awaitingUid: recipientUid,
+        status: 'pending',
+        round: table.round || 1,
+        orbit: table.orbit || 1,
+        counterCount: 0,
+        history: [{ vendorCardIds, recipientCardIds, note, proposedByUid: user.uid, proposedAt: terms.proposedAt, type: 'open' }],
+        expiresAt,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      transaction.update(eventRef, { table: { ...table, activeDealId: newDealRef.id }, updatedAt: serverTimestamp() });
+      return { status: 'dealt', dealId: newDealRef.id };
+    });
+
+    return sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    console.error('tradeNightTableAction failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Table action failed.' });
+  }
+});
+
+exports.tradeNightBootVote = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return sendJson(res, 204, {});
+  }
+
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    const eventId = String(req.body?.eventId || '').trim();
+    const targetUid = String(req.body?.targetUid || '').trim();
+    const reason = String(req.body?.reason || '').trim().slice(0, TRADE_NIGHT_BOOT_REASON_MAX);
+    if (!clubId || !eventId || !targetUid) throw new Error('clubId, eventId, and targetUid are required.');
+    if (!reason) throw new Error('A brief reason is required to start a boot vote.');
+    if (targetUid === user.uid) throw new Error('You cannot vote to boot yourself.');
+
+    const result = await getDb().runTransaction(async (transaction) => {
+      const { eventRef, event, member } = await loadTradeNightContext(transaction, clubId, eventId, user.uid);
+      const nowMs = Date.now();
+      const table = event.table || {};
+      const seats = table.seats || [];
+      if (String(event.status || '').toLowerCase() !== 'live') throw new Error('Boot votes are only available while the table is live.');
+      if (!seats.includes(user.uid)) throw new Error('Only seated traders can vote.');
+      if (!seats.includes(targetUid)) throw new Error('That trader is no longer seated.');
+
+      const voteRef = eventRef.collection('bootVotes').doc(targetUid);
+      const reasonRef = voteRef.collection('reasons').doc(user.uid);
+      const targetRegRef = eventRef.collection('registrations').doc(targetUid);
+      const [voteSnap, targetRegSnap] = await Promise.all([transaction.get(voteRef), transaction.get(targetRegRef)]);
+      const dealRef = table.activeDealId ? eventRef.collection('deals').doc(table.activeDealId) : null;
+      const dealSnap = dealRef ? await transaction.get(dealRef) : null;
+
+      const eligibleVoters = seats.filter((uid) => uid !== targetUid);
+      const voterUids = Array.from(new Set([...(voteSnap.data()?.voterUids || []), user.uid])).filter((uid) => eligibleVoters.includes(uid));
+      const unanimous = eligibleVoters.every((uid) => voterUids.includes(uid));
+
+      transaction.set(reasonRef, {
+        voterUid: user.uid,
+        voterName: member.username ? `@${member.username}` : member.displayName || 'Trader',
+        reason,
+        createdAt: serverTimestamp()
+      });
+      transaction.set(voteRef, {
+        targetUid,
+        voterUids,
+        eligibleCount: eligibleVoters.length,
+        status: unanimous ? 'booted' : 'open',
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      if (!unanimous) return { status: 'voted', votes: voterUids.length, required: eligibleVoters.length };
+
+      const { table: nextTable, affectedTurn } = removeSeatFromTable(table, targetUid, nowMs);
+      if (affectedTurn && dealSnap?.exists && dealSnap.data().status === 'pending') {
+        transaction.update(dealRef, { status: 'cancelled', cancelReason: 'participant_booted', resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      }
+      transaction.update(eventRef, {
+        table: nextTable,
+        bootedUids: admin.firestore.FieldValue.arrayUnion(targetUid),
+        updatedAt: serverTimestamp()
+      });
+      if (targetRegSnap.exists) {
+        transaction.update(targetRegRef, { status: 'booted', bootedAt: serverTimestamp() });
+      }
+      const targetReg = targetRegSnap.data() || {};
+      transaction.set(eventRef.collection('boots').doc(targetUid), {
+        clubId,
+        eventId,
+        eventTitle: event.title || 'Trade Night',
+        targetUid,
+        targetName: targetReg.username ? `@${targetReg.username}` : targetReg.displayName || 'Trader',
+        voterUids,
+        finalVoterUid: user.uid,
+        bootedAt: serverTimestamp()
+      });
+      return { status: 'booted', votes: voterUids.length, required: eligibleVoters.length };
+    });
+
+    return sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    console.error('tradeNightBootVote failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Boot vote failed.' });
+  }
+});
+
+exports.onTradeNightBoot = onDocumentCreated('clubs/{clubId}/events/{eventId}/boots/{targetUid}', async (event) => {
+  const boot = event.data?.data();
+  if (!boot) return;
+  const { clubId, eventId, targetUid } = event.params;
+  const clubRef = getDb().collection('clubs').doc(clubId);
+  const [clubSnap, targetMemberSnap, reasonsSnap] = await Promise.all([
+    clubRef.get(),
+    clubRef.collection('members').doc(targetUid).get(),
+    clubRef.collection('events').doc(eventId).collection('bootVotes').doc(targetUid).collection('reasons').get()
+  ]);
+  const club = clubSnap.data() || {};
+  const agentUid = targetMemberSnap.data()?.agentUid || null;
+  const agentSnap = agentUid ? await clubRef.collection('members').doc(agentUid).get() : null;
+  const superAgentUid = agentSnap?.data()?.superAgentUid || agentSnap?.data()?.agentUid || null;
+  const ownerUid = club.ownerUid || club.ownerId || null;
+  const comments = reasonsSnap.docs.map((snap) => ({ voterUid: snap.id, voterName: snap.data().voterName || '', reason: snap.data().reason || '' }));
+
+  const recipients = [
+    { uid: agentUid, relation: 'agent' },
+    { uid: superAgentUid, relation: 'super_agent' },
+    { uid: ownerUid, relation: 'club_owner' }
+  ].filter((entry, index, list) => entry.uid && entry.uid !== targetUid && list.findIndex((other) => other.uid === entry.uid) === index);
+
+  await Promise.all(recipients.map((recipient) => notifyUser(
+    recipient.uid,
+    'trade_night_boot',
+    `${boot.targetName || 'A trader'} was booted from ${boot.eventTitle || 'Trade Night'} in ${club.name || 'your club'} by unanimous table vote.`,
+    { clubId, eventId, targetUid, relation: recipient.relation, voterUids: boot.voterUids || [], comments }
+  )));
+  await event.data.ref.update({ notifiedUids: recipients.map((entry) => entry.uid), notifiedAt: serverTimestamp() });
 });
 
 exports.leaveClub = onRequest(async (req, res) => {

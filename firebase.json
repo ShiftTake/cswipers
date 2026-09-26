@@ -59,6 +59,14 @@
         "function": "registerTradeNight"
       },
       {
+        "source": "/api/clubs/trade-night-action",
+        "function": "tradeNightTableAction"
+      },
+      {
+        "source": "/api/clubs/trade-night-boot",
+        "function": "tradeNightBootVote"
+      },
+      {
         "source": "/api/clubs/leave",
         "function": "leaveClub"
       },
