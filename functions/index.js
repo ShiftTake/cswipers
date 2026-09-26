@@ -32,7 +32,9 @@ const PURCHASE_INTENTS_COLLECTION = 'purchaseIntents';
 const USERS_COLLECTION = 'users';
 const WEBHOOK_EVENTS_COLLECTION = 'webhookEvents';
 const DEFAULT_CURRENCY = 'usd';
-const PLATFORM_FEE_RATE = 0.05;
+const PLATFORM_FEE_RATE = 0.03;
+const MAX_COMMUNITY_FEE_RATE = 0.07;
+const MAX_TOTAL_RAKE_RATE = 0.10;
 const STANDARD_SHIPPING_FEE_CENTS = 599;
 const INSURED_SHIPPING_FEE_CENTS = 1299;
 const INSURED_SHIPPING_THRESHOLD_CENTS = 25000;
@@ -142,6 +144,32 @@ function buildTransferGroup(orderId) {
 
 function platformFeeCentsFromBase(baseAmountCents) {
   return Math.round(baseAmountCents * PLATFORM_FEE_RATE);
+}
+
+function clampRate(value, maximum = 1) {
+  const rate = Number(value);
+  if (!Number.isFinite(rate)) return 0;
+  return Math.max(0, Math.min(maximum, rate));
+}
+
+function resolveCommunityFeePolicy(club = {}, agentUid = '') {
+  const communityFeeRate = clampRate(club.communityFeeRate ?? club.transactionFeeRate ?? 0, MAX_COMMUNITY_FEE_RATE);
+  const split = club.agentFeeSplits?.[agentUid] || club.defaultAgentFeeSplit || {};
+  const agentShareRate = clampRate(split.agentShareRate ?? 0.5);
+  const clubShareRate = Number((1 - agentShareRate).toFixed(6));
+  return {
+    communityFeeRate,
+    agentShareRate,
+    clubShareRate,
+    totalRakeRate: PLATFORM_FEE_RATE + communityFeeRate
+  };
+}
+
+async function getClubFeePolicy(clubId, agentUid = '') {
+  if (!clubId) return resolveCommunityFeePolicy({}, agentUid);
+  const clubSnapshot = await getDb().collection('clubs').doc(clubId).get();
+  if (!clubSnapshot.exists) throw new Error('Club was not found for this transaction.');
+  return resolveCommunityFeePolicy(clubSnapshot.data(), agentUid);
 }
 
 function nowTimestamp() {
@@ -566,7 +594,9 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       cardBrand,
       cardImageFrontUrl,
       cardImageBackUrl,
-      buyerShippingAddress
+      buyerShippingAddress,
+      clubId,
+      agentUid
     } = req.body || {};
 
     if (buyerId && buyerId !== decodedToken.uid) {
@@ -577,7 +607,15 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
     const shippingFeeCents = baseAmountCents > INSURED_SHIPPING_THRESHOLD_CENTS
       ? INSURED_SHIPPING_FEE_CENTS
       : STANDARD_SHIPPING_FEE_CENTS;
-    const serviceFeeCents = platformFeeCentsFromBase(baseAmountCents);
+    const feePolicy = await getClubFeePolicy(clubId, agentUid);
+    if (feePolicy.totalRakeRate > MAX_TOTAL_RAKE_RATE) {
+      throw new Error('Configured club and agent fees exceed the 10% total rake cap.');
+    }
+    const platformFeeCents = platformFeeCentsFromBase(baseAmountCents);
+    const communityFeeCents = Math.round(baseAmountCents * feePolicy.communityFeeRate);
+    const serviceFeeCents = platformFeeCents + communityFeeCents;
+    const clubShareCents = Math.round(communityFeeCents * feePolicy.clubShareRate);
+    const agentShareCents = communityFeeCents - clubShareCents;
     const taxCents = 0;
     const totalAmountCents = baseAmountCents + shippingFeeCents + serviceFeeCents + taxCents;
     const sellerNetPayoutCents = baseAmountCents + shippingFeeCents - serviceFeeCents;
@@ -606,6 +644,12 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
         totalAmountCents: String(totalAmountCents),
         shippingFeeCents: String(shippingFeeCents),
         serviceFeeCents: String(serviceFeeCents),
+        platformFeeCents: String(platformFeeCents),
+        communityFeeCents: String(communityFeeCents),
+        clubShareCents: String(clubShareCents),
+        agentShareCents: String(agentShareCents),
+        platformFeeRate: String(PLATFORM_FEE_RATE),
+        communityFeeRate: String(feePolicy.communityFeeRate),
         taxCents: String(taxCents),
         pricingModel: 'separate_charges_and_transfers'
       }
@@ -639,7 +683,16 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       sellerNetPayoutCents
     });
 
-    await db.collection(ORDERS_COLLECTION).doc(orderId).set(orderRecord, { merge: true });
+    orderRecord.platform_fee_rate = PLATFORM_FEE_RATE;
+    orderRecord.platform_fee = platformFeeCents;
+    orderRecord.community_fee_rate = feePolicy.communityFeeRate;
+    orderRecord.community_fee = communityFeeCents;
+    orderRecord.club_fee_share = clubShareCents;
+    orderRecord.agent_fee_share = agentShareCents;
+    orderRecord.agent_uid = agentUid || null;
+    orderRecord.total_rake_rate = feePolicy.totalRakeRate;
+
+    await getDb().collection(ORDERS_COLLECTION).doc(orderId).set(orderRecord, { merge: true });
     await syncPurchaseIntentMirror(orderId, orderRecord);
 
     return sendJson(res, 200, {
@@ -657,20 +710,65 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       sellerNetPayout: (sellerNetPayoutCents / 100).toFixed(2),
       baseItemPrice: (baseAmountCents / 100).toFixed(2),
       totalCharge: (totalAmountCents / 100).toFixed(2),
-      platformFee: (serviceFeeCents / 100).toFixed(2),
-      serviceFee: (serviceFeeCents / 100).toFixed(2),
-      percentageFee: ((baseAmountCents * PLATFORM_FEE_RATE) / 100).toFixed(2),
-      flatFee: (Math.min(PLATFORM_FLAT_FEE_CENTS, serviceFeeCents) / 100).toFixed(2),
-      shippingFee: (shippingFeeCents / 100).toFixed(2),
-      tax: (taxCents / 100).toFixed(2),
-      totalPaid: (totalAmountCents / 100).toFixed(2),
-      sellerNetPayout: (sellerNetPayoutCents / 100).toFixed(2),
+      platformFee: (platformFeeCents / 100).toFixed(2),
+      communityFee: (communityFeeCents / 100).toFixed(2),
+      clubFeeShare: (clubShareCents / 100).toFixed(2),
+      agentFeeShare: (agentShareCents / 100).toFixed(2),
+      platformFeeRate: PLATFORM_FEE_RATE,
+      communityFeeRate: feePolicy.communityFeeRate,
+      totalRakeRate: feePolicy.totalRakeRate,
       currency: normalizedCurrency,
       status: 'pending_payment'
     });
   } catch (error) {
     console.error('createOrderPaymentIntent failed:', error);
     return sendJson(res, 400, { error: error.message || 'Unable to create payment intent.' });
+  }
+});
+
+exports.updateClubFeePolicy = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    const decodedToken = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    const communityFeeRate = Number(req.body?.communityFeeRate);
+    const agentUid = String(req.body?.agentUid || '').trim();
+    const agentShareRate = Number(req.body?.agentShareRate);
+    if (!clubId || !Number.isFinite(communityFeeRate) || communityFeeRate < 0 || communityFeeRate > MAX_COMMUNITY_FEE_RATE) {
+      throw new Error('communityFeeRate must be between 0% and 7%.');
+    }
+    if (agentUid && (!Number.isFinite(agentShareRate) || agentShareRate < 0 || agentShareRate > 1)) {
+      throw new Error('agentShareRate must be between 0 and 1.');
+    }
+
+    const clubRef = getDb().collection('clubs').doc(clubId);
+    const memberRef = clubRef.collection('members').doc(decodedToken.uid);
+    const [clubSnapshot, memberSnapshot] = await Promise.all([clubRef.get(), memberRef.get()]);
+    if (!clubSnapshot.exists || !memberSnapshot.exists) throw new Error('Club or membership was not found.');
+    if (String(memberSnapshot.data().role || '').toLowerCase() !== 'owner') {
+      throw new Error('Only the club owner can update the fee policy.');
+    }
+
+    const club = clubSnapshot.data();
+    const agentFeeSplits = { ...(club.agentFeeSplits || {}) };
+    if (agentUid) agentFeeSplits[agentUid] = { agentShareRate, clubShareRate: Number((1 - agentShareRate).toFixed(6)) };
+    await clubRef.set({
+      communityFeeRate,
+      transactionFeeRate: communityFeeRate,
+      agentFeeSplits,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    return sendJson(res, 200, {
+      ok: true,
+      clubId,
+      ...resolveCommunityFeePolicy({ ...club, communityFeeRate, agentFeeSplits }, agentUid)
+    });
+  } catch (error) {
+    console.error('updateClubFeePolicy failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Unable to update club fee policy.' });
   }
 });
 

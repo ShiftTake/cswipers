@@ -691,8 +691,8 @@ const DEAL_TYPE_STYLES = {
   cash_sale: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
 };
 const GOOGLE_REDIRECT_PENDING_KEY = 'cardswipers_google_redirect_pending';
-const MARKETPLACE_FEE_RATE = 0.05;
-const MARKETPLACE_FLAT_FEE = 0.99;
+const MARKETPLACE_FEE_RATE = 0.03;
+const MARKETPLACE_FLAT_FEE = 0;
 const TRADE_PROTECTION_FEE = 2.99;
 const VERIFIED_SELLER_SUBSCRIPTION_PRICE = 9.99;
 const ESCROW_API_BASE = '/api';
@@ -1123,6 +1123,8 @@ export default function CardSwipersLanding() {
   });
   const [clubPostBusy, setClubPostBusy] = useState(false);
   const [clubEventBusyId, setClubEventBusyId] = useState('');
+  const [clubFeeBusy, setClubFeeBusy] = useState(false);
+  const [clubFeeDraft, setClubFeeDraft] = useState({ communityFeePercent: '0', agentSharePercent: '50', agentUid: '' });
   const [tradeNightEntryEvent, setTradeNightEntryEvent] = useState(null);
   const [activeTradeNightEventId, setActiveTradeNightEventId] = useState('');
   const [tradeNightDraft, setTradeNightDraft] = useState(null);
@@ -2811,6 +2813,8 @@ export default function CardSwipersLanding() {
           buyerId: firebaseUser.uid,
           sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || '',
           sellerUserId: card.ownerUid || null,
+          clubId: card.clubId || options.clubId || null,
+          agentUid: card.agentUid || options.agentUid || null,
           sellerName: card.owner || 'Collector',
           cardId: card.id,
           cardTitle: card.title,
@@ -4604,6 +4608,10 @@ export default function CardSwipersLanding() {
         ownerId: firebaseUser.uid,
         ownerEmail: firebaseUser.email || '',
         ownerName,
+        communityFeeRate: 0,
+        transactionFeeRate: 0,
+        defaultAgentFeeSplit: { clubShareRate: 0.5, agentShareRate: 0.5 },
+        agentFeeSplits: {},
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         memberCount: 1,
@@ -4999,6 +5007,35 @@ export default function CardSwipersLanding() {
       setClubError('Could not create the trade night.');
     } finally {
       setClubEventBusyId('');
+    }
+  };
+
+  const handleUpdateClubFeePolicy = async () => {
+    if (!firebaseUser || !selectedClubId || selectedClubRole !== 'owner' || clubFeeBusy) return;
+    const communityFeeRate = Number(clubFeeDraft.communityFeePercent) / 100;
+    const agentShareRate = Number(clubFeeDraft.agentSharePercent) / 100;
+    if (!Number.isFinite(communityFeeRate) || communityFeeRate < 0 || communityFeeRate > 7) {
+      setClubError('Community fee must be between 0% and 7%. CardSwipers always receives 3%.');
+      return;
+    }
+    if (!Number.isFinite(agentShareRate) || agentShareRate < 0 || agentShareRate > 1) {
+      setClubError('Agent share must be between 0% and 100% of the community fee pool.');
+      return;
+    }
+    setClubFeeBusy(true);
+    setClubError('');
+    try {
+      await postClubApi('/api/clubs/update-fee-policy', {
+        clubId: selectedClubId,
+        communityFeeRate,
+        agentUid: clubFeeDraft.agentUid,
+        agentShareRate
+      });
+      setClubInfo(`Fee policy saved: CardSwipers 3% + ${communityFeeRate * 100}% community pool.`);
+    } catch (error) {
+      setClubError(error.message || 'Could not update the fee policy.');
+    } finally {
+      setClubFeeBusy(false);
     }
   };
 
@@ -7643,6 +7680,64 @@ export default function CardSwipersLanding() {
                           </button>
                         )}
                       </div>
+                      {selectedClubRole === 'owner' && (
+                        <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[10px] uppercase tracking-[0.2em] text-amber-200">Fee Policy</p>
+                              <p className="mt-1 text-xs text-white/60">CardSwipers always receives 3%. Set the club and agent pool from 0% to 7%.</p>
+                            </div>
+                            <span className="text-[11px] font-bold text-emerald-300">Total cap: 10%</span>
+                          </div>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                            <label className="text-[11px] text-white/65">
+                              Community pool (%)
+                              <input
+                                type="number"
+                                min="0"
+                                max="7"
+                                step="0.5"
+                                value={clubFeeDraft.communityFeePercent}
+                                onChange={(event) => setClubFeeDraft((previous) => ({ ...previous, communityFeePercent: event.target.value }))}
+                                className="mt-1 min-h-10 w-full rounded-lg border border-white/15 bg-black/25 px-2 text-base text-white focus:border-white/35 focus:outline-none"
+                              />
+                            </label>
+                            <label className="text-[11px] text-white/65">
+                              Agent share (%)
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="5"
+                                value={clubFeeDraft.agentSharePercent}
+                                onChange={(event) => setClubFeeDraft((previous) => ({ ...previous, agentSharePercent: event.target.value }))}
+                                className="mt-1 min-h-10 w-full rounded-lg border border-white/15 bg-black/25 px-2 text-base text-white focus:border-white/35 focus:outline-none"
+                              />
+                            </label>
+                            <label className="text-[11px] text-white/65">
+                              Agent
+                              <select
+                                value={clubFeeDraft.agentUid}
+                                onChange={(event) => setClubFeeDraft((previous) => ({ ...previous, agentUid: event.target.value }))}
+                                className="mt-1 min-h-10 w-full rounded-lg border border-white/15 bg-black/25 px-2 text-sm text-white focus:border-white/35 focus:outline-none"
+                              >
+                                <option value="">Default split</option>
+                                {selectedClubMembers.filter((member) => member.role === 'agent').map((member) => (
+                                  <option key={member.uid} value={member.uid}>{member.displayName || member.username || member.uid}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleUpdateClubFeePolicy}
+                            disabled={clubFeeBusy}
+                            className="mt-3 min-h-10 rounded-lg bg-amber-300 px-3 text-xs font-black text-black disabled:opacity-50"
+                          >
+                            {clubFeeBusy ? 'Saving...' : 'Save Fee Policy'}
+                          </button>
+                        </div>
+                      )}
                       <div className="mt-3 grid gap-2">
                         {selectedClubEvents.length === 0 ? (
                           <p className="text-sm text-white/60">No trade nights are open yet.</p>
