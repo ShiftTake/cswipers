@@ -260,6 +260,26 @@ service cloud.firestore {
           allow read: if isAdmin() || isClubModerator(clubId) || isClubMember(clubId);
           allow write: if false;
         }
+
+        match /deals/{dealId} {
+          allow read: if isAdmin() || (isClubMember(clubId) && !isClubBanned(clubId));
+          allow write: if false;
+        }
+
+        match /bootVotes/{targetUid} {
+          allow read: if isAdmin() || (isClubMember(clubId) && !isClubBanned(clubId));
+          allow write: if false;
+
+          match /reasons/{voterUid} {
+            allow read: if isAdmin() || isClubModerator(clubId) || isSelf(voterUid);
+            allow write: if false;
+          }
+        }
+
+        match /boots/{targetUid} {
+          allow read: if isAdmin() || isClubModerator(clubId) || isSelf(targetUid);
+          allow write: if false;
+        }
       }
 
       match /posts/{postId} {
