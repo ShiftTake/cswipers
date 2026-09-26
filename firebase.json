@@ -59,6 +59,10 @@
         "function": "registerTradeNight"
       },
       {
+        "source": "/api/clubs/update-fee-policy",
+        "function": "updateClubFeePolicy"
+      },
+      {
         "source": "/api/clubs/trade-night-action",
         "function": "tradeNightTableAction"
       },
