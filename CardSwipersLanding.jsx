@@ -5014,7 +5014,7 @@ export default function CardSwipersLanding() {
     if (!firebaseUser || !selectedClubId || selectedClubRole !== 'owner' || clubFeeBusy) return;
     const communityFeeRate = Number(clubFeeDraft.communityFeePercent) / 100;
     const agentShareRate = Number(clubFeeDraft.agentSharePercent) / 100;
-    if (!Number.isFinite(communityFeeRate) || communityFeeRate < 0 || communityFeeRate > 7) {
+    if (!Number.isFinite(communityFeeRate) || communityFeeRate < 0 || communityFeeRate > 0.07) {
       setClubError('Community fee must be between 0% and 7%. CardSwipers always receives 3%.');
       return;
     }
