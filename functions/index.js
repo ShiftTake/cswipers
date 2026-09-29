@@ -4,6 +4,12 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
+const {
+  buildPayoutPlan,
+  calculateTransactionAmounts,
+  resolveCheckoutPrice,
+  resolveListingFeeAttribution
+} = require('./feeAccounting');
 
 admin.initializeApp();
 
@@ -142,10 +148,6 @@ function buildTransferGroup(orderId) {
   return orderId.startsWith('ORDER_ID_') ? orderId : `ORDER_ID_${orderId}`;
 }
 
-function platformFeeCentsFromBase(baseAmountCents) {
-  return Math.round(baseAmountCents * PLATFORM_FEE_RATE);
-}
-
 function clampRate(value, maximum = 1) {
   const rate = Number(value);
   if (!Number.isFinite(rate)) return 0;
@@ -154,8 +156,8 @@ function clampRate(value, maximum = 1) {
 
 function resolveCommunityFeePolicy(club = {}, agentUid = '') {
   const communityFeeRate = clampRate(club.communityFeeRate ?? club.transactionFeeRate ?? 0, MAX_COMMUNITY_FEE_RATE);
-  const split = club.agentFeeSplits?.[agentUid] || club.defaultAgentFeeSplit || {};
-  const agentShareRate = clampRate(split.agentShareRate ?? 0.5);
+  const split = agentUid ? (club.agentFeeSplits?.[agentUid] || club.defaultAgentFeeSplit || {}) : {};
+  const agentShareRate = agentUid ? clampRate(split.agentShareRate ?? 0.5) : 0;
   const clubShareRate = Number((1 - agentShareRate).toFixed(6));
   return {
     communityFeeRate,
@@ -165,11 +167,68 @@ function resolveCommunityFeePolicy(club = {}, agentUid = '') {
   };
 }
 
-async function getClubFeePolicy(clubId, agentUid = '') {
-  if (!clubId) return resolveCommunityFeePolicy({}, agentUid);
-  const clubSnapshot = await getDb().collection('clubs').doc(clubId).get();
-  if (!clubSnapshot.exists) throw new Error('Club was not found for this transaction.');
-  return resolveCommunityFeePolicy(clubSnapshot.data(), agentUid);
+async function getClubFeePolicy(clubId, sellerUid) {
+  if (!clubId) return { clubId: null, clubOwnerUid: null, agentUid: null, ...resolveCommunityFeePolicy({}, '') };
+  const clubRef = getDb().collection('clubs').doc(clubId);
+  const [clubSnapshot, sellerMemberSnapshot] = await Promise.all([
+    clubRef.get(),
+    clubRef.collection('members').doc(sellerUid).get()
+  ]);
+  if (!clubSnapshot.exists || !sellerMemberSnapshot.exists) throw new Error('Listing club or seller membership was not found.');
+  const club = clubSnapshot.data();
+  const clubOwnerUid = club.ownerUid || club.ownerId || null;
+  if (!clubOwnerUid) throw new Error('Club owner is not configured for fee payouts.');
+  const sellerMembership = sellerMemberSnapshot.data();
+  const sellerIsAgent = String(sellerMembership.role || '').toLowerCase() === 'agent';
+  const candidateAgentUid = sellerIsAgent ? sellerUid : String(sellerMembership.agentUid || '').trim();
+  const agentMemberSnapshot = sellerIsAgent
+    ? sellerMemberSnapshot
+    : candidateAgentUid
+    ? await clubRef.collection('members').doc(candidateAgentUid).get()
+    : null;
+  const attribution = resolveListingFeeAttribution({
+    cardOwnerUid: sellerUid,
+    sellerUid,
+    cardClubId: clubId,
+    sellerMembership,
+    agentMembership: agentMemberSnapshot?.exists ? agentMemberSnapshot.data() : null
+  });
+  return {
+    clubId,
+    clubOwnerUid,
+    agentUid: attribution.agentUid,
+    ...resolveCommunityFeePolicy(club, attribution.agentUid || '')
+  };
+}
+
+async function getActiveTransferAccount(stripe, userId, recipientType) {
+  const profile = await getUserProfile(userId);
+  const accountId = String(profile?.stripeConnectedAccountId || profile?.connectedAccountId || '').trim();
+  if (!accountId.startsWith('acct_')) {
+    throw new Error(`${recipientType} must connect a Stripe payout account before this transaction can be charged.`);
+  }
+  const account = await stripe.accounts.retrieve(accountId);
+  if (account.capabilities?.transfers !== 'active') {
+    throw new Error(`${recipientType}'s Stripe account is not enabled to receive payouts.`);
+  }
+  return accountId;
+}
+
+async function resolveCommunityPayoutAccounts(stripe, feePolicy, agentUid) {
+  const [clubAccountId, agentAccountId] = await Promise.all([
+    feePolicy.communityFeeRate > 0 && feePolicy.clubShareRate > 0
+      ? getActiveTransferAccount(stripe, feePolicy.clubOwnerUid, 'Club owner')
+      : Promise.resolve(''),
+    feePolicy.communityFeeRate > 0 && feePolicy.agentShareRate > 0 && agentUid
+      ? getActiveTransferAccount(stripe, agentUid, 'Agent')
+      : Promise.resolve('')
+  ]);
+  return { clubAccountId, agentAccountId };
+}
+
+function transferIdempotencyKey(orderId, payoutType) {
+  const orderHash = crypto.createHash('sha256').update(String(orderId)).digest('hex');
+  return `cs-${orderHash}-${payoutType}`;
 }
 
 function nowTimestamp() {
@@ -276,7 +335,6 @@ async function validateCardCertification(order) {
 
 function mapOrderToLegacyPurchaseIntent(order) {
   return {
-    orderId: order.order_id,
     buyerUid: order.buyer_id,
     buyerName: order.buyer_name || 'Buyer',
     sellerUid: order.seller_user_id || null,
@@ -413,7 +471,7 @@ async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadat
     throw new Error('Escrow is frozen while this order has an active dispute.');
   }
 
-  if (String(order.stripe_transfer_id || '').trim()) {
+  if (String(order.status || '').toLowerCase() === 'completed' && String(order.stripe_transfer_id || '').trim()) {
     return {
       order,
       transferId: order.stripe_transfer_id,
@@ -439,21 +497,42 @@ async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadat
     }
   }
 
-  const transfer = await stripe.transfers.create({
-    amount: Number(order.seller_net_payout || baseAmountCents),
-    currency: order.currency || DEFAULT_CURRENCY,
-    destination: connectedAccountId,
-    transfer_group: order.transfer_group,
-    metadata: {
-      orderId,
-      resolution: metadata.resolution || 'standard_release',
-      actor: metadata.actor || 'system'
-    }
+  const payouts = buildPayoutPlan({
+    sellerAmountCents: Number(order.seller_net_payout || baseAmountCents),
+    sellerAccountId: connectedAccountId,
+    clubAmountCents: Number(order.club_fee_share || 0),
+    clubAccountId: order.club_payout_account_id || '',
+    agentAmountCents: Number(order.agent_fee_share || 0),
+    agentAccountId: order.agent_payout_account_id || ''
   });
+  const transfers = {};
+  for (const payout of payouts) {
+    const priorTransferId = payout.type === 'seller'
+      ? order.stripe_transfer_id
+      : order[`stripe_${payout.type}_transfer_id`];
+    if (priorTransferId) {
+      transfers[payout.type] = { id: priorTransferId };
+      continue;
+    }
+    transfers[payout.type] = await stripe.transfers.create({
+      amount: payout.amountCents,
+      currency: order.currency || DEFAULT_CURRENCY,
+      destination: payout.accountId,
+      transfer_group: order.transfer_group,
+      metadata: {
+        orderId,
+        payoutType: payout.type,
+        resolution: metadata.resolution || 'standard_release',
+        actor: metadata.actor || 'system'
+      }
+    }, { idempotencyKey: transferIdempotencyKey(orderId, payout.type) });
+  }
 
   const nextOrderState = {
     seller_id: connectedAccountId,
-    stripe_transfer_id: transfer.id,
+    stripe_transfer_id: transfers.seller.id,
+    ...(transfers.club ? { stripe_club_transfer_id: transfers.club.id } : {}),
+    ...(transfers.agent ? { stripe_agent_transfer_id: transfers.agent.id } : {}),
     status: 'completed',
     funds_released_at: serverTimestamp(),
     updated_at: serverTimestamp()
@@ -463,8 +542,10 @@ async function releaseFundsForOrder(orderId, connectedAccountIdOverride, metadat
   await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
 
   return {
-    transferId: transfer.id,
-    status: transfer.status,
+    transferId: transfers.seller.id,
+    clubTransferId: transfers.club?.id || null,
+    agentTransferId: transfers.agent?.id || null,
+    status: 'completed',
     connectedAccountId
   };
 }
@@ -582,53 +663,81 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
   try {
     const decodedToken = await requireAuth(req);
     const {
-      itemPrice,
       currency,
       orderId: requestedOrderId,
       buyerId,
       sellerConnectedAccountId,
       sellerUserId,
       sellerName,
-      cardId,
-      cardTitle,
-      cardBrand,
-      cardImageFrontUrl,
-      cardImageBackUrl,
-      buyerShippingAddress,
-      clubId,
-      agentUid
+      cardId: rawCardId,
+      offerId: rawOfferId,
+      feeOnly,
+      buyerShippingAddress
     } = req.body || {};
 
     if (buyerId && buyerId !== decodedToken.uid) {
       return sendJson(res, 403, { error: 'buyerId must match the authenticated user.' });
     }
 
-    const baseAmountCents = toCents(itemPrice, 'itemPrice');
+    const cardId = String(rawCardId || '').trim();
+    const offerId = String(rawOfferId || '').trim();
+    const normalizedSellerUid = String(sellerUserId || '').trim();
+    if (!cardId || !normalizedSellerUid) throw new Error('cardId and sellerUserId are required.');
+    if (feeOnly) throw new Error('Trade-only protection checkout is not yet supported by the escrow payment flow.');
+    const cardSnapshot = await getDb().collection('cards').doc(cardId).get();
+    if (!cardSnapshot.exists || cardSnapshot.data().ownerUid !== normalizedSellerUid) {
+      throw new Error('The selected card does not belong to this seller.');
+    }
+    const cardData = cardSnapshot.data();
+    const offerSnapshot = offerId ? await getDb().collection('offers').doc(offerId).get() : null;
+    if (offerId && !offerSnapshot?.exists) throw new Error('Accepted offer was not found.');
+    const checkoutPrice = resolveCheckoutPrice({
+      card: { id: cardSnapshot.id, ...cardData },
+      buyerUid: decodedToken.uid,
+      sellerUid: normalizedSellerUid,
+      offer: offerSnapshot?.data() || null,
+      feeOnly: Boolean(feeOnly)
+    });
+    const baseAmountCents = checkoutPrice.baseAmountCents;
     const shippingFeeCents = baseAmountCents > INSURED_SHIPPING_THRESHOLD_CENTS
       ? INSURED_SHIPPING_FEE_CENTS
       : STANDARD_SHIPPING_FEE_CENTS;
-    const feePolicy = await getClubFeePolicy(clubId, agentUid);
+    const feePolicy = await getClubFeePolicy(cardData.clubId || '', normalizedSellerUid);
     if (feePolicy.totalRakeRate > MAX_TOTAL_RAKE_RATE) {
       throw new Error('Configured club and agent fees exceed the 10% total rake cap.');
     }
-    const platformFeeCents = platformFeeCentsFromBase(baseAmountCents);
-    const communityFeeCents = Math.round(baseAmountCents * feePolicy.communityFeeRate);
-    const serviceFeeCents = platformFeeCents + communityFeeCents;
-    const clubShareCents = Math.round(communityFeeCents * feePolicy.clubShareRate);
-    const agentShareCents = communityFeeCents - clubShareCents;
+    const amounts = calculateTransactionAmounts({
+      baseAmountCents,
+      shippingFeeCents,
+      communityFeeRate: feePolicy.communityFeeRate,
+      clubShareRate: feePolicy.clubShareRate
+    });
+    const {
+      platformFeeCents,
+      communityFeeCents,
+      serviceFeeCents,
+      clubShareCents,
+      agentShareCents,
+      totalAmountCents,
+      sellerNetPayoutCents
+    } = amounts;
     const taxCents = 0;
-    const totalAmountCents = baseAmountCents + shippingFeeCents + serviceFeeCents + taxCents;
-    const sellerNetPayoutCents = baseAmountCents + shippingFeeCents - serviceFeeCents;
     const normalizedCurrency = normalizeCurrency(currency);
-    const orderId = buildOrderId(requestedOrderId);
+    const orderId = offerId ? buildOrderId(`OFFER_${offerId}`) : buildOrderId(requestedOrderId);
     const transferGroup = buildTransferGroup(orderId);
     const buyerProfile = await getUserProfile(decodedToken.uid);
-    const sellerProfile = await getUserProfile(sellerUserId);
+    const sellerProfile = await getUserProfile(normalizedSellerUid);
     ensureTosAccepted(buyerProfile);
     if (baseAmountCents > 50000 && (!isVerifiedProfile(buyerProfile) || !isVerifiedProfile(sellerProfile))) {
       throw new Error('Buyer and seller verification are required for transactions above $500.');
     }
     const stripe = getStripeClient();
+    const sellerAccountId = await getActiveTransferAccount(stripe, normalizedSellerUid, 'Seller');
+    const requestedSellerAccountId = String(sellerConnectedAccountId || '').trim();
+    if (requestedSellerAccountId && requestedSellerAccountId !== sellerAccountId) {
+      throw new Error('Seller payout account does not match the verified seller profile.');
+    }
+    const communityPayoutAccounts = await resolveCommunityPayoutAccounts(stripe, feePolicy, feePolicy.agentUid || '');
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: totalAmountCents,
@@ -638,8 +747,9 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       metadata: {
         orderId,
         buyerId: decodedToken.uid,
-        sellerUserId: sellerUserId || '',
-        sellerConnectedAccountId: String(sellerConnectedAccountId || '').trim(),
+        sellerUserId: normalizedSellerUid,
+        offerId,
+        sellerConnectedAccountId: sellerAccountId,
         baseAmountCents: String(baseAmountCents),
         totalAmountCents: String(totalAmountCents),
         shippingFeeCents: String(shippingFeeCents),
@@ -650,10 +760,11 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
         agentShareCents: String(agentShareCents),
         platformFeeRate: String(PLATFORM_FEE_RATE),
         communityFeeRate: String(feePolicy.communityFeeRate),
+        offerId,
         taxCents: String(taxCents),
         pricingModel: 'separate_charges_and_transfers'
       }
-    });
+    }, offerId ? { idempotencyKey: `offer-${crypto.createHash('sha256').update(offerId).digest('hex')}` } : undefined);
 
     const orderRecord = buildOrderRecord({
       orderId,
@@ -661,14 +772,14 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
       buyerId: decodedToken.uid,
       buyerEmail: decodedToken.email || buyerProfile?.email || '',
       buyerName: decodedToken.name || buyerProfile?.displayName || 'Buyer',
-      sellerConnectedAccountId,
+      sellerConnectedAccountId: sellerAccountId,
       sellerUserId,
-      sellerName,
+      sellerName: sellerProfile?.displayName || sellerProfile?.username || sellerName || 'Seller',
       cardId,
-      cardTitle,
-      cardBrand,
-      cardImageFrontUrl: req.body?.cardImageFrontUrl || null,
-      cardImageBackUrl: req.body?.cardImageBackUrl || null,
+      cardTitle: cardData.name || cardData.title || 'Card',
+      cardBrand: cardData.brand || cardData.category || '',
+      cardImageFrontUrl: cardData.imageFrontUrl || cardData.imageUrl || null,
+      cardImageBackUrl: cardData.imageBackUrl || null,
       baseAmountCents,
       totalAmountCents,
       currency: normalizedCurrency,
@@ -689,7 +800,11 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
     orderRecord.community_fee = communityFeeCents;
     orderRecord.club_fee_share = clubShareCents;
     orderRecord.agent_fee_share = agentShareCents;
-    orderRecord.agent_uid = agentUid || null;
+    orderRecord.agent_uid = feePolicy.agentUid || null;
+    orderRecord.club_id = feePolicy.clubId;
+    orderRecord.club_owner_uid = feePolicy.communityFeeRate > 0 ? feePolicy.clubOwnerUid : null;
+    orderRecord.club_payout_account_id = communityPayoutAccounts.clubAccountId || null;
+    orderRecord.agent_payout_account_id = communityPayoutAccounts.agentAccountId || null;
     orderRecord.total_rake_rate = feePolicy.totalRakeRate;
 
     await getDb().collection(ORDERS_COLLECTION).doc(orderId).set(orderRecord, { merge: true });
@@ -723,6 +838,162 @@ exports.createOrderPaymentIntent = onRequest({ secrets: [stripeSecret] }, async 
   } catch (error) {
     console.error('createOrderPaymentIntent failed:', error);
     return sendJson(res, 400, { error: error.message || 'Unable to create payment intent.' });
+  }
+});
+
+exports.tradeOfferAction = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (assertMethod(req, ['POST']) === 'options') return res.status(204).send('');
+
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    const db = getDb();
+
+    if (action === 'create') {
+      const matchId = String(req.body?.matchId || '').trim();
+      const cardId = String(req.body?.cardId || '').trim();
+      const dealType = String(req.body?.dealType || '').trim().toLowerCase();
+      const cashAmount = Number(req.body?.cashAmount || 0);
+      const cardIds = Array.isArray(req.body?.cardIds)
+        ? Array.from(new Set(req.body.cardIds.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 20)
+        : [];
+      if (!matchId || !cardId || !['pure_trade', 'hybrid_trade', 'cash_sale'].includes(dealType)) {
+        throw new Error('matchId, cardId, and a valid deal type are required.');
+      }
+      if (!Number.isFinite(cashAmount) || cashAmount < 0 || (dealType !== 'pure_trade' && cashAmount <= 0) || (dealType === 'pure_trade' && cashAmount !== 0)) {
+        throw new Error('Cash amount does not match the selected deal type.');
+      }
+
+      const matchRef = db.collection('matches').doc(matchId);
+      const offerRef = db.collection('offers').doc();
+      const result = await db.runTransaction(async (transaction) => {
+        const matchSnapshot = await transaction.get(matchRef);
+        if (!matchSnapshot.exists) throw new Error('Match was not found.');
+        const match = matchSnapshot.data();
+        const participants = Array.isArray(match.participants) ? match.participants : [];
+        if (!participants.includes(user.uid) || String(match.status || '').toLowerCase() !== 'active') {
+          throw new Error('An active match membership is required to make an offer.');
+        }
+
+        const cardRef = db.collection('cards').doc(cardId);
+        const cardSnapshot = await transaction.get(cardRef);
+        if (!cardSnapshot.exists || cardSnapshot.data().ownerUid !== match.ownerUserId || match.cardId !== cardId) {
+          throw new Error('Offer card does not match the card attached to this match.');
+        }
+        const offeredCardRefs = cardIds.map((id) => db.collection('cards').doc(id));
+        const offeredCardSnapshots = offeredCardRefs.length ? await transaction.getAll(...offeredCardRefs) : [];
+        if (offeredCardSnapshots.some((snapshot) => !snapshot.exists || snapshot.data().ownerUid !== user.uid)) {
+          throw new Error('Every offered card must belong to the authenticated user.');
+        }
+        const otherUid = participants.find((uid) => uid !== user.uid);
+        if (!otherUid) throw new Error('Match counterparty was not found.');
+        const buyerUid = match.requesterUserId;
+        const sellerUid = match.ownerUserId;
+        if (![buyerUid, sellerUid].includes(user.uid)) throw new Error('Match buyer or seller is invalid.');
+
+        transaction.create(offerRef, {
+          matchId,
+          cardId,
+          cardTitle: cardSnapshot.data().name || cardSnapshot.data().title || 'Card',
+          cardIds,
+          cards: offeredCardSnapshots.map((snapshot) => ({
+            id: snapshot.id,
+            title: snapshot.data().name || snapshot.data().title || 'Trading card',
+            brand: snapshot.data().brand || '',
+            imageUrl: snapshot.data().imageFrontUrl || snapshot.data().imageUrl || ''
+          })),
+          buyerUid,
+          sellerUid,
+          fromUserId: user.uid,
+          fromUserName: user.name || user.email || 'Collector',
+          toUserId: otherUid,
+          amount: cashAmount,
+          cashAmount,
+          dealType,
+          currency: 'USD',
+          status: 'pending',
+          paymentStatus: 'not_started',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        return { offerId: offerRef.id, matchId, toUserId: otherUid, cashAmount, dealType };
+      });
+      return sendJson(res, 200, { ok: true, ...result });
+    }
+
+    const offerId = String(req.body?.offerId || '').trim();
+    if (!offerId) throw new Error('offerId is required.');
+    const offerRef = db.collection('offers').doc(offerId);
+
+    if (action === 'payment_status') {
+      const paymentStatus = String(req.body?.paymentStatus || '').trim();
+      if (!['checkout_open', 'payment_configuration_pending', 'payment_pending'].includes(paymentStatus)) {
+        throw new Error('Unsupported client payment status.');
+      }
+      await db.runTransaction(async (transaction) => {
+        const offerSnapshot = await transaction.get(offerRef);
+        if (!offerSnapshot.exists) throw new Error('Offer was not found.');
+        const offer = offerSnapshot.data();
+        if (offer.buyerUid !== user.uid || offer.status !== 'accepted') throw new Error('Only the accepted offer buyer can start checkout.');
+        transaction.update(offerRef, { paymentStatus, updatedAt: serverTimestamp() });
+      });
+      return sendJson(res, 200, { ok: true, offerId, paymentStatus });
+    }
+
+    if (!['accept', 'reject', 'counter'].includes(action)) throw new Error('Unsupported offer action.');
+    const result = await db.runTransaction(async (transaction) => {
+      const offerSnapshot = await transaction.get(offerRef);
+      if (!offerSnapshot.exists) throw new Error('Offer was not found.');
+      const offer = offerSnapshot.data();
+      if (offer.toUserId !== user.uid || offer.status !== 'pending') throw new Error('Only the recipient can decide a pending offer.');
+      const matchRef = db.collection('matches').doc(offer.matchId);
+      const matchSnapshot = await transaction.get(matchRef);
+      if (!matchSnapshot.exists || !(matchSnapshot.data().participants || []).includes(user.uid)) {
+        throw new Error('Offer match is no longer active.');
+      }
+
+      if (action === 'reject') {
+        transaction.update(offerRef, { status: 'rejected', decidedBy: user.uid, decidedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        return { status: 'rejected', matchId: offer.matchId, otherUid: offer.fromUserId };
+      }
+      if (action === 'accept') {
+        transaction.update(offerRef, { status: 'accepted', decidedBy: user.uid, decidedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        return { status: 'accepted', matchId: offer.matchId, otherUid: offer.fromUserId };
+      }
+
+      const counterAmount = Number(req.body?.cashAmount);
+      if (!Number.isFinite(counterAmount) || counterAmount <= 0) throw new Error('Counter amount must be greater than zero.');
+      const counterRef = db.collection('offers').doc();
+      transaction.update(offerRef, { status: 'countered', decidedBy: user.uid, decidedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      transaction.create(counterRef, {
+        matchId: offer.matchId,
+        cardId: offer.cardId,
+        cardTitle: offer.cardTitle || 'Card',
+        cardIds: [],
+        cards: [],
+        buyerUid: offer.buyerUid,
+        sellerUid: offer.sellerUid,
+        fromUserId: user.uid,
+        fromUserName: user.name || user.email || 'Collector',
+        toUserId: offer.fromUserId,
+        amount: counterAmount,
+        cashAmount: offer.dealType === 'pure_trade' ? 0 : counterAmount,
+        dealType: offer.dealType || 'hybrid_trade',
+        currency: offer.currency || 'USD',
+        parentOfferId: offerId,
+        status: 'pending',
+        paymentStatus: 'not_started',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { status: 'countered', matchId: offer.matchId, otherUid: offer.fromUserId, counterOfferId: counterRef.id };
+    });
+    return sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    console.error('tradeOfferAction failed:', error);
+    return sendJson(res, 400, { error: error.message || 'Offer action failed.' });
   }
 });
 
@@ -1164,6 +1435,22 @@ exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookS
       };
       await orderRef.set(nextOrderState, { merge: true });
       await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+      const offerId = String(paymentIntent.metadata?.offerId || '').trim();
+      if (offerId) {
+        const offerRef = getDb().collection('offers').doc(offerId);
+        await getDb().runTransaction(async (transaction) => {
+          const offerSnapshot = await transaction.get(offerRef);
+          if (!offerSnapshot.exists || offerSnapshot.data().status !== 'accepted' || offerSnapshot.data().buyerUid !== order.buyer_id) {
+            throw new Error('Payment offer is no longer accepted by this buyer.');
+          }
+          transaction.update(offerRef, {
+            paymentStatus: 'payment_held',
+            paymentIntentId: paymentIntent.id,
+            paidAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        });
+      }
       await Promise.all([
         notifyUser(order.buyer_id, 'payout_released', `Funds were released for ${order.card_title || 'your order'}.`, { orderId }),
         notifyUser(order.seller_user_id, 'payout_released', `Your payout was released for ${order.card_title || 'your sale'}.`, { orderId, transferId: order.stripe_transfer_id || null })
@@ -1181,6 +1468,11 @@ exports.stripeEscrowWebhook = onRequest({ secrets: [stripeSecret, stripeWebhookS
       };
       await orderRef.set(nextOrderState, { merge: true });
       await syncPurchaseIntentMirror(orderId, { ...order, ...nextOrderState });
+      const offerId = String(paymentIntent.metadata?.offerId || '').trim();
+      if (offerId) {
+        const offerRef = getDb().collection('offers').doc(offerId);
+        await offerRef.set({ paymentStatus: 'payment_pending', updatedAt: serverTimestamp() }, { merge: true });
+      }
     }
 
     return res.status(200).json({ ok: true, eventId: event.id, type: event.type });

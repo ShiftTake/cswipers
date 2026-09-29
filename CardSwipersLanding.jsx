@@ -448,7 +448,7 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
         <p className="text-xs text-white/70 mt-1">
           {purchaseSummary.feeOnly
             ? `Trade Protection Fee ${formatMoney(purchaseSummary.baseItemPrice)}. No marketplace fee is added.`
-            : `Item price ${formatMoney(purchaseSummary.baseItemPrice)} + 5% marketplace fee ${formatMoney(purchaseSummary.percentageFee || 0)} + flat fee ${formatMoney(purchaseSummary.flatFee || 0)}.`}
+            : `Item ${formatMoney(purchaseSummary.baseItemPrice)} + total transaction fee ${formatMoney(purchaseSummary.serviceFee || purchaseSummary.platformFee || 0)} + shipping ${formatMoney(purchaseSummary.shippingFee || 0)}.`}
         </p>
       </div>
 
@@ -677,7 +677,7 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
-const ENABLE_PAYMENT_PIPELINE = true;
+const ENABLE_PAYMENT_PIPELINE = false;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const DEAL_TYPES = [
@@ -1016,6 +1016,7 @@ export default function CardSwipersLanding() {
     estimatedValue: '',
     buyNowPrice: '',
     sellerState: '',
+    clubId: '',
     saleMode: 'trade_and_sale',
     lookingFor: ''
   });
@@ -1101,6 +1102,7 @@ export default function CardSwipersLanding() {
   const [clubInfo, setClubInfo] = useState('');
   const [clubError, setClubError] = useState('');
   const [moderatedClubIds, setModeratedClubIds] = useState([]);
+  const [clubMemberships, setClubMemberships] = useState([]);
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
@@ -1191,6 +1193,7 @@ export default function CardSwipersLanding() {
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const hasAdminAccess = isAdmin;
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
+  const feeEligibleClubs = clubs.filter((club) => clubMemberships.some((membership) => membership.clubId === club.id));
   const selectedClubMembership = selectedClubMembers.find((member) => member.uid === firebaseUser?.uid) || null;
   const currentProfileName = getProfileDisplayName(currentUserProfile || {}, firebaseUser?.displayName || firebaseUser?.email || 'Collector');
   const currentProfileImageUrl = getProfileAvatarUrl(currentUserProfile || firebaseUser || {});
@@ -2011,6 +2014,7 @@ export default function CardSwipersLanding() {
   useEffect(() => {
     if (!firebaseUser) {
       setModeratedClubIds([]);
+      setClubMemberships([]);
       return;
     }
 
@@ -2018,13 +2022,21 @@ export default function CardSwipersLanding() {
     const unsubscribe = onSnapshot(
       membershipQuery,
       (snapshot) => {
-        const moderated = snapshot.docs
+        const memberships = snapshot.docs
           .map((docSnap) => {
             const data = docSnap.data() || {};
             const clubId = docSnap.ref.parent.parent?.id || '';
-            return { clubId, role: data.role || '' };
+            return {
+              clubId,
+              role: data.role || 'member',
+              status: data.status || 'active',
+              agentUid: data.agentUid || ''
+            };
           })
-          .filter((entry) => entry.clubId && isClubModeratorRole(entry.role))
+          .filter((entry) => entry.clubId && entry.status === 'active');
+        setClubMemberships(memberships);
+        const moderated = memberships
+          .filter((entry) => isClubModeratorRole(entry.role))
           .map((entry) => entry.clubId);
 
         setModeratedClubIds(Array.from(new Set(moderated)));
@@ -2387,6 +2399,7 @@ export default function CardSwipersLanding() {
                 recentComps: data.recentComps || data.value || '$0',
                 owner: data.ownerName || 'Collector',
                 ownerUid: data.ownerUid || null,
+                clubId: data.clubId || '',
                 seekingTags: data.seekingTags || [],
                 detailLine: data.condition || 'Card listing',
                 cardColor: 'from-red-600/20 to-orange-500/20',
@@ -2741,6 +2754,10 @@ export default function CardSwipersLanding() {
   };
 
   const handleInstantPurchase = async (card = currentCard, options = {}) => {
+    if (!ENABLE_PAYMENT_PIPELINE) {
+      setAuthInfo('Payments are not included in the iOS MVP 1 build. Continue with a trade proposal instead.');
+      return false;
+    }
     if (!card || !firebaseUser) return false;
     const shouldAdvanceDeck = Boolean(options?.advanceAfterPurchase);
     const cashAmount = Number(options?.cashAmount || 0);
@@ -2776,7 +2793,7 @@ export default function CardSwipersLanding() {
       serviceFee: feeOnly ? TRADE_PROTECTION_FEE : platformFee,
       tax: 0,
       totalPaid: chargeAmount,
-      sellerNetPayout: baseAmount + shippingFee - platformFee,
+      sellerNetPayout: baseAmount + shippingFee,
       marketplaceFeeRate: MARKETPLACE_FEE_RATE,
       marketplaceFeeAmount: feeOnly ? TRADE_PROTECTION_FEE : platformFee,
       chargedTotalAmount: chargeAmount,
@@ -2805,7 +2822,6 @@ export default function CardSwipersLanding() {
           Authorization: `Bearer ${await firebaseUser.getIdToken()}`
         },
         body: JSON.stringify({
-          itemPrice: baseAmount,
           feeOnly,
           protectionFee: feeOnly ? TRADE_PROTECTION_FEE : null,
           currency: 'usd',
@@ -2813,8 +2829,7 @@ export default function CardSwipersLanding() {
           buyerId: firebaseUser.uid,
           sellerConnectedAccountId: card.sellerConnectedAccountId || card.connectedAccountId || '',
           sellerUserId: card.ownerUid || null,
-          clubId: card.clubId || options.clubId || null,
-          agentUid: card.agentUid || options.agentUid || null,
+          offerId: options?.offerId || null,
           sellerName: card.owner || 'Collector',
           cardId: card.id,
           cardTitle: card.title,
@@ -2837,6 +2852,14 @@ export default function CardSwipersLanding() {
         throw new Error(payload.error || 'Unable to initialize Stripe payment.');
       }
 
+      if (options?.offerId) {
+        await postClubApi('/api/offers/action', {
+          action: 'payment_status',
+          offerId: options.offerId,
+          paymentStatus: 'checkout_open'
+        });
+      }
+
       await updateDoc(purchaseRef, {
         paymentIntentId: payload.paymentIntentId,
         paymentIntentClientSecret: payload.clientSecret,
@@ -2847,7 +2870,7 @@ export default function CardSwipersLanding() {
         serviceFee: Number(payload.serviceFee || payload.platformFee || platformFee),
         tax: Number(payload.tax || 0),
         totalPaid: Number(payload.totalPaid || payload.totalCharge || chargeAmount),
-        sellerNetPayout: Number(payload.sellerNetPayout || baseAmount + shippingFee - platformFee),
+        sellerNetPayout: Number(payload.sellerNetPayout || baseAmount + shippingFee),
         marketplaceFeeAmount: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
         sellerPayoutAmount: Number(payload.baseItemPrice || baseAmount),
         escrowAmount: Number(payload.baseItemPrice || (feeOnly ? TRADE_PROTECTION_FEE : baseAmount)),
@@ -2867,6 +2890,7 @@ export default function CardSwipersLanding() {
         shippingFee: Number(payload.shippingFee || shippingFee),
         totalCharge: Number(payload.totalCharge || chargeAmount),
         platformFee: Number(payload.platformFee || (feeOnly ? 0 : platformFee)),
+        serviceFee: Number(payload.serviceFee || payload.platformFee || (feeOnly ? 0 : platformFee)),
         percentageFee: feeOnly ? 0 : Number(payload.percentageFee || calculateEscrowCharge(grossAmount).percentageFee),
         flatFee: feeOnly ? 0 : Number(payload.flatFee || calculateEscrowCharge(grossAmount).flatFee),
         feeOnly,
@@ -2886,6 +2910,13 @@ export default function CardSwipersLanding() {
         paymentError: error.message || 'Unable to initialize Stripe payment.',
         updatedAt: serverTimestamp()
       });
+      if (options?.offerId) {
+        await postClubApi('/api/offers/action', {
+          action: 'payment_status',
+          offerId: options.offerId,
+          paymentStatus: 'payment_configuration_pending'
+        }).catch((statusError) => console.error('Failed to update offer checkout status:', statusError));
+      }
       setAuthError(error.message || 'Unable to initialize Stripe payment.');
       return false;
     }
@@ -2906,29 +2937,10 @@ export default function CardSwipersLanding() {
       });
 
       if (activePaymentSheet.offerId) {
-        const protectionField = activePaymentSheet.feeOnly
-          ? activePaymentSheet.protectionRole === 'seller' ? 'sellerProtectionPaymentStatus' : 'buyerProtectionPaymentStatus'
-          : 'paymentStatus';
-        const otherProtectionHeld = activePaymentSheet.feeOnly && (
-          activePaymentSheet.protectionRole === 'seller'
-            ? activePaymentSheet.buyerProtectionPaymentStatus === 'payment_held'
-            : activePaymentSheet.sellerProtectionPaymentStatus === 'payment_held'
-        );
-        await updateDoc(doc(db, 'offers', activePaymentSheet.offerId), {
-          [protectionField]: 'payment_held',
-          paymentStatus: activePaymentSheet.feeOnly && !otherProtectionHeld ? 'payment_pending' : 'payment_held',
-          paymentIntentId: paymentIntent?.id || null,
-          paidAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
         if (activeChat?.id) {
           const sellerUid = activeChat.ownerUserId || null;
           await updateDoc(doc(db, 'matches', activeChat.id), {
-            lastMessage: activePaymentSheet.feeOnly && !otherProtectionHeld
-              ? 'Trade Protection payment received from one party. The other party must pay $2.99 to unlock protection.'
-              : activePaymentSheet.feeOnly
-                ? 'Both Trade Protection fees are paid. Tracked shipping and dispute protection are unlocked.'
-                : 'Cash payment is held in escrow. Seller may now ship the card.',
+            lastMessage: 'Cash payment is held in escrow. Seller may now ship the card.',
             unreadBy: sellerUid ? [sellerUid] : [],
             updatedAt: serverTimestamp()
           });
@@ -2951,6 +2963,7 @@ export default function CardSwipersLanding() {
   };
 
   const handleRetryOfferPayment = async (offer) => {
+    if (!ENABLE_PAYMENT_PIPELINE) return;
     if (!firebaseUser || !activeChat?.id || !offer?.id) return;
     if (offer.buyerUid !== firebaseUser.uid) return;
 
@@ -2981,10 +2994,7 @@ export default function CardSwipersLanding() {
       sellerProtectionPaymentStatus: offer.sellerProtectionPaymentStatus || null,
       advanceAfterPurchase: false
     });
-    await updateDoc(doc(db, 'offers', offer.id), {
-      paymentStatus: checkoutStarted ? 'checkout_open' : 'payment_configuration_pending',
-      updatedAt: serverTimestamp()
-    });
+    if (!checkoutStarted) return;
   };
 
   const handleSubmitTrackingForOrder = async (transaction, suppliedDraft = null) => {
@@ -3344,6 +3354,7 @@ export default function CardSwipersLanding() {
           .filter(Boolean),
         buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
         saleMode: newCard.saleMode || 'trade_and_sale',
+        clubId: newCard.clubId || null,
         sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
         sellerVerified: sellerVerificationProfileStatus === 'verified',
         sellerVerificationStatus: sellerVerificationProfileStatus,
@@ -3386,6 +3397,7 @@ export default function CardSwipersLanding() {
       imageUrl: frontImageUrl,
       owner: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
       ownerUid: firebaseUser?.uid || null,
+      clubId: newCard.clubId || '',
       tradeValue: newCard.estimatedValue || '$0',
       avgMarketValue: newCard.estimatedValue || '$0',
       recentComps: newCard.estimatedValue || '$0',
@@ -3438,6 +3450,7 @@ export default function CardSwipersLanding() {
       estimatedValue: '',
       buyNowPrice: '',
       sellerState: '',
+      clubId: '',
       saleMode: 'trade_and_sale',
       lookingFor: ''
     });
@@ -3461,6 +3474,7 @@ export default function CardSwipersLanding() {
     estimatedValue: newCard.estimatedValue,
     buyNowPrice: newCard.buyNowPrice,
     sellerState: newCard.sellerState,
+    clubId: newCard.clubId,
     saleMode: newCard.saleMode,
     lookingFor: newCard.lookingFor,
     frontPreview: postFrontImagePreview,
@@ -4068,15 +4082,6 @@ export default function CardSwipersLanding() {
     }
 
     const fromUserId = firebaseUser.uid;
-    const participants = Array.isArray(activeChat.participants) ? activeChat.participants : [];
-    const toUserId = participants.find((uid) => uid !== fromUserId) || activeChat.counterpartyUserId;
-    if (!toUserId) {
-      setAuthError('Unable to determine who should receive this offer.');
-      return;
-    }
-
-    const sellerUid = activeChat.ownerUserId || null;
-    const buyerUid = activeChat.requesterUserId || null;
     if (offerDealType === 'pure_trade' && amount > 0) {
       setAuthError('Trade-only offers cannot include a cash amount. Choose Card + Cash instead.');
       return;
@@ -4085,46 +4090,29 @@ export default function CardSwipersLanding() {
     setOfferBusy(true);
     setAuthError('');
     try {
-      const offerRef = await addDoc(collection(db, 'offers'), {
+      const payload = await postClubApi('/api/offers/action', {
+        action: 'create',
         matchId: activeChat.id,
         cardId: activeChat.cardId || null,
-        cardTitle: activeChat.cardTitle || '',
         cardIds: selectedCards.map((card) => card.id),
-        cards: selectedCards.map((card) => ({
-          id: card.id,
-          title: card.name || card.title || 'Trading card',
-          brand: card.brand || '',
-          imageUrl: card.imageUrl || card.imageFrontUrl || ''
-        })),
-        buyerUid,
-        sellerUid,
-        fromUserId,
-        fromUserName: currentProfileName,
-        fromUserAvatarUrl: currentProfileImageUrl,
-        toUserId,
-        amount,
         dealType: offerDealType,
-        cashAmount: offerDealType === 'pure_trade' ? 0 : amount,
-        currency: 'USD',
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        cashAmount: offerDealType === 'pure_trade' ? 0 : amount
       });
 
       const summaryMessage = offerDealType === 'pure_trade'
         ? 'Trade-only offer sent'
         : `Hybrid offer sent: ${formatMoney(amount)} cash`;
-      await addDoc(collection(db, 'offers', offerRef.id, 'messages'), {
-        offerId: offerRef.id,
+      await addDoc(collection(db, 'offers', payload.offerId, 'messages'), {
+        offerId: payload.offerId,
         fromUserId,
         fromUserName: currentProfileName,
         text: `${summaryMessage}.`,
         createdAt: serverTimestamp()
       });
-      setActiveDealOfferId(offerRef.id);
+      setActiveDealOfferId(payload.offerId);
       await updateDoc(doc(db, 'matches', activeChat.id), {
         lastMessage: summaryMessage,
-        unreadBy: [toUserId],
+        unreadBy: [payload.toUserId],
         updatedAt: serverTimestamp()
       });
 
@@ -4150,6 +4138,12 @@ export default function CardSwipersLanding() {
       return;
     }
 
+    const normalizedDealType = String(offer.dealType || '').toLowerCase();
+    if (ENABLE_PAYMENT_PIPELINE && normalized === 'accepted' && normalizedDealType === 'pure_trade') {
+      setAuthError('Trade-only protection checkout is not available yet. Cash and hybrid offers can be accepted.');
+      return;
+    }
+
     if (offer.toUserId !== firebaseUser.uid) {
       setAuthError('Only the offer recipient can take this action.');
       return;
@@ -4171,15 +4165,12 @@ export default function CardSwipersLanding() {
     }
 
     try {
-      await updateDoc(doc(db, 'offers', offer.id), {
-        status: nextStatus,
-        decidedBy: firebaseUser.uid,
-        decidedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+      const actionPayload = await postClubApi('/api/offers/action', {
+        action: isCounter ? 'counter' : nextStatus === 'accepted' ? 'accept' : 'reject',
+        offerId: offer.id,
+        cashAmount: counterAmount
       });
-
-      const normalizedDealType = String(offer.dealType || '').toLowerCase();
-      const requiresProtectionCheckout = nextStatus === 'accepted' &&
+      const requiresProtectionCheckout = ENABLE_PAYMENT_PIPELINE && nextStatus === 'accepted' &&
         ['pure_trade', 'hybrid_trade', 'cash_sale'].includes(normalizedDealType) &&
         (normalizedDealType === 'pure_trade' || offer.buyerUid === firebaseUser.uid);
       if (requiresProtectionCheckout) {
@@ -4206,46 +4197,19 @@ export default function CardSwipersLanding() {
           sellerProtectionPaymentStatus: offer.sellerProtectionPaymentStatus || null,
           advanceAfterPurchase: false
         });
-        await updateDoc(doc(db, 'offers', offer.id), {
-          paymentStatus: checkoutStarted ? 'checkout_open' : 'payment_configuration_pending',
-          updatedAt: serverTimestamp()
-        });
         if (!checkoutStarted) return;
         setAuthInfo('Offer accepted. Complete secure checkout to place the cash difference in escrow.');
         return;
       }
 
-      const fromUserId = firebaseUser.uid;
-      const participants = Array.isArray(activeChat.participants) ? activeChat.participants : [];
-      const toUserId = participants.find((uid) => uid !== fromUserId) || offer.fromUserId;
-
       let summaryMessage = `Offer ${nextStatus}: ${formatMoney(offer.amount || 0)}`;
       if (isCounter && counterAmount) {
-        await addDoc(collection(db, 'offers'), {
-          matchId: activeChat.id,
-          cardId: offer.cardId || activeChat.cardId || null,
-          cardTitle: offer.cardTitle || activeChat.cardTitle || '',
-          buyerUid: offer.buyerUid || activeChat.requesterUserId || null,
-          sellerUid: offer.sellerUid || activeChat.ownerUserId || null,
-          fromUserId,
-          fromUserName: currentProfileName,
-          fromUserAvatarUrl: currentProfileImageUrl,
-          toUserId,
-          amount: counterAmount,
-          dealType: offer.dealType || 'hybrid_trade',
-          cashAmount: offer.dealType === 'pure_trade' ? 0 : counterAmount,
-          currency: 'USD',
-          status: 'pending',
-          parentOfferId: offer.id,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
         summaryMessage = `Counter offer sent: ${formatMoney(counterAmount)}`;
       }
 
       await updateDoc(doc(db, 'matches', activeChat.id), {
         lastMessage: summaryMessage,
-        unreadBy: [toUserId],
+        unreadBy: [actionPayload.otherUid],
         updatedAt: serverTimestamp()
       });
     } catch (error) {
@@ -5053,7 +5017,18 @@ export default function CardSwipersLanding() {
   };
 
   const postClubApi = async (path, body) => {
-    const response = await fetch(path, {
+    const nativeFunctionUrls = {
+      '/api/offers/action': 'tradeOfferAction',
+      '/api/clubs/register-trade-night': 'registerTradeNight',
+      '/api/clubs/update-fee-policy': 'updateClubFeePolicy',
+      '/api/clubs/trade-night-action': 'tradeNightTableAction',
+      '/api/clubs/trade-night-boot': 'tradeNightBootVote'
+    };
+    const functionName = nativeFunctionUrls[path];
+    const requestUrl = isNativeApp && functionName
+      ? `https://us-central1-cardswipers-6aa66.cloudfunctions.net/${functionName}`
+      : path;
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -7224,6 +7199,21 @@ export default function CardSwipersLanding() {
                 </div>
 
                 <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">Club fee attribution</label>
+                  <select
+                    value={newCard.clubId || ''}
+                    onChange={(event) => setNewCard((previous) => ({ ...previous, clubId: event.target.value }))}
+                    className="w-full rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3 text-base text-white focus:border-[#E11D48]/55 focus:outline-none"
+                  >
+                    <option value="">Personal listing · CardSwipers fee only</option>
+                    {feeEligibleClubs.map((club) => (
+                      <option key={club.id} value={club.id}>{club.name || 'Club'} · {Number(club.communityFeeRate || club.transactionFeeRate || 0) * 100}% community fee</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-white/45">Club and assigned-agent fees are based on this saved listing selection.</p>
+                </div>
+
+                <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🧭 Sale Mode</label>
                   <div className="grid sm:grid-cols-3 gap-2">
                     {[
@@ -8224,7 +8214,8 @@ export default function CardSwipersLanding() {
                 </button>
               </section>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
+              {ENABLE_PAYMENT_PIPELINE && (
+                <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-base font-bold">Seller payout account</h3>
@@ -8236,7 +8227,8 @@ export default function CardSwipersLanding() {
                   {currentUserProfile?.stripeConnectedAccountId || currentUserProfile?.connectedAccountId ? 'Manage Payout Account' : 'Connect Payout Account'}
                 </button>
                 {walletMessage && <p className="text-sm text-white/75">{walletMessage}</p>}
-              </section>
+                </section>
+              )}
 
               <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
@@ -8732,7 +8724,7 @@ export default function CardSwipersLanding() {
                                 ))}
                               </div>
                             )}
-                            {(cashPaymentPending || pureTradePaymentPending) && (
+                            {ENABLE_PAYMENT_PIPELINE && (cashPaymentPending || pureTradePaymentPending) && (
                               <div className={`mt-2 rounded-lg border px-2.5 py-2 ${fromSelf ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-500/30 bg-slate-500/10 text-slate-300'}`}>
                                 <p className="font-semibold">{pureTradePaymentPending ? 'Trade Protection Fee Required · $2.99' : 'Awaiting Buyer Payment'}</p>
                                 {((cashPaymentPending && isBuyer) || pureTradePaymentPending) && (
@@ -8746,12 +8738,12 @@ export default function CardSwipersLanding() {
                                 )}
                               </div>
                             )}
-                            {pureTradeAccepted && currentProtectionPaid && !paymentHeld && (
+                            {ENABLE_PAYMENT_PIPELINE && pureTradeAccepted && currentProtectionPaid && !paymentHeld && (
                               <p className="mt-2 rounded-lg border border-slate-500/30 bg-slate-500/10 px-2.5 py-2 font-semibold text-slate-300">
                                 {isBuyer ? 'Your protection fee is paid. Awaiting the other party.' : 'Awaiting the other party’s Trade Protection Fee.'}
                               </p>
                             )}
-                            {paymentHeld && dealType !== 'pure_trade' && (
+                            {ENABLE_PAYMENT_PIPELINE && paymentHeld && dealType !== 'pure_trade' && (
                               <p className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 font-semibold text-emerald-400">
                                 Escrow Held · Seller may ship
                               </p>
@@ -9004,7 +8996,7 @@ export default function CardSwipersLanding() {
                 : `Choose whether you want to negotiate for ${currentCard.title}.`}
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {DEAL_TYPES.map((deal) => (
+              {DEAL_TYPES.filter((deal) => ENABLE_PAYMENT_PIPELINE || deal.value !== 'cash_sale').map((deal) => (
                 <button
                   key={deal.value}
                   type="button"
@@ -9641,9 +9633,10 @@ export default function CardSwipersLanding() {
                 purchaseSummary={activePaymentSheet}
                 onCancel={() => {
                   if (activePaymentSheet.offerId) {
-                    updateDoc(doc(db, 'offers', activePaymentSheet.offerId), {
-                      paymentStatus: 'payment_pending',
-                      updatedAt: serverTimestamp()
+                    postClubApi('/api/offers/action', {
+                      action: 'payment_status',
+                      offerId: activePaymentSheet.offerId,
+                      paymentStatus: 'payment_pending'
                     }).catch((error) => console.error('Failed marking offer payment pending:', error));
                   }
                   setActivePaymentSheet(null);

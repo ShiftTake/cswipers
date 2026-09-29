@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm --prefix functions test",
     "assets:generate": "npx capacitor-assets generate --ios --android",
     "capacitor:sync:before": "npm run build && npm run assets:generate",
     "ios:sync": "npx cap sync ios",

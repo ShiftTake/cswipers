@@ -43,6 +43,10 @@
         "function": "createOrderPaymentIntent"
       },
       {
+        "source": "/api/offers/action",
+        "function": "tradeOfferAction"
+      },
+      {
         "source": "/api/verification/create-session",
         "function": "createVerificationSession"
       },
