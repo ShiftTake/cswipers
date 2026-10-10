@@ -55,6 +55,14 @@
         "function": "createSellerPayoutAccount"
       },
       {
+        "source": "/api/clubs/membership-action",
+        "function": "clubMembershipAction"
+      },
+      {
+        "source": "/api/clubs/update-member-role",
+        "function": "updateClubMemberRole"
+      },
+      {
         "source": "/api/clubs/allocate-credits",
         "function": "allocateClubCredits"
       },

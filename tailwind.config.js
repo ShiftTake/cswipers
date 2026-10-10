@@ -1,11 +1,15 @@
 module.exports = {
+  content: ['./*.{html,jsx}', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif']
+      },
       colors: {
         dark: {
-          base: '#0B0E14',
-          surface: '#161B22',
-          border: '#30363D'
+          base: '#09090B',
+          surface: '#18181B',
+          border: '#3F3F46'
         },
         gold: {
           DEFAULT: '#FFD700',

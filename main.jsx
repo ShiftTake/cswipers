@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as Sentry from '@sentry/react';
 import { Capacitor } from '@capacitor/core';
 import CardSwipersLanding from './CardSwipersLanding.jsx';
+import './styles.css';
 
 const SENTRY_DSN =
   import.meta.env.VITE_SENTRY_DSN ||

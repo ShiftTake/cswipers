@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --cs-background: #000;
+  --cs-surface: #18181b;
+  --cs-accent: #e11d48;
+}
+
+html, body, #root {
+  width: 100%;
+  min-height: 100%;
+  height: 100%;
+  background: var(--cs-background);
+  overflow: hidden;
+  overscroll-behavior-y: none;
+  margin: 0;
+}
+
+body { font-family: 'Inter', sans-serif; }
+input, textarea, select { font-size: 16px; touch-action: manipulation; }
+button { touch-action: manipulation; }
+button, input, select, textarea { letter-spacing: 0; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #34d399;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

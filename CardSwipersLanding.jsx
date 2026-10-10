@@ -44,6 +44,13 @@ import authBackdropImage from './ChatGPT Image Jul 15, 2026, 06_36_52 PM.png';
 import heroCards from './ChatGPT Image Jun 22, 2026, 07_46_56 AM.png';
 import AdminPanel from './Admin';
 import TermsOfService from './TermsOfService.jsx';
+import BinderManager from './BinderManager.jsx';
+import { normalizeBinders } from './binderModel.mjs';
+import PublicClubDiscover from './PublicClubDiscover.jsx';
+import NotificationHub from './NotificationHub.jsx';
+import ClubRoomNav from './ClubRoomNav.jsx';
+import { CLUB_CATEGORIES } from './clubDiscovery.mjs';
+import { DEFAULT_CLUB_FILTERS } from './clubDiscovery.mjs';
 import TradeNightTable, {
   TradeNightEntryModal,
   TRADE_NIGHT_DEFAULT_MIN_BINDER_VALUE,
@@ -62,11 +69,12 @@ const ADMIN_PATHS = new Set(['/admin', '/admin.html', '/adminmanagement', '/admi
 const ADMIN_CANONICAL_PATH = '/adminmanagement';
 const USERNAME_WORDS = ['Ace', 'Break', 'Chrome', 'Gem', 'Mint', 'Patch', 'Rookie', 'Slab', 'Topps', 'Vault'];
 const TRADE_NIGHT_SHOT_CLOCK_SECONDS = 10;
+const ENABLE_PAYMENT_PIPELINE = false;
 const STRIPE_PUBLISHABLE_KEY =
   (typeof process !== 'undefined' ? process.env?.REACT_APP_STRIPE_PUBLISHABLE_KEY : '') ||
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
   (typeof window !== 'undefined' ? window.__CARDSWIPERS_STRIPE_PUBLISHABLE_KEY__ || '' : '');
-const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
+const stripePromise = ENABLE_PAYMENT_PIPELINE && STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const sanitizeUsername = (value) => String(value || '')
   .trim()
@@ -452,7 +460,7 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+      <div className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4">
         <PaymentElement />
       </div>
 
@@ -460,14 +468,14 @@ function EscrowPaymentForm({ purchaseSummary, onCancel, onSuccess, onError }) {
         <button
           type="submit"
           disabled={!stripe || !elements || isSubmitting}
-          className="min-h-11 flex-1 rounded-2xl bg-[#FFD700] text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70 font-semibold disabled:opacity-60"
+          className="min-h-11 flex-1 rounded-2xl bg-[#FFD700] text-[#09090B] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70 font-semibold disabled:opacity-60"
         >
           {isSubmitting ? 'Processing...' : `Pay ${formatMoney(purchaseSummary.totalCharge)}`}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="min-h-11 px-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] text-white font-semibold hover:bg-[#161B22] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+          className="min-h-11 px-4 rounded-2xl border border-[#3F3F46] bg-[#09090B] text-white font-semibold hover:bg-[#18181B] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
         >
           Cancel
         </button>
@@ -494,23 +502,23 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
-      <div className="receipt-sheet w-full max-w-lg space-y-5 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+      <div className="receipt-sheet w-full max-w-lg space-y-5 rounded-2xl border border-[#3F3F46] bg-[#09090B] p-5 text-white shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Digital receipt</p>
             <h2 id="receipt-title" className="mt-1 text-xl font-bold">{order.cardTitle || 'Card transaction'}</h2>
             <p className="mt-1 text-xs text-white/70">Order {order.orderId || order.id}</p>
           </div>
-          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-lg text-white/75 hover:bg-[#161B22]" aria-label="Close receipt">x</button>
+          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#3F3F46] text-lg text-white/75 hover:bg-[#18181B]" aria-label="Close receipt">x</button>
         </div>
 
-        <div className="flex gap-3 rounded-xl border border-white/10 bg-[#161B22] p-3">
-          {order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl ? <img src={order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl} alt="Card front" className="h-24 w-16 rounded-lg object-cover" /> : <div className="flex h-24 w-16 items-center justify-center rounded-lg bg-[#0B0E14] text-2xl">🃏</div>}
+        <div className="flex gap-3 rounded-xl border border-white/10 bg-[#18181B] p-3">
+          {order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl ? <img src={order.cardImageFrontUrl || order.cardImageUrl || order.imageUrl} alt="Card front" className="h-24 w-16 rounded-lg object-cover" /> : <div className="flex h-24 w-16 items-center justify-center rounded-lg bg-[#09090B] text-2xl">🃏</div>}
           {order.cardImageBackUrl ? <img src={order.cardImageBackUrl} alt="Card back" className="h-24 w-16 rounded-lg object-cover" /> : null}
           <div className="text-sm text-white/80"><p className="font-semibold text-white">{isSeller ? 'Seller payout receipt' : 'Buyer purchase receipt'}</p><p className="mt-2">Status: <span className="capitalize text-[#FFE66D]">{status}</span></p><p className="mt-1">{order.cardBrand || 'Trading card'}</p></div>
         </div>
 
-        <div className="space-y-2 rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm">
+        <div className="space-y-2 rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm">
           {isSeller ? (
             <>
               <div className="flex justify-between"><span>Item subtotal</span><span>{formatMoney(subtotal)}</span></div>
@@ -529,10 +537,10 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
           )}
         </div>
 
-        {!isSeller && order.buyerShippingAddress && <div className="rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm"><p className="font-semibold">Shipping address</p><p className="mt-2 text-white/75">{order.buyerShippingAddress.line1 || order.buyerShippingAddress.street}<br />{order.buyerShippingAddress.city}, {order.buyerShippingAddress.state} {order.buyerShippingAddress.postal_code || order.buyerShippingAddress.zip}<br />{order.buyerShippingAddress.country || 'US'}</p></div>}
+        {!isSeller && order.buyerShippingAddress && <div className="rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm"><p className="font-semibold">Shipping address</p><p className="mt-2 text-white/75">{order.buyerShippingAddress.line1 || order.buyerShippingAddress.street}<br />{order.buyerShippingAddress.city}, {order.buyerShippingAddress.state} {order.buyerShippingAddress.postal_code || order.buyerShippingAddress.zip}<br />{order.buyerShippingAddress.country || 'US'}</p></div>}
 
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Download / Print Receipt</button>
+          <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#09090B] hover:bg-[#FFE66D]">Download / Print Receipt</button>
           {!isSeller && order.trackingNumber && <a href={order.trackingUrl || '#'} target="_blank" rel="noreferrer" className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 py-2.5 text-sm font-semibold text-[#FFE66D]">View Live Tracking</a>}
           {!isSeller && !['disputed', 'completed', 'released', 'refunded'].includes(String(order.status || order.escrowStatus || '').toLowerCase()) && <button type="button" onClick={onReportIssue} className="min-h-11 rounded-xl border border-rose-300/60 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-400/10">Report Issue / Dispute</button>}
         </div>
@@ -541,17 +549,17 @@ function OrderReceiptModal({ order, role, onClose, onTrackingSubmit, onReturnTra
           <div className="space-y-3 rounded-xl border border-rose-300/50 bg-rose-400/10 p-4">
             <div><p className="font-semibold text-rose-100">Return shipment required</p><p className="mt-1 text-sm text-white/70">Submit return tracking to start the automated refund clock after delivery.</p></div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <select value={returnCarrier} onChange={(event) => setReturnCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select>
-              <input value={returnTrackingNumber} onChange={(event) => setReturnTrackingNumber(event.target.value)} placeholder="Return tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base text-white" />
+              <select value={returnCarrier} onChange={(event) => setReturnCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#09090B] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select>
+              <input value={returnTrackingNumber} onChange={(event) => setReturnTrackingNumber(event.target.value)} placeholder="Return tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#09090B] px-3 text-base text-white" />
             </div>
-            <button type="button" onClick={() => onReturnTrackingSubmit(order, returnCarrier, returnTrackingNumber)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Submit Return Tracking</button>
+            <button type="button" onClick={() => onReturnTrackingSubmit(order, returnCarrier, returnTrackingNumber)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#09090B] hover:bg-[#FFE66D]">Submit Return Tracking</button>
           </div>
         )}
 
         {isSeller && (
-          <div className="space-y-3 rounded-xl border border-white/10 bg-[#161B22] p-4">
+          <div className="space-y-3 rounded-xl border border-white/10 bg-[#18181B] p-4">
             <p className="font-semibold">Shipping fulfillment</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><select value={carrier} onChange={(event) => setCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#0B0E14] px-3 text-base" /></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><select value={carrier} onChange={(event) => setCarrier(event.target.value)} className="min-h-11 rounded-xl border border-white/15 bg-[#09090B] px-3 text-base"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#09090B] px-3 text-base" /></div>
             <button type="button" onClick={() => onTrackingSubmit(order, carrier, trackingNumber)} className="min-h-11 rounded-xl border border-[#FFD700]/60 px-4 text-sm font-bold text-[#FFE66D] hover:bg-[#FFD700]/10">Submit Tracking</button>
             <button type="button" onClick={() => window.print()} className="min-h-11 rounded-xl border border-white/20 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Print Shipping Label</button>
           </div>
@@ -578,16 +586,16 @@ function EvidenceSubmissionModal({ order, isOpen, onClose, onSubmit, isSubmittin
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="evidence-title">
-      <form onSubmit={(event) => { event.preventDefault(); onSubmit({ category, explanation, files }); }} className="w-full max-w-lg space-y-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+      <form onSubmit={(event) => { event.preventDefault(); onSubmit({ category, explanation, files }); }} className="w-full max-w-lg space-y-4 rounded-2xl border border-[#3F3F46] bg-[#09090B] p-5 text-white shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <div><p className="text-[11px] uppercase tracking-[0.2em] text-rose-200">Order issue</p><h2 id="evidence-title" className="mt-1 text-xl font-bold">Submit dispute evidence</h2><p className="mt-1 text-sm text-white/70">Order {order.orderId || order.id}</p></div>
-          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-lg text-white/75 hover:bg-[#161B22]" aria-label="Close dispute form">x</button>
+          <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-full border border-[#3F3F46] text-lg text-white/75 hover:bg-[#18181B]" aria-label="Close dispute form">x</button>
         </div>
-        <label className="block text-sm font-semibold text-white/80">Dispute category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option>Item Not Received</option><option>Damaged in Transit</option><option>Counterfeit / Incorrect Card</option></select></label>
-        <label className="block text-sm font-semibold text-white/80">Detailed explanation<textarea required minLength={10} value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={5} placeholder="Describe what happened and what resolution you are requesting." className="mt-1 w-full resize-none rounded-xl border border-white/15 bg-[#161B22] px-3 py-3 text-base text-white placeholder:text-white/45" /></label>
-        <label className="block text-sm font-semibold text-white/80">Photo or video evidence<input type="file" accept="image/*,video/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 5))} className="mt-2 block w-full text-sm text-white/70 file:mr-3 file:rounded-lg file:border-0 file:bg-[#FFD700] file:px-3 file:py-2 file:font-semibold file:text-[#0B0E14]" /></label>
+        <label className="block text-sm font-semibold text-white/80">Dispute category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white"><option>Item Not Received</option><option>Damaged in Transit</option><option>Counterfeit / Incorrect Card</option></select></label>
+        <label className="block text-sm font-semibold text-white/80">Detailed explanation<textarea required minLength={10} value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={5} placeholder="Describe what happened and what resolution you are requesting." className="mt-1 w-full resize-none rounded-xl border border-white/15 bg-[#18181B] px-3 py-3 text-base text-white placeholder:text-white/45" /></label>
+        <label className="block text-sm font-semibold text-white/80">Photo or video evidence<input type="file" accept="image/*,video/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []).slice(0, 5))} className="mt-2 block w-full text-sm text-white/70 file:mr-3 file:rounded-lg file:border-0 file:bg-[#FFD700] file:px-3 file:py-2 file:font-semibold file:text-[#09090B]" /></label>
         {files.length > 0 && <p className="text-xs text-white/65">{files.length} evidence file{files.length === 1 ? '' : 's'} selected.</p>}
-        <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-[#30363D] bg-[#161B22] px-4 text-sm font-semibold">Cancel</button><button type="submit" disabled={isSubmitting} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] disabled:opacity-60">{isSubmitting ? 'Submitting...' : 'Open Dispute'}</button></div>
+        <div className="flex justify-end gap-3"><button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-[#3F3F46] bg-[#18181B] px-4 text-sm font-semibold">Cancel</button><button type="submit" disabled={isSubmitting} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#09090B] disabled:opacity-60">{isSubmitting ? 'Submitting...' : 'Open Dispute'}</button></div>
       </form>
     </div>
   );
@@ -677,7 +685,6 @@ const ONBOARDING_PRIORITIES = [
 ];
 
 const INTEREST_TYPES = ['Interested', 'Want Trade', 'Want Purchase', 'Want More Info'];
-const ENABLE_PAYMENT_PIPELINE = false;
 const INSTANT_PURCHASE_ACTION = 'Instant Purchase';
 const MARKETPLACE_ACTION_TYPES = ENABLE_PAYMENT_PIPELINE ? ['Negotiate Trade', INSTANT_PURCHASE_ACTION] : ['Negotiate Trade'];
 const DEAL_TYPES = [
@@ -996,6 +1003,9 @@ export default function CardSwipersLanding() {
   const [viewingCollection, setViewingCollection] = useState(null);
   const [swipeFeedback, setSwipeFeedback] = useState(null);
   const [myCollection, setMyCollection] = useState([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [binderBusy, setBinderBusy] = useState('');
+  const [binderError, setBinderError] = useState('');
   const [messages, setMessages] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
   const [chatOffers, setChatOffers] = useState([]);
@@ -1017,7 +1027,7 @@ export default function CardSwipersLanding() {
     buyNowPrice: '',
     sellerState: '',
     clubId: '',
-    saleMode: 'trade_and_sale',
+    saleMode: ENABLE_PAYMENT_PIPELINE ? 'trade_and_sale' : 'trade_only',
     lookingFor: ''
   });
   const [postImageError, setPostImageError] = useState('');
@@ -1087,10 +1097,16 @@ export default function CardSwipersLanding() {
     priorities: []
   });
   const [clubs, setClubs] = useState([]);
+  const [clubsLoading, setClubsLoading] = useState(false);
+  const [clubsLoadError, setClubsLoadError] = useState('');
+  const [clubDiscoverFilters, setClubDiscoverFilters] = useState(DEFAULT_CLUB_FILTERS);
   const [clubSearchQuery, setClubSearchQuery] = useState('');
   const [clubJoinCode, setClubJoinCode] = useState('');
   const [clubDraftName, setClubDraftName] = useState('');
   const [clubDraftDescription, setClubDraftDescription] = useState('');
+  const [clubDraftAccess, setClubDraftAccess] = useState('private');
+  const [clubDraftCategory, setClubDraftCategory] = useState('Other');
+  const [clubSettingsDraft, setClubSettingsDraft] = useState({ accessMode: 'private', category: 'Other' });
   const [clubDraftLogoId, setClubDraftLogoId] = useState('');
   const [clubDraftLogoFile, setClubDraftLogoFile] = useState(null);
   const [clubDraftLogoPreview, setClubDraftLogoPreview] = useState('');
@@ -1105,6 +1121,8 @@ export default function CardSwipersLanding() {
   const [clubMemberships, setClubMemberships] = useState([]);
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
+  const [clubRoomTab, setClubRoomTab] = useState('tradenight');
+  const [clubMemberSearch, setClubMemberSearch] = useState('');
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
   const clubCarouselRef = useRef(null);
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
@@ -1149,6 +1167,10 @@ export default function CardSwipersLanding() {
   const confirmResolverRef = useRef(null);
   const [flagCardId, setFlagCardId] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [serverNotifications, setServerNotifications] = useState([]);
+  const [notificationOffers, setNotificationOffers] = useState([]);
+  const [notificationBusy, setNotificationBusy] = useState('');
+  const [notificationError, setNotificationError] = useState('');
   const [verificationForm, setVerificationForm] = useState({
     legalName: '',
     birthDate: '',
@@ -1187,10 +1209,13 @@ export default function CardSwipersLanding() {
       && (discoverFilters.gradeStatus === 'all' || (discoverFilters.gradeStatus === 'graded' ? isGraded : !isGraded));
   });
   const currentCard = filteredDiscoverDeck[cardIndex] || null;
+  const availableBinders = normalizeBinders(currentUserProfile?.binders, firebaseUser?.uid || 'main');
+  const selectedBinder = availableBinders.find((binder) => binder.id === currentUserProfile?.selectedBinderId) || availableBinders[0];
   const pendingInterestCount = incomingInterests.filter((interest) => interest.status === 'pending').length;
   const unreadMatchCount = matches.filter((match) => match.unreadBy?.includes(firebaseUser?.uid)).length;
   const inboxBadgeCount = pendingInterestCount + unreadMatchCount;
-  const unreadNotificationCount = notifications.filter((item) => !item.read).length;
+  const allNotifications = [...serverNotifications, ...notifications].sort((left, right) => (toDateValue(right.createdAt)?.getTime() || 0) - (toDateValue(left.createdAt)?.getTime() || 0));
+  const unreadNotificationCount = allNotifications.filter((item) => !item.read).length;
   const hasAdminAccess = isAdmin;
   const selectedClub = clubs.find((club) => club.id === selectedClubId) || null;
   const feeEligibleClubs = clubs.filter((club) => clubMemberships.some((membership) => membership.clubId === club.id));
@@ -1287,7 +1312,7 @@ export default function CardSwipersLanding() {
     Boolean(newCard.title.trim()),
     Boolean(newCard.brand.trim()),
     Boolean((newCard.estimatedValue || '').trim()),
-    Boolean((newCard.buyNowPrice || '').trim()),
+    ...(ENABLE_PAYMENT_PIPELINE ? [Boolean((newCard.buyNowPrice || '').trim())] : []),
     Boolean((newCard.sellerState || '').trim()),
     Boolean((newCard.lookingFor || '').trim())
   ];
@@ -1997,14 +2022,19 @@ export default function CardSwipersLanding() {
     }
 
     const clubsQuery = query(collection(db, 'clubs'), orderBy('createdAt', 'desc'), limit(150));
+    setClubsLoading(true);
+    setClubsLoadError('');
     const unsubscribe = onSnapshot(
       clubsQuery,
       (snapshot) => {
         const loadedClubs = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
         setClubs(loadedClubs);
+        setClubsLoading(false);
       },
       (error) => {
         console.error('Failed loading clubs:', error);
+        setClubsLoading(false);
+        setClubsLoadError('Could not load clubs. Check your connection and try again.');
       }
     );
 
@@ -2083,13 +2113,13 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     if (!clubs.length) {
-      setSelectedClubId('');
+      if (selectedClubId) setSelectedClubId('');
       setSelectedClubCarouselIndex(0);
       return;
     }
 
-    if (!selectedClubId || !clubs.some((club) => club.id === selectedClubId)) {
-      setSelectedClubId(clubs[0].id);
+    if (selectedClubId && !clubs.some((club) => club.id === selectedClubId)) {
+      setSelectedClubId('');
       setSelectedClubCarouselIndex(0);
     }
   }, [clubs, selectedClubId]);
@@ -2175,7 +2205,9 @@ export default function CardSwipersLanding() {
       setSelectedClubMessages([]);
     }
 
-    const unsubPosts = onSnapshot(
+    const canReadClubContent = Boolean(selectedClubMembership?.status === 'active' || (selectedClubMembership && !selectedClubMembership.status) || hasAdminAccess);
+    if (!canReadClubContent) { setSelectedClubPosts([]); setSelectedClubEvents([]); setSelectedClubReports([]); }
+    const unsubPosts = canReadClubContent ? onSnapshot(
       query(postsRef, orderBy('createdAt', 'desc'), limit(200)),
       (snapshot) => {
         setSelectedClubPosts(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
@@ -2183,9 +2215,9 @@ export default function CardSwipersLanding() {
       (error) => {
         console.error('Failed loading club posts:', error);
       }
-    );
+    ) : () => {};
 
-    const unsubEvents = onSnapshot(
+    const unsubEvents = canReadClubContent ? onSnapshot(
       query(eventsRef, orderBy('scheduledFor', 'asc'), limit(20)),
       (snapshot) => {
         setSelectedClubEvents(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
@@ -2193,9 +2225,9 @@ export default function CardSwipersLanding() {
       (error) => {
         console.error('Failed loading club events:', error);
       }
-    );
+    ) : () => {};
 
-    const unsubReports = onSnapshot(
+    const unsubReports = canReadClubContent ? onSnapshot(
       query(reportsRef, orderBy('createdAt', 'desc'), limit(200)),
       (snapshot) => {
         setSelectedClubReports(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
@@ -2203,7 +2235,7 @@ export default function CardSwipersLanding() {
       (error) => {
         console.error('Failed loading club reports:', error);
       }
-    );
+    ) : () => {};
 
     let unsubBan = () => {};
     if (firebaseUser?.uid) {
@@ -2352,6 +2384,7 @@ export default function CardSwipersLanding() {
 
   useEffect(() => {
     const loadPersistedData = async () => {
+      if (!firebaseUser?.uid) { setDeck([]); return; }
       try {
         // Wrap card loading in a timeout to prevent hanging when Firestore is unreachable
         const cardsPromise = getDocs(query(collection(db, 'cards'), orderBy('createdAt', 'desc'), limit(150)));
@@ -2399,6 +2432,11 @@ export default function CardSwipersLanding() {
                 recentComps: data.recentComps || data.value || '$0',
                 owner: data.ownerName || 'Collector',
                 ownerUid: data.ownerUid || null,
+                binderId: data.binderId || '',
+                grade: data.grade || '',
+                gradingCompany: data.gradingCompany || '',
+                year: data.year || data.releaseYear || '',
+                playerName: data.playerName || data.player || '',
                 clubId: data.clubId || '',
                 seekingTags: data.seekingTags || [],
                 detailLine: data.condition || 'Card listing',
@@ -2424,17 +2462,6 @@ export default function CardSwipersLanding() {
             const seededCards = prevDeck.filter((card) => card.id && typeof card.id === 'number');
             return [...seededCards, ...loadedCards];
           });
-          setMyCollection((prevCollection) => {
-            const localCards = prevCollection.filter((card) => typeof card.id === 'number');
-            const uploaded = loadedCards.map((card) => ({
-              id: card.id,
-              name: card.name,
-              brand: card.brand,
-              condition: card.condition,
-              imageUrl: card.imageUrl
-            }));
-            return [...uploaded, ...localCards];
-          });
         }
       } catch (error) {
         console.error('Failed to load Firestore data:', error);
@@ -2444,6 +2471,20 @@ export default function CardSwipersLanding() {
 
     loadPersistedData();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    setMyCollection([]);
+    setBinderError('');
+    if (!firebaseUser?.uid) { setInventoryLoading(false); return; }
+    setInventoryLoading(true);
+    return onSnapshot(query(collection(db, 'cards'), where('ownerUid', '==', firebaseUser.uid)), (snapshot) => {
+      setMyCollection(snapshot.docs.map((entry) => ({ ...entry.data(), id: entry.id })));
+      setInventoryLoading(false);
+    }, (error) => {
+      setBinderError(error.message || 'Could not load your inventory.');
+      setInventoryLoading(false);
+    });
+  }, [firebaseUser?.uid]);
 
   useEffect(() => {
     if (!firebaseUser || !currentUserProfile) {
@@ -3298,7 +3339,7 @@ export default function CardSwipersLanding() {
   const handlePostCard = async (e) => {
     e.preventDefault();
     if (!newCard.title || isPostingCard) return;
-    if (newCard.saleMode !== 'trade_only' && !hasSellerPaymentAccess) {
+    if (ENABLE_PAYMENT_PIPELINE && newCard.saleMode !== 'trade_only' && !hasSellerPaymentAccess) {
       setPostImageError('Seller verification is required before posting Buy Now listings. Submit verification below and continue trading while pending.');
       return;
     }
@@ -3345,6 +3386,9 @@ export default function CardSwipersLanding() {
         rawCondition: isRawCard ? newCard.rawCondition : '',
         lookingFor: newCard.lookingFor,
         ownerUid: firebaseUser?.uid || null,
+        binderId: selectedBinder.id,
+        cardNumber: newCard.cardNumber || '',
+        setNumber: newCard.setNumber || '',
         ownerName: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
         tradeValue: newCard.estimatedValue || '$0',
         value: newCard.estimatedValue || '$0',
@@ -3353,7 +3397,7 @@ export default function CardSwipersLanding() {
           .map((value) => value.trim())
           .filter(Boolean),
         buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
-        saleMode: newCard.saleMode || 'trade_and_sale',
+        saleMode: ENABLE_PAYMENT_PIPELINE ? newCard.saleMode || 'trade_and_sale' : 'trade_only',
         clubId: newCard.clubId || null,
         sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
         sellerVerified: sellerVerificationProfileStatus === 'verified',
@@ -3397,12 +3441,13 @@ export default function CardSwipersLanding() {
       imageUrl: frontImageUrl,
       owner: firebaseUser?.displayName || firebaseUser?.email || 'Collector',
       ownerUid: firebaseUser?.uid || null,
+      binderId: selectedBinder.id,
       clubId: newCard.clubId || '',
       tradeValue: newCard.estimatedValue || '$0',
       avgMarketValue: newCard.estimatedValue || '$0',
       recentComps: newCard.estimatedValue || '$0',
       buyNowPrice: newCard.buyNowPrice || newCard.estimatedValue || '$0',
-      saleMode: newCard.saleMode || 'trade_and_sale',
+      saleMode: ENABLE_PAYMENT_PIPELINE ? newCard.saleMode || 'trade_and_sale' : 'trade_only',
       sellerState: normalizeStateCode(newCard.sellerState || currentUserProfile?.state || currentUserProfile?.shippingState || ''),
       sellerVerified: sellerVerificationProfileStatus === 'verified',
       sellerVerificationStatus: sellerVerificationProfileStatus,
@@ -3410,8 +3455,8 @@ export default function CardSwipersLanding() {
       listedAt: new Date(),
       listedAtLabel: `Listed ${new Date().toLocaleDateString()}`,
       detailLine: conditionLabel,
-      cardColor: 'from-blue-600/20 to-blue-500/20',
-      borderColor: 'border-blue-500/40',
+      cardColor: 'from-emerald-600/20 to-emerald-500/20',
+      borderColor: 'border-emerald-500/40',
       lookingFor: newCard.lookingFor || 'Good trades',
       seekingTags: (newCard.lookingFor || '')
         .split(',')
@@ -3428,16 +3473,7 @@ export default function CardSwipersLanding() {
     setDeck((prevDeck) => [newPostedCard, ...prevDeck]);
 
     // Also add to collection
-    setMyCollection((prevCollection) => [
-      {
-        id: createdId,
-        name: newCard.title,
-        brand: newCard.brand,
-        condition: conditionLabel,
-        imageUrl: frontImageUrl
-      },
-      ...prevCollection
-    ]);
+    setMyCollection((prevCollection) => [newPostedCard, ...prevCollection.filter((card) => card.id !== createdId)]);
 
     setNewCard({
       title: '',
@@ -3451,7 +3487,7 @@ export default function CardSwipersLanding() {
       buyNowPrice: '',
       sellerState: '',
       clubId: '',
-      saleMode: 'trade_and_sale',
+      saleMode: ENABLE_PAYMENT_PIPELINE ? 'trade_and_sale' : 'trade_only',
       lookingFor: ''
     });
     setPostComposerStep(1);
@@ -3460,6 +3496,54 @@ export default function CardSwipersLanding() {
     setPostFrontImagePreview('');
     setPostBackImagePreview('');
     setCurrentTab('swipe');
+  };
+
+  const handleSelectBinder = async (binderId) => {
+    if (!firebaseUser || binderBusy || !availableBinders.some((binder) => binder.id === binderId)) return;
+    setBinderBusy('select');
+    setBinderError('');
+    try {
+      await updateDoc(doc(db, 'users', firebaseUser.uid), { selectedBinderId: binderId });
+      setCurrentUserProfile((previous) => ({ ...previous, selectedBinderId: binderId }));
+    } catch (error) { setBinderError(error.message || 'Could not select binder.'); }
+    finally { setBinderBusy(''); }
+  };
+
+  const handleSaveBinder = async (name, binderId) => {
+    if (!firebaseUser || binderBusy) return false;
+    const trimmed = name.trim().slice(0, 40);
+    if (!trimmed || availableBinders.some((binder) => binder.id !== binderId && binder.name.toLowerCase() === trimmed.toLowerCase())) {
+      setBinderError('Choose a unique binder name.');
+      return false;
+    }
+    setBinderBusy('save');
+    setBinderError('');
+    try {
+      await runTransaction(db, async (transaction) => {
+        const profileRef = doc(db, 'users', firebaseUser.uid);
+        const snapshot = await transaction.get(profileRef);
+        const binders = normalizeBinders(snapshot.data()?.binders, firebaseUser.uid);
+        if (binders.some((binder) => binder.id !== binderId && binder.name.toLowerCase() === trimmed.toLowerCase())) throw new Error('A binder with that name already exists.');
+        if (!binderId && binders.length >= 30) throw new Error('You can create up to 30 binders.');
+        if (binderId && !binders.some((binder) => binder.id === binderId)) throw new Error('This binder no longer exists.');
+        const nextId = binderId || doc(collection(db, 'cards')).id;
+        const next = binderId ? binders.map((binder) => binder.id === binderId ? { ...binder, name: trimmed } : binder) : [...binders, { id: nextId, name: trimmed, isDefault: false }];
+        transaction.update(profileRef, { binders: next, selectedBinderId: nextId, updatedAt: serverTimestamp() });
+      });
+      return true;
+    } catch (error) { setBinderError(error.message || 'Could not save binder.'); return false; }
+    finally { setBinderBusy(''); }
+  };
+
+  const handleAssignBinder = async (cardId, binderId) => {
+    if (!firebaseUser || binderBusy || !availableBinders.some((binder) => binder.id === binderId)) return;
+    if (!myCollection.some((card) => card.id === cardId && card.ownerUid === firebaseUser.uid)) return;
+    setBinderBusy(cardId);
+    setBinderError('');
+    try {
+      await updateDoc(doc(db, 'cards', cardId), { binderId, updatedAt: serverTimestamp() });
+    } catch (error) { setBinderError(error.message || 'Could not move card.'); }
+    finally { setBinderBusy(''); }
   };
 
   const buildLocalDraft = () => ({
@@ -4462,22 +4546,65 @@ export default function CardSwipersLanding() {
     setAccountMenuOpen(false);
   };
 
-  const handleNotificationClick = (notification) => {
+  const handleNotificationClick = async (notification, readOnly = false) => {
+    if (notificationBusy) return;
+    setNotificationError('');
+    if (notification.persisted && !notification.read) {
+      setNotificationBusy(notification.id);
+      try { await updateDoc(doc(db, 'notifications', notification.id), { read: true }); }
+      catch (error) { setNotificationError(error.message || 'Could not mark notification read.'); return; }
+      finally { setNotificationBusy(''); }
+    }
     setNotifications((prev) => prev.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
+    if (readOnly) return;
+    if (notification.clubId) {
+      setSelectedClubId(notification.clubId);
+      setClubRoomTab('inbox');
+      navigateToTab('onboarding');
+    }
     if (notification.actionTab) {
       navigateToTab(notification.actionTab);
     }
     setShowNotificationsPanel(false);
   };
 
-  const handleMarkAllNotificationsRead = () => {
-    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+  const handleMarkAllNotificationsRead = async () => {
+    if (notificationBusy) return;
+    setNotificationBusy('all');
+    setNotificationError('');
+    try {
+      await Promise.all(serverNotifications.filter((item) => !item.read).map((item) => updateDoc(doc(db, 'notifications', item.id), { read: true })));
+      setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+    } catch (error) { setNotificationError(error.message || 'Could not mark all notifications read.'); }
+    finally { setNotificationBusy(''); }
   };
+
+  useEffect(() => {
+    setServerNotifications([]);
+    setNotificationOffers([]);
+    setNotificationError('');
+    if (!firebaseUser?.uid) return;
+    const unsubscribeNotifications = onSnapshot(query(collection(db, 'notifications'), where('userId', '==', firebaseUser.uid), limit(200)), (snapshot) => {
+      setServerNotifications(snapshot.docs.map((entry) => ({ ...entry.data(), id: entry.id, persisted: true })));
+    }, () => setNotificationError('Could not load notification history.'));
+    const received = new Map();
+    const sent = new Map();
+    const apply = (target) => (snapshot) => {
+      target.clear();
+      snapshot.docs.forEach((entry) => target.set(entry.id, { ...entry.data(), id: entry.id }));
+      setNotificationOffers(Array.from(new Map([...sent, ...received]).values()).sort((left, right) => (toDateValue(right.createdAt)?.getTime() || 0) - (toDateValue(left.createdAt)?.getTime() || 0)));
+    };
+    const unsubscribeReceived = onSnapshot(query(collection(db, 'offers'), where('toUserId', '==', firebaseUser.uid), limit(200)), apply(received), () => setNotificationError('Could not load received offers.'));
+    const unsubscribeSent = onSnapshot(query(collection(db, 'offers'), where('fromUserId', '==', firebaseUser.uid), limit(200)), apply(sent), () => setNotificationError('Could not load sent offers.'));
+    return () => { unsubscribeNotifications(); unsubscribeReceived(); unsubscribeSent(); };
+  }, [firebaseUser?.uid]);
 
   const resetClubDraft = () => {
     if (clubDraftLogoPreview) URL.revokeObjectURL(clubDraftLogoPreview);
     setClubDraftName('');
     setClubDraftDescription('');
+    setClubDraftAccess('private');
+    setClubDraftCategory('Other');
     setClubDraftLogoId('');
     setClubDraftLogoFile(null);
     setClubDraftLogoPreview('');
@@ -4566,7 +4693,8 @@ export default function CardSwipersLanding() {
         logoType: clubDraftLogoId === 'custom' ? 'custom' : 'preset',
         logoPresetId: clubDraftLogoId === 'custom' ? null : clubDraftLogoId,
         logoUrl,
-        accessMode: 'private',
+        accessMode: clubDraftAccess,
+        categories: [clubDraftCategory],
         creditHierarchy: 'owner→agent→member',
         ownerUid: firebaseUser.uid,
         ownerId: firebaseUser.uid,
@@ -4659,23 +4787,8 @@ export default function CardSwipersLanding() {
         return;
       }
 
-      const memberProfile = {
-        uid: firebaseUser.uid,
-        displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
-        username: currentUserProfile?.username || '',
-        profileImageUrl: currentProfileImageUrl,
-        email: firebaseUser.email || '',
-        role: 'member',
-        joinedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        credits: 0,
-        creditLimit: 0,
-        escrowHeld: 0,
-        status: 'active'
-      };
-
       if (clubAccessMode === 'public') {
-        await setDoc(doc(clubDoc.ref, 'members', firebaseUser.uid), memberProfile, { merge: true });
+        await postClubApi('/api/clubs/membership-action', { clubId: clubDoc.id, action: 'join' });
 
         setSelectedClubId(clubDoc.id);
         setClubJoinCode('');
@@ -4722,21 +4835,7 @@ export default function CardSwipersLanding() {
           setClubError('You have been blocked from this club by its moderators.');
           return;
         }
-        const memberProfile = {
-          uid: firebaseUser.uid,
-          displayName: currentUserProfile?.displayName || firebaseUser.displayName || firebaseUser.email || 'Collector',
-          username: currentUserProfile?.username || '',
-          profileImageUrl: currentProfileImageUrl,
-          email: firebaseUser.email || '',
-          role: 'member',
-          joinedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          credits: 0,
-          creditLimit: 0,
-          escrowHeld: 0,
-          status: 'active'
-        };
-        await setDoc(doc(db, 'clubs', target.id, 'members', firebaseUser.uid), memberProfile, { merge: true });
+        await postClubApi('/api/clubs/membership-action', { clubId: target.id, action: 'join' });
         setSelectedClubId(target.id);
         setClubInfo(`Joined ${target.name || 'club'}. Welcome!`);
       } catch (err) {
@@ -4795,8 +4894,24 @@ export default function CardSwipersLanding() {
 
   const handleEnterClub = (club) => {
     if (!club?.id) return;
+    setClubRoomTab('tradenight');
+    setClubMemberSearch('');
+    setClubError('');
+    setClubInfo('');
     setSelectedClubId(club.id);
     setSelectedClubCarouselIndex(filteredClubs.findIndex((entry) => entry.id === club.id) + 1);
+  };
+
+  const handleExitClub = () => {
+    setSelectedClubId('');
+    setClubError('');
+    setClubInfo('');
+    window.requestAnimationFrame(() => {
+      const carousel = clubCarouselRef.current;
+      if (!carousel) return;
+      const cardWidth = carousel.clientWidth * 0.8 + 16;
+      carousel.scrollTo({ left: 20 + cardWidth * selectedClubCarouselIndex, behavior: 'instant' });
+    });
   };
 
   const handleApproveClubJoinRequest = async (request) => {
@@ -4806,45 +4921,7 @@ export default function CardSwipersLanding() {
     setClubError('');
     setClubInfo('');
     try {
-      await runTransaction(db, async (transaction) => {
-        const clubRef = doc(db, 'clubs', selectedClubId);
-        const requestRef = doc(clubRef, 'joinRequests', request.id);
-        const memberRef = doc(clubRef, 'members', request.userId);
-        const [clubSnapshot, requestSnapshot, memberSnapshot] = await Promise.all([
-          transaction.get(clubRef),
-          transaction.get(requestRef),
-          transaction.get(memberRef)
-        ]);
-        if (!clubSnapshot.exists() || !requestSnapshot.exists()) throw new Error('This join request is no longer available.');
-
-        const requestData = requestSnapshot.data();
-        if (requestData.status !== 'pending' || !requestData.userId) throw new Error('This join request is no longer pending.');
-        if (memberSnapshot.exists()) {
-          transaction.delete(requestRef);
-          return;
-        }
-        const clubData = clubSnapshot.data();
-        transaction.set(memberRef, {
-          uid: requestData.userId,
-          displayName: requestData.userName || 'Collector',
-          username: requestData.username || '',
-          profileImageUrl: requestData.profileImageUrl || '',
-          email: requestData.userEmail || '',
-          role: 'member',
-          agentUid: selectedClubRole === 'agent' ? firebaseUser.uid : null,
-          joinedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          credits: 0,
-          creditLimit: 0,
-          escrowHeld: 0,
-          status: 'active'
-        }, { merge: true });
-        transaction.update(clubRef, {
-          memberCount: Number(clubData.memberCount || 0) + 1,
-          updatedAt: serverTimestamp()
-        });
-        transaction.delete(requestRef);
-      });
+      await postClubApi('/api/clubs/membership-action', { clubId: selectedClubId, action: 'approve', requestId: request.id });
       setClubInfo(`${request.userName || 'Member'} was approved for the club.`);
     } catch (error) {
       console.error('Failed approving club join request:', error);
@@ -4861,7 +4938,7 @@ export default function CardSwipersLanding() {
     setClubError('');
     setClubInfo('');
     try {
-      await deleteDoc(doc(db, 'clubs', selectedClubId, 'joinRequests', request.id));
+      await postClubApi('/api/clubs/membership-action', { clubId: selectedClubId, action: 'reject', requestId: request.id });
       setClubInfo('Join request rejected.');
     } catch (error) {
       console.error('Failed rejecting club join request:', error);
@@ -5020,6 +5097,10 @@ export default function CardSwipersLanding() {
     const nativeFunctionUrls = {
       '/api/offers/action': 'tradeOfferAction',
       '/api/clubs/register-trade-night': 'registerTradeNight',
+      '/api/clubs/update-member-role': 'updateClubMemberRole',
+      '/api/clubs/membership-action': 'clubMembershipAction',
+      '/api/clubs/allocate-credits': 'allocateClubCredits',
+      '/api/clubs/leave': 'leaveClub',
       '/api/clubs/update-fee-policy': 'updateClubFeePolicy',
       '/api/clubs/trade-night-action': 'tradeNightTableAction',
       '/api/clubs/trade-night-boot': 'tradeNightBootVote'
@@ -5172,18 +5253,30 @@ export default function CardSwipersLanding() {
     }
   };
 
-  const handleUpdateClubMemberRole = async (memberUid, role) => {
+  useEffect(() => {
+    setClubSettingsDraft({ accessMode: getClubAccessMode(selectedClub || {}), category: selectedClub?.categories?.[0] || selectedClub?.category || 'Other' });
+  }, [selectedClub?.id, selectedClub?.accessMode, selectedClub?.category, selectedClub?.categories?.[0]]);
+
+  const handleSaveClubSettings = async () => {
+    if (!firebaseUser || !selectedClubId || !canManageClubMembers || clubActionBusyId) return;
+    setClubActionBusyId('settings'); setClubError(''); setClubInfo('');
+    try {
+      await updateDoc(doc(db, 'clubs', selectedClubId), { accessMode: clubSettingsDraft.accessMode, categories: [clubSettingsDraft.category], updatedAt: serverTimestamp() });
+      setClubInfo('Club settings saved.');
+    } catch (error) { setClubError(error.message || 'Could not save club settings.'); }
+    finally { setClubActionBusyId(''); }
+  };
+
+  const handleUpdateClubMemberRole = async (memberUid, role, agentUid = '') => {
     if (!firebaseUser || !selectedClubId || !canManageClubMembers) return;
+    if (clubActionBusyId) return;
     if (memberUid === firebaseUser.uid) return;
     setClubActionBusyId(`role-${memberUid}`);
     setClubError('');
     setClubInfo('');
 
     try {
-      await setDoc(doc(db, 'clubs', selectedClubId, 'members', memberUid), {
-        role,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      await postClubApi('/api/clubs/update-member-role', { clubId: selectedClubId, memberUid, role, agentUid });
       setClubInfo('Member role updated.');
     } catch (error) {
       console.error('Failed updating club role:', error);
@@ -5659,8 +5752,9 @@ export default function CardSwipersLanding() {
   const isLandingScreen = currentTab === 'landing';
   const isAuthScreen = currentTab === 'auth';
   const isCreateClubScreen = currentTab === 'create-club';
+  const isInClubRoom = currentTab === 'onboarding' && Boolean(selectedClubId);
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
-  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
+  const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen && !isInClubRoom;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
 
   useEffect(() => {
@@ -5818,7 +5912,7 @@ export default function CardSwipersLanding() {
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(225,29,72,0.10), transparent 60%)' }} />
       )}
 
-      {!isCreateClubScreen && (isAuthenticated || (isLandingScreen && !isNativeApp)) && (
+      {!isCreateClubScreen && !isInClubRoom && (isAuthenticated || (isLandingScreen && !isNativeApp)) && (
       <header
         className="bg-black/95 border-white/10 backdrop-blur-md border-b sticky top-0 z-50"
         style={isNativeCoreApp ? { paddingTop: 'env(safe-area-inset-top)', paddingBottom: '0.35rem' } : undefined}
@@ -6035,7 +6129,7 @@ export default function CardSwipersLanding() {
       )}
 
       <main
-        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-28 md:pb-32' : 'pb-24 md:pb-28'}`}`}
+        className={`flex-1 min-h-0 w-full max-w-full overflow-x-hidden ${isAuthScreen ? 'h-full overflow-hidden px-0' : isCreateClubScreen ? 'overflow-hidden px-0' : isInClubRoom ? 'overflow-y-auto overscroll-y-contain px-0 pb-[env(safe-area-inset-bottom)]' : `overflow-y-auto overscroll-y-contain ${isCoreAppScreen ? 'px-3 sm:px-5 lg:px-8' : 'px-4 sm:px-6 lg:px-8'} ${showPersistentMobileDock ? 'pb-28 md:pb-32' : 'pb-24 md:pb-28'}`}`}
       >
         <div className={`${isAuthScreen || isCreateClubScreen ? 'h-full' : 'max-w-6xl mx-auto'} w-full max-w-full flex flex-col min-h-0 overflow-x-hidden`}>
         {currentTab === 'landing' && (
@@ -6625,6 +6719,7 @@ export default function CardSwipersLanding() {
 
         {currentTab === 'swipe' && (
           <div className="min-h-0 max-w-6xl mx-auto w-full flex flex-col justify-between py-1.5 md:py-4 overflow-y-auto overscroll-y-contain pr-1">
+            <PublicClubDiscover clubs={clubs} filters={clubDiscoverFilters} onFilter={setClubDiscoverFilters} loading={clubsLoading} error={clubsLoadError} onOpen={(club) => { handleEnterClub(club); setCurrentTab('onboarding'); }} />
             {currentCard ? (
               <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
@@ -6745,7 +6840,7 @@ export default function CardSwipersLanding() {
                         <div className="text-right shrink-0">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-white/45">Listed at</p>
                           <p className="text-lg sm:text-2xl font-bold text-white">{currentCard.tradeValue}</p>
-                          <p className="text-[11px] text-white/75 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>
+                          {ENABLE_PAYMENT_PIPELINE && <p className="text-[11px] text-white/75 mt-1">Buy now {currentCard.buyNowPrice || currentCard.tradeValue}</p>}
                         </div>
                       </div>
 
@@ -6760,7 +6855,7 @@ export default function CardSwipersLanding() {
                         <p className="text-sm text-white/65">Seeking: {currentCard.lookingFor}</p>
                       </div>
 
-                      <div className="rounded-2xl border border-[#30363D] bg-[#161B22] px-3 py-3 md:px-4 md:py-4">
+                      <div className="rounded-2xl border border-[#3F3F46] bg-[#18181B] px-3 py-3 md:px-4 md:py-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Recent Market Sales</p>
@@ -6916,7 +7011,7 @@ export default function CardSwipersLanding() {
         {currentTab === 'post' && (
           <div className="h-screen max-h-screen min-h-0 max-w-6xl mx-auto w-full max-w-full flex flex-col overflow-hidden relative">
             <div ref={postScrollRef} className="relative z-10 flex-1 min-h-0 overflow-y-auto overscroll-y-contain overflow-x-hidden pb-40 px-4 py-1.5 md:py-2 [touch-action:pan-y]">
-            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+            <div className="rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#18181B] px-3 py-3.5 sm:px-7 sm:py-6 shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 font-semibold">+ Card</p>
@@ -6937,7 +7032,9 @@ export default function CardSwipersLanding() {
             </div>
 
             <div className="grid xl:grid-cols-[1.35fr_0.95fr] gap-4 md:gap-6 items-start flex-1 min-h-0">
-              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#11161F] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 [touch-action:pan-y]">
+              <form onSubmit={handlePostCard} className="space-y-3 md:space-y-4 rounded-[22px] md:rounded-[24px] border border-white/10 bg-[#18181B] p-3 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] min-h-0 [touch-action:pan-y]">
+                <label className="block text-xs text-white/60">Listing binder<select aria-label="Listing binder" value={selectedBinder.id} disabled={Boolean(binderBusy)} onChange={(event) => handleSelectBinder(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-3 text-base">{availableBinders.map((binder) => <option key={binder.id} value={binder.id}>{binder.name}</option>)}</select></label>
+                {binderError && <p role="alert" className="text-sm text-rose-300">{binderError}</p>}
                 <input
                   ref={postFrontImageInputRef}
                   type="file"
@@ -6960,7 +7057,7 @@ export default function CardSwipersLanding() {
                     <button
                       type="button"
                       onClick={() => postFrontImageInputRef.current?.click()}
-                      className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
+                      className="rounded-[18px] border border-dashed border-white/20 bg-[#09090B] hover:border-[#FB7185]/60 transition-all p-3"
                     >
                       <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postFrontImagePreview ? (
@@ -6987,7 +7084,7 @@ export default function CardSwipersLanding() {
                       onClick={() => {
                         postBackImageInputRef.current?.click();
                       }}
-                      className="rounded-[18px] border border-dashed border-white/20 bg-[#0D1117] hover:border-[#FB7185]/60 transition-all p-3"
+                      className="rounded-[18px] border border-dashed border-white/20 bg-[#09090B] hover:border-[#FB7185]/60 transition-all p-3"
                     >
                       <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
                         {postBackImagePreview ? (
@@ -7010,7 +7107,7 @@ export default function CardSwipersLanding() {
                     </button>
                   </div>
 
-                  <div className="rounded-[18px] border border-white/10 bg-[#0D1117] px-4 py-4 space-y-3">
+                  <div className="rounded-[18px] border border-white/10 bg-[#09090B] px-4 py-4 space-y-3">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">On-Device OCR Scanner</p>
                     <div className="relative h-36 sm:h-44 rounded-[14px] bg-black/45 overflow-hidden">
                       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.12),transparent_70%)]" />
@@ -7037,7 +7134,7 @@ export default function CardSwipersLanding() {
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#0D1117] px-4 py-3">
+                  <div className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[#09090B] px-4 py-3">
                     <p className="text-xs text-white/70">Step {postComposerStep} of 2: {postComposerStep === 1 ? 'Capture photos' : 'Enter details manually'}</p>
                     <div className="flex items-center gap-2">
                       <button type="button" onClick={() => saveDraft(true)} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white/80 hover:bg-white/10">Save Draft & Exit</button>
@@ -7173,7 +7270,7 @@ export default function CardSwipersLanding() {
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                  <div className={ENABLE_PAYMENT_PIPELINE ? 'space-y-2' : 'hidden'}>
                     <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">💸 Buy Now Price</label>
                     <div className="flex items-center gap-2 rounded-[18px] border border-white/10 bg-[#1A2230] px-4 py-3.5 focus-within:ring-2 focus-within:ring-[#E11D48]/55 focus-within:border-[#E11D48]/55 transition-all">
                       <span className="text-white/65 font-semibold">$</span>
@@ -7198,7 +7295,7 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className={ENABLE_PAYMENT_PIPELINE ? 'space-y-2' : 'hidden'}>
                   <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">Club fee attribution</label>
                   <select
                     value={newCard.clubId || ''}
@@ -7213,7 +7310,7 @@ export default function CardSwipersLanding() {
                   <p className="text-[11px] text-white/45">Club and assigned-agent fees are based on this saved listing selection.</p>
                 </div>
 
-                <div className="space-y-2">
+                <div className={ENABLE_PAYMENT_PIPELINE ? 'space-y-2' : 'hidden'}>
                   <label className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">🧭 Sale Mode</label>
                   <div className="grid sm:grid-cols-3 gap-2">
                     {[
@@ -7284,13 +7381,13 @@ export default function CardSwipersLanding() {
                 )}
               </form>
 
-              <aside className="hidden xl:block rounded-[24px] border border-white/10 bg-[#11161F] p-4 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-3 min-h-0 overflow-y-auto">
+              <aside className="hidden xl:block rounded-[24px] border border-white/10 bg-[#18181B] p-4 sm:p-6 shadow-[0_18px_56px_rgba(0,0,0,0.35)] xl:sticky xl:top-24 space-y-3 min-h-0 overflow-y-auto">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Live Preview</p>
                   <h3 className="mt-2 text-xl font-black">Your Listing Card</h3>
                 </div>
 
-                <div className="rounded-[20px] bg-[#0D1117] border border-white/10 overflow-hidden">
+                <div className="rounded-[20px] bg-[#09090B] border border-white/10 overflow-hidden">
                   <div className="h-40 sm:h-48 bg-black/40 flex items-center justify-center relative">
                     {postFrontImagePreview ? (
                       <img src={postFrontImagePreview} alt="Live card preview" className="w-full h-full object-cover" />
@@ -7318,7 +7415,7 @@ export default function CardSwipersLanding() {
                   </div>
                 </div>
 
-                <div className="rounded-[18px] bg-[#0D1117] border border-white/10 px-4 py-3">
+                <div className="rounded-[18px] bg-[#09090B] border border-white/10 px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Tips</p>
                   <ul className="mt-2 space-y-1 text-xs text-white/70">
                     <li>Use bright lighting and fill most of the frame with the card.</li>
@@ -7333,7 +7430,7 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="flex-1 h-full w-full overflow-y-auto overscroll-y-contain bg-[#0B0E14] text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex-1 h-full w-full overflow-y-auto overscroll-y-contain bg-[#09090B] text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -7348,7 +7445,7 @@ export default function CardSwipersLanding() {
                     resetClubDraft();
                     setCurrentTab('onboarding');
                   }}
-                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#30363D] text-white hover:bg-[#161B22]"
+                  className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#3F3F46] text-white hover:bg-[#18181B]"
                   aria-label="Back to clubs"
                 >
                   <span className="text-5xl font-light leading-none">‹</span>
@@ -7369,7 +7466,7 @@ export default function CardSwipersLanding() {
                   placeholder="Please enter your club name."
                   maxLength={20}
                   autoFocus
-                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#30363D] bg-[#161B22] px-5 text-base text-white placeholder:text-slate-500 focus:border-[#FFD700] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/20 sm:h-[94px] sm:px-6 sm:text-xl"
+                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#3F3F46] bg-[#18181B] px-5 text-base text-white placeholder:text-slate-500 focus:border-[#FFD700] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/20 sm:h-[94px] sm:px-6 sm:text-xl"
                 />
                 <p className="mt-2 text-right text-xs text-slate-400">{clubDraftName.trim().length}/20</p>
               </div>
@@ -7388,7 +7485,7 @@ export default function CardSwipersLanding() {
                     <button
                       type="button"
                       onClick={() => clubLogoInputRef.current?.click()}
-                      className={`aspect-square rounded-2xl border-2 border-dashed bg-[#161B22] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-[#30363D] hover:border-slate-500'}`}
+                      className={`aspect-square rounded-2xl border-2 border-dashed bg-[#18181B] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-[#3F3F46] hover:border-slate-500'}`}
                     >
                       {clubDraftLogoPreview ? (
                         <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
@@ -7413,12 +7510,12 @@ export default function CardSwipersLanding() {
                             setClubDraftLogoId(preset.id);
                             setClubDraftError('');
                           }}
-                          className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-[#30363D]'}`}
+                          className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-[#3F3F46]'}`}
                           aria-label={`Use ${preset.id} club logo`}
                         >
                           <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
                           <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
-                          {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#0B0E14] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
+                          {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#09090B] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
                         </button>
                       );
                     })}
@@ -7426,6 +7523,10 @@ export default function CardSwipersLanding() {
                 </div>
               </div>
 
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <label className="text-sm text-white/65">Visibility<select aria-label="New club visibility" value={clubDraftAccess} onChange={(event) => setClubDraftAccess(event.target.value)} className="mt-2 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-3 text-base"><option value="private">Private</option><option value="public">Public</option></select></label>
+                <label className="text-sm text-white/65">Category<select aria-label="New club category" value={clubDraftCategory} onChange={(event) => setClubDraftCategory(event.target.value)} className="mt-2 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-3 text-base">{CLUB_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label>
+              </div>
               {clubDraftError && <p className="mt-5 text-sm font-medium text-rose-300">{clubDraftError}</p>}
 
               <button
@@ -7440,9 +7541,18 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'onboarding' && (
-          <div className="max-w-6xl mx-auto w-full flex flex-col gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28">
-            <div className="grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1">
-              <section className={`rounded-[22px] border border-white/10 bg-[#11161F] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-center ${!selectedClub ? 'xl:col-span-2 mx-auto w-full max-w-xl' : ''}`}>
+          <div className={`max-w-6xl mx-auto w-full flex flex-col min-h-0 ${isInClubRoom ? 'gap-0' : 'gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28'}`}>
+            {isInClubRoom && (
+              <div className="sticky top-0 z-40 flex min-h-14 items-center gap-3 border-b border-white/10 bg-black/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+                <button type="button" onClick={handleExitClub} aria-label="Back to clubs" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white" title="Back to clubs">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="m15 5-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+                <p className="min-w-0 truncate text-base font-bold text-white">{selectedClub?.name || 'Club Room'}</p>
+              </div>
+            )}
+            <div className={isInClubRoom ? 'flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-5' : 'grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1'}>
+              {!isInClubRoom && (
+              <section className={`rounded-[22px] border border-white/10 bg-[#18181B] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-center ${!selectedClub ? 'xl:col-span-2 mx-auto w-full max-w-xl' : ''}`}>
                 {/* Search Club bar — full-width pill with magnifying glass */}
                 <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
@@ -7487,7 +7597,7 @@ export default function CardSwipersLanding() {
                               openCreateClub();
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#0D1117] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-emerald-300/60 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#09090B] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-emerald-300/60 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
                         >
                           <div className="relative aspect-square w-full bg-[#0A0D13]">
                             <img src={authHeroImage} alt="Create a club" className="h-full w-full object-cover opacity-80" />
@@ -7515,7 +7625,7 @@ export default function CardSwipersLanding() {
                               handleEnterClub(club);
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0D1117] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#09090B] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                         >
                           <div className="relative aspect-square w-full bg-[#0A0D13]">
                             {club.logoUrl ? (
@@ -7574,18 +7684,33 @@ export default function CardSwipersLanding() {
                   </div>
                 )}
               </section>
+              )}
 
-              {selectedClub && (
-              <section className="rounded-[22px] border border-white/10 bg-[#11161F] p-4 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-3 min-h-0">
+              {isInClubRoom && selectedClub && (
+              <section className="flex flex-col gap-3 min-h-0 w-full">
                 <>
-                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] px-4 py-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-lg sm:text-xl font-black">{selectedClub.name}</h3>
-                          <p className="text-xs text-white/60 mt-1">{selectedClub.description || 'No description provided.'}</p>
+                    <div className="rounded-2xl border border-white/10 bg-zinc-900 px-4 py-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-emerald-500 bg-zinc-800 text-3xl">
+                          {selectedClub.logoUrl ? (
+                            <img src={selectedClub.logoUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            (() => {
+                              const logoPreset = CLUB_LOGO_PRESETS.find((preset) => preset.id === selectedClub.logoPresetId);
+                              return logoPreset ? <span className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${logoPreset.className}`}>{logoPreset.symbol}</span> : <CardClubsIcon />;
+                            })()
+                          )}
                         </div>
-                        <span className="px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.15em] border border-white/20 bg-white/10">Code {selectedClub.code || '------'}</span>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate text-lg font-black">{selectedClub.name}</h3>
+                          <p className="mt-0.5 truncate text-xs text-white/55">ID: {selectedClub.code || selectedClub.id}</p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                            <span className="rounded-full border border-white/15 bg-black/30 px-2.5 py-1 text-white/80">{Number(selectedClub.memberCount || selectedClub.membersCount || 0).toLocaleString()} members</span>
+                            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-bold uppercase text-emerald-300">{selectedClubRole || 'Guest'}</span>
+                          </div>
+                        </div>
                       </div>
+                      {selectedClub.description && <p className="mt-3 text-xs text-white/60">{selectedClub.description}</p>}
                       {!selectedClubMembership ? (
                         <button
                           type="button"
@@ -7607,7 +7732,10 @@ export default function CardSwipersLanding() {
                       ) : null}
                     </div>
 
-                    <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                    <ClubRoomNav value={clubRoomTab} onChange={setClubRoomTab} inboxCount={selectedClubJoinRequests.length + openSelectedClubReports.length + allNotifications.filter((item) => item.clubId === selectedClubId && !item.read).length} />
+                    {clubError && <p role="alert" className="text-sm text-rose-300">{clubError}</p>}
+                    {clubInfo && <p role="status" className="text-sm text-emerald-300">{clubInfo}</p>}
+                    <section className={clubRoomTab === 'chat' ? 'border-b border-white/10 py-3' : 'hidden'}>
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Club Chat</p>
@@ -7649,11 +7777,11 @@ export default function CardSwipersLanding() {
                       </div>
                     </section>
 
-                    <section className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                    <section className={clubRoomTab === 'tradenight' ? 'space-y-3 border-b border-white/10 py-3' : 'hidden'}>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Trade Nights</p>
-                          <p className="mt-1 text-xs text-white/60">Buy-ins are held in escrow until the event payout is verified.</p>
+                          <p className="mt-1 text-xs text-white/60">{selectedClubMembership ? 'Club credits / Entry binders / Poker rotation' : `${Number(selectedClub.tradeNightSummary?.liveCount || 0)} live / ${Number(selectedClub.tradeNightSummary?.registrationCount || 0)} registering`}</p>
                         </div>
                         {canModerateClubPosts && (
                           <button
@@ -7670,7 +7798,7 @@ export default function CardSwipersLanding() {
                           </button>
                         )}
                       </div>
-                      {selectedClubRole === 'owner' && (
+                      {ENABLE_PAYMENT_PIPELINE && selectedClubRole === 'owner' && (
                         <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
@@ -7741,10 +7869,15 @@ export default function CardSwipersLanding() {
                             const isBootedFromEvent = (event.bootedUids || []).includes(firebaseUser?.uid);
                             const isRegisteredForEvent = registrations.some((registration) => (registration.userId || registration.id) === firebaseUser?.uid);
                             return (
-                              <div key={event.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
+                              <div key={event.id} className="flex overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+                                <div className={`flex w-7 shrink-0 items-center justify-center ${eventStatus === 'live' ? 'bg-emerald-500 text-black' : registrationOpen ? 'bg-red-500 text-white' : 'bg-zinc-700 text-white/80'}`}>
+                                  <span className="rotate-180 text-[9px] font-black uppercase tracking-[0.18em] [writing-mode:vertical-rl]">{eventStatus === 'live' ? 'Live' : registrationOpen ? 'Registering' : 'Closed'}</span>
+                                </div>
+                                <div className="min-w-0 flex-1 px-3 py-3">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                  <div>
+                                  <div className="min-w-0">
                                     <p className="text-sm font-bold">{event.title || 'Trade Night'}</p>
+                                    <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${eventStatus === 'live' ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : registrationOpen ? 'border-amber-500/30 bg-amber-500/15 text-amber-200' : 'border-white/15 bg-white/10 text-white/60'}`}>{eventStatus === 'live' ? 'Table live' : registrationOpen ? 'Registration open' : String(event.status || 'Closed')}</span>
                                     <p className="mt-1 text-[11px] text-white/55">
                                       {event.buyInCredits || 0} credits · {event.currentRegistrations || 0}/{event.capLimit || '∞'} registered
                                       {eventDate ? ` · ${eventDate.toLocaleDateString()}` : ''}
@@ -7779,6 +7912,7 @@ export default function CardSwipersLanding() {
                                     {eventStatus === 'live' ? 'Open Table' : 'View Table'}
                                   </button>
                                 </div>
+                                </div>
                               </div>
                             );
                           })
@@ -7786,14 +7920,20 @@ export default function CardSwipersLanding() {
                       </div>
                     </section>
 
-                    <div className="grid lg:grid-cols-2 gap-3 min-h-0">
-                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col">
+                    <div className={['members', 'feed'].includes(clubRoomTab) ? 'flex min-h-0 flex-col gap-3' : 'hidden'}>
+                      <div className={clubRoomTab === 'members' ? 'min-h-0 space-y-3 py-3' : 'hidden'}>
+                        {canManageClubMembers && <form className="space-y-3 border-b border-white/10 pb-4" onSubmit={(event) => { event.preventDefault(); handleSaveClubSettings(); }}>
+                          <h3 className="text-base font-bold">Club Settings</h3>
+                          <div className="grid grid-cols-2 gap-3"><label className="text-xs text-white/60">Visibility<select aria-label="Club visibility" value={clubSettingsDraft.accessMode} onChange={(event) => setClubSettingsDraft((previous) => ({ ...previous, accessMode: event.target.value }))} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm"><option value="private">Private</option><option value="public">Public</option></select></label><label className="text-xs text-white/60">Category<select aria-label="Club settings category" value={clubSettingsDraft.category} onChange={(event) => setClubSettingsDraft((previous) => ({ ...previous, category: event.target.value }))} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm">{CLUB_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label></div>
+                          <button type="submit" disabled={Boolean(clubActionBusyId)} className="min-h-11 rounded-lg bg-emerald-400 px-4 text-sm font-bold text-black disabled:opacity-50">{clubActionBusyId === 'settings' ? 'Saving...' : 'Save Settings'}</button>
+                        </form>}
                         <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
+                        <input type="search" aria-label="Search club members" value={clubMemberSearch} onChange={(event) => setClubMemberSearch(event.target.value)} placeholder="Search members" className="min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-3 text-base" />
                         <div className="space-y-2 overflow-y-auto pr-1">
                           {selectedClubMembers.length === 0 ? (
                             <p className="text-xs text-white/60">No members yet.</p>
                           ) : (
-                            selectedClubMembers.map((member) => (
+                            selectedClubMembers.filter((member) => `${member.username || ''} ${member.displayName || ''} ${member.email || ''}`.toLowerCase().includes(clubMemberSearch.trim().toLowerCase())).map((member) => (
                               <div key={member.uid} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="min-w-0">
@@ -7806,24 +7946,7 @@ export default function CardSwipersLanding() {
                                 {(canManageClubMembers || canModerateClubPosts) && member.uid !== firebaseUser?.uid && (
                                   <div className="mt-2 flex flex-wrap gap-2">
                                     {canManageClubMembers && member.role !== 'owner' && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'agent')}
-                                          disabled={clubActionBusyId === `role-${member.uid}`}
-                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
-                                        >
-                                          Make Agent
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateClubMemberRole(member.uid, 'member')}
-                                          disabled={clubActionBusyId === `role-${member.uid}`}
-                                          className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
-                                        >
-                                          Make Member
-                                        </button>
-                                      </>
+                                      <label className="text-xs text-white/60">Role<select aria-label={`Role for ${member.displayName || member.uid}`} value={member.role || 'member'} disabled={Boolean(clubActionBusyId)} onChange={(event) => handleUpdateClubMemberRole(member.uid, event.target.value)} className="ml-2 min-h-11 rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm"><option value="member">Member</option><option value="agent">Agent</option></select></label>
                                     )}
                                     {member.role !== 'owner' && (
                                       <button
@@ -7857,6 +7980,7 @@ export default function CardSwipersLanding() {
                                     )}
                                   </div>
                                 )}
+                                {canManageClubMembers && member.role === 'member' && <label className="mt-2 block text-xs text-white/60">Assigned agent<select aria-label={`Assigned agent for ${member.displayName || member.uid}`} value={member.agentUid || ''} disabled={Boolean(clubActionBusyId)} onChange={(event) => handleUpdateClubMemberRole(member.uid, 'member', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm"><option value="">Unassigned</option>{selectedClubMembers.filter((agent) => agent.role === 'agent' && (!agent.status || agent.status === 'active')).map((agent) => <option key={agent.uid} value={agent.uid}>{agent.displayName || agent.username || agent.uid}</option>)}</select></label>}
                                 {member.uid !== firebaseUser?.uid && (
                                   <div className="mt-2">
                                     <button
@@ -7875,7 +7999,7 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
 
-                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex flex-col gap-3">
+                      <div className={clubRoomTab === 'feed' ? 'min-h-0 space-y-3 border-b border-white/10 py-3' : 'hidden'}>
                         <div>
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Post Card In Club</p>
                           <p className="text-[11px] text-white/55 mt-1">Members can post cards. Owners and agents can delete posts.</p>
@@ -7921,7 +8045,7 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3 min-h-0 flex-1 overflow-y-auto">
+                      <div className={clubRoomTab === 'feed' ? 'min-h-0 flex-1 py-3' : 'hidden'}>
                       <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Club Feed</p>
                       <div className="space-y-2">
                         {selectedClubPosts.length === 0 ? (
@@ -7988,8 +8112,17 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    {canModerateClubPosts && (
-                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-3">
+                    {clubRoomTab === 'inbox' && <div className="space-y-3 py-3">
+                      <h3 className="text-base font-bold">Club Inbox</h3>
+                      {allNotifications.filter((item) => item.clubId === selectedClubId).length === 0 && <p className="text-sm text-white/50">No club updates yet.</p>}
+                      {allNotifications.filter((item) => item.clubId === selectedClubId).map((item) => <article key={item.id} className="rounded-lg border border-white/10 bg-zinc-900 p-3">
+                        <p className="break-words text-sm text-white/80">{item.message}</p>
+                        {Array.isArray(item.comments) && item.comments.length > 0 && <details className="mt-2 text-xs text-white/60"><summary className="cursor-pointer">Table vote comments</summary>{item.comments.map((comment, index) => <p key={`${comment.voterUid}-${index}`} className="mt-2 break-words">{comment.voterName || 'Trader'}: {comment.reason}</p>)}</details>}
+                        {!item.read && <button type="button" disabled={Boolean(notificationBusy)} onClick={() => handleNotificationClick(item, true)} className="mt-2 min-h-11 text-xs font-semibold text-emerald-300">Mark Read</button>}
+                      </article>)}
+                    </div>}
+                    {canModerateClubPosts && clubRoomTab === 'inbox' && (
+                      <div className="rounded-2xl border border-white/10 bg-[#09090B] p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Moderation Queue</p>
                           <span className="text-[11px] text-white/65">Open: {openSelectedClubReports.length}</span>
@@ -8082,6 +8215,9 @@ export default function CardSwipersLanding() {
                   </>
               </section>
               )}
+              {isInClubRoom && !selectedClub && (
+                <p className="py-10 text-center text-sm text-white/60">Opening club room…</p>
+              )}
             </div>
           </div>
         )}
@@ -8098,7 +8234,7 @@ export default function CardSwipersLanding() {
               </button>
             </div>
 
-            <div className="grid grid-cols-3 rounded-xl border border-[#30363D] bg-[#161B22] p-1">
+            <div className="grid grid-cols-3 rounded-xl border border-[#3F3F46] bg-[#18181B] p-1">
               {[
                 ['active', 'Active'],
                 ['drafts', 'Drafts'],
@@ -8108,7 +8244,7 @@ export default function CardSwipersLanding() {
                   key={value}
                   type="button"
                   onClick={() => setSellerHubTab(value)}
-                  className={`min-h-11 rounded-lg px-2 text-xs font-semibold ${sellerHubTab === value ? 'bg-[#FFD700] text-[#0B0E14]' : 'text-white/70 hover:bg-white/10'}`}
+                  className={`min-h-11 rounded-lg px-2 text-xs font-semibold ${sellerHubTab === value ? 'bg-[#FFD700] text-[#09090B]' : 'text-white/70 hover:bg-white/10'}`}
                 >
                   {label}
                 </button>
@@ -8117,42 +8253,21 @@ export default function CardSwipersLanding() {
 
             {sellerHubTab === 'drafts' ? (
               <div className="space-y-3">
-                {savedDrafts.length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No saved drafts yet.</p> : savedDrafts.map((draft) => (
-                  <div key={draft.id} className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+                {savedDrafts.length === 0 ? <p className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4 text-sm text-white/70">No saved drafts yet.</p> : savedDrafts.map((draft) => (
+                  <div key={draft.id} className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4">
                     <div className="flex items-center gap-3">
                       <SafeImage src={draft.frontPreview || ''} alt="Draft front" className="h-16 w-12 rounded-lg object-cover" fallbackClassName="h-16 w-12" />
                       <div className="min-w-0 flex-1"><p className="truncate font-semibold">{draft.title || 'Untitled draft'}</p><p className="text-xs text-white/65">{draft.brand || 'No brand'} · {draft.updatedAt ? new Date(draft.updatedAt).toLocaleDateString() : 'Recently saved'}</p></div>
                     </div>
-                    <div className="mt-3 flex gap-2"><button type="button" onClick={() => resumeDraft(draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-xs font-bold text-[#0B0E14]">Resume</button><button type="button" onClick={() => deleteDraft(draft.id)} className="min-h-11 rounded-xl border border-rose-300/50 px-4 text-xs font-semibold text-rose-100">Delete</button></div>
+                    <div className="mt-3 flex gap-2"><button type="button" onClick={() => resumeDraft(draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-xs font-bold text-[#09090B]">Resume</button><button type="button" onClick={() => deleteDraft(draft.id)} className="min-h-11 rounded-xl border border-rose-300/50 px-4 text-xs font-semibold text-rose-100">Delete</button></div>
                   </div>
                 ))}
               </div>
             ) : sellerHubTab === 'sales' ? (
               <div className="space-y-3">
-                {userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid && ['completed', 'released', 'fulfilled', 'shipped', 'payment_held', 'payment_pending'].includes(String(order.status || order.escrowStatus || '').toLowerCase())).length === 0 ? <p className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 text-sm text-white/70">No sales history yet.</p> : userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid).map((order) => <button key={order.id} type="button" onClick={() => setActiveReceipt({ ...order, isSeller: true, orderId: order.orderId || order.id, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#30363D] bg-[#161B22] p-3 text-left hover:border-[#FFD700]/60"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{order.cardTitle || 'Sold card'}</p><p className="mt-1 text-xs text-white/65">Order {order.orderId || order.id} · {order.status || order.escrowStatus || 'pending'}</p></div><span className="text-sm font-bold text-[#FFE66D]">{formatMoney(order.sellerNetPayout || order.sellerPayoutAmount || order.listingPrice || 0)}</span></button>)}</div>
+                {userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid && ['completed', 'released', 'fulfilled', 'shipped', 'payment_held', 'payment_pending'].includes(String(order.status || order.escrowStatus || '').toLowerCase())).length === 0 ? <p className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4 text-sm text-white/70">No sales history yet.</p> : userPurchaseIntents.filter((order) => order.sellerUid === firebaseUser?.uid).map((order) => <button key={order.id} type="button" onClick={() => setActiveReceipt({ ...order, isSeller: true, orderId: order.orderId || order.id, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[#3F3F46] bg-[#18181B] p-3 text-left hover:border-[#FFD700]/60"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{order.cardTitle || 'Sold card'}</p><p className="mt-1 text-xs text-white/65">Order {order.orderId || order.id} · {order.status || order.escrowStatus || 'pending'}</p></div><span className="text-sm font-bold text-[#FFE66D]">{formatMoney(order.sellerNetPayout || order.sellerPayoutAmount || order.listingPrice || 0)}</span></button>)}</div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-                {myCollection.map((card) => (
-                  <div
-                    key={card.id}
-                    className="bg-red-950/70 border border-red-400/30 rounded-2xl p-3 md:p-4 flex flex-col justify-between h-36 md:h-40 relative group"
-                  >
-                    <div className="absolute top-2 right-2 text-xs bg-white/20 px-2 py-0.5 rounded-md text-red-100 font-mono scale-90">
-                      {card.condition}
-                    </div>
-                    <SafeImage
-                      src={card.imageUrl || ''}
-                      alt={card.name || 'Binder card'}
-                      className="h-20 w-full rounded-lg border border-red-400/30 object-cover"
-                      fallbackClassName="mt-2 h-20 w-full rounded-lg border border-red-400/30"
-                    />
-                    <div>
-                      <h4 className="font-bold text-sm leading-tight truncate">{card.name}</h4>
-                      <p className="text-[11px] text-[#E50914] font-medium mt-0.5">{card.brand}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <BinderManager binders={availableBinders} selectedBinder={selectedBinder} cards={myCollection} busy={binderBusy} error={binderError} loading={inventoryLoading} onSelect={handleSelectBinder} onSave={handleSaveBinder} onAssign={handleAssignBinder} onAdd={() => setCurrentTab('post')} />
             )}
           </div>
         )}
@@ -8178,14 +8293,14 @@ export default function CardSwipersLanding() {
                   ['Pending escrow', userPurchaseIntents.filter((record) => ['payment_pending', 'payment_held', 'shipped', 'delivered'].includes(String(record.escrowStatus || record.status || '').toLowerCase())).reduce((total, record) => total + Number(record.escrowAmount || record.listingPrice || 0), 0)],
                   ['Completed payouts', userPurchaseIntents.filter((record) => ['released', 'completed', 'fulfilled'].includes(String(record.status || '').toLowerCase())).length]
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4">
+                  <div key={label} className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/65">{label}</p>
                     <p className="mt-2 text-2xl font-black text-[#FFE66D]">{label === 'Completed payouts' ? value : formatMoney(value)}</p>
                   </div>
                 ))}
               </div>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+              <section className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4 space-y-4">
                 <div>
                   <h3 className="text-base font-bold">Shipping address</h3>
                   <p className="mt-1 text-sm text-white/70">Used for buyer receipts and shipment destination validation.</p>
@@ -8204,18 +8319,18 @@ export default function CardSwipersLanding() {
                         type="text"
                         value={walletAddress[field] || ''}
                         onChange={(event) => setWalletAddress((previous) => ({ ...previous, [field]: event.target.value }))}
-                        className="mt-1 w-full rounded-xl border border-white/15 bg-[#0B0E14] px-3 py-2.5 text-base text-white focus:border-[#FFD700] focus:outline-none"
+                        className="mt-1 w-full rounded-xl border border-white/15 bg-[#09090B] px-3 py-2.5 text-base text-white focus:border-[#FFD700] focus:outline-none"
                       />
                     </label>
                   ))}
                 </div>
-                <button type="button" onClick={handleSaveWalletAddress} disabled={walletBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60">
+                <button type="button" onClick={handleSaveWalletAddress} disabled={walletBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#09090B] hover:bg-[#FFE66D] disabled:opacity-60">
                   {walletBusy ? 'Saving...' : 'Save Shipping Address'}
                 </button>
               </section>
 
               {ENABLE_PAYMENT_PIPELINE && (
-                <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
+                <section className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-base font-bold">Seller payout account</h3>
@@ -8230,7 +8345,7 @@ export default function CardSwipersLanding() {
                 </section>
               )}
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-3">
+              <section className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-base font-bold">Identity verification</h3>
@@ -8238,12 +8353,12 @@ export default function CardSwipersLanding() {
                   </div>
                   <StatusPill label={sellerVerificationStatus} status={sellerVerificationStatus} tone={sellerVerificationStatus === 'verified' ? 'success' : 'warning'} />
                 </div>
-                <button type="button" onClick={handleStartIdentityVerification} disabled={verificationSessionBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D] disabled:opacity-60">
+                <button type="button" onClick={handleStartIdentityVerification} disabled={verificationSessionBusy} className="min-h-11 rounded-xl bg-[#FFD700] px-4 py-2.5 text-sm font-bold text-[#09090B] hover:bg-[#FFE66D] disabled:opacity-60">
                   {verificationSessionBusy ? 'Opening verification...' : 'Verify Account with Stripe Identity'}
                 </button>
               </section>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+              <section className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4 space-y-4">
                 <div>
                   <h3 className="text-base font-bold">Purchases & Orders</h3>
                   <p className="mt-1 text-sm text-white/70">Digital receipts, shipment progress, and dispute actions.</p>
@@ -8255,7 +8370,7 @@ export default function CardSwipersLanding() {
                   const stages = ['payment_held', 'shipped', 'delivered', 'completed'];
                   const stageIndex = status === 'released' ? 3 : Math.max(0, stages.indexOf(status));
                   return (
-                    <div key={order.id} className="rounded-xl border border-white/10 bg-[#0B0E14] p-3 space-y-3">
+                    <div key={order.id} className="rounded-xl border border-white/10 bg-[#09090B] p-3 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div><p className="font-semibold">{order.cardTitle || 'Card purchase'}</p><p className="text-xs text-white/65">Order {order.orderId || order.id}</p></div>
                         <StatusPill label={status.replaceAll('_', ' ')} status={status} tone={status === 'disputed' ? 'error' : status === 'completed' || status === 'released' ? 'success' : 'warning'} />
@@ -8269,12 +8384,12 @@ export default function CardSwipersLanding() {
                 })}
               </section>
 
-              <section className="rounded-2xl border border-[#30363D] bg-[#161B22] p-4 space-y-4">
+              <section className="rounded-2xl border border-[#3F3F46] bg-[#18181B] p-4 space-y-4">
                 <div><h3 className="text-base font-bold">Seller Hub / Sales Orders</h3><p className="mt-1 text-sm text-white/70">Enter valid carrier tracking before a sale can move to shipped.</p></div>
                 {userPurchaseIntents.filter((record) => record.sellerUid === firebaseUser?.uid).map((order) => {
                   const orderId = order.orderId || order.id;
                   const draft = trackingDrafts[orderId] || { carrier: order.shippingCarrier || '', trackingNumber: order.trackingNumber || '', trackingUrl: order.trackingUrl || '' };
-                  return <div key={order.id} className="rounded-xl border border-white/10 bg-[#0B0E14] p-3 space-y-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{order.cardTitle || 'Sale'} <span className="text-xs text-white/60">#{orderId}</span></p><StatusPill label={order.status || order.escrowStatus || 'pending'} status={order.status || 'pending'} tone={order.status === 'shipped' || order.status === 'delivered' ? 'success' : 'warning'} /></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><select value={draft.carrier} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, carrier: event.target.value } }))} className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={draft.trackingNumber} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, trackingNumber: event.target.value } }))} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /><button type="button" onClick={() => handleSubmitTrackingForOrder({ ...order, orderId, isSeller: true }, draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-3 text-xs font-bold text-[#0B0E14]">Submit Tracking</button><button type="button" onClick={() => setActiveReceipt({ ...order, orderId, isSeller: true, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white">View Receipt</button></div></div>;
+                  return <div key={order.id} className="rounded-xl border border-white/10 bg-[#09090B] p-3 space-y-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{order.cardTitle || 'Sale'} <span className="text-xs text-white/60">#{orderId}</span></p><StatusPill label={order.status || order.escrowStatus || 'pending'} status={order.status || 'pending'} tone={order.status === 'shipped' || order.status === 'delivered' ? 'success' : 'warning'} /></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><select value={draft.carrier} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, carrier: event.target.value } }))} className="min-h-11 rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white"><option value="">Carrier</option><option>USPS</option><option>UPS</option><option>FedEx</option></select><input value={draft.trackingNumber} onChange={(event) => setTrackingDrafts((previous) => ({ ...previous, [orderId]: { ...draft, trackingNumber: event.target.value } }))} placeholder="Tracking number" className="min-h-11 rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white" /><button type="button" onClick={() => handleSubmitTrackingForOrder({ ...order, orderId, isSeller: true }, draft)} className="min-h-11 rounded-xl bg-[#FFD700] px-3 text-xs font-bold text-[#09090B]">Submit Tracking</button><button type="button" onClick={() => setActiveReceipt({ ...order, orderId, isSeller: true, cardImageUrl: order.cardImageUrl || order.imageUrl })} className="min-h-11 rounded-xl border border-white/20 px-3 text-xs font-semibold text-white">View Receipt</button></div></div>;
                 })}
               </section>
 
@@ -8811,7 +8926,7 @@ export default function CardSwipersLanding() {
                     value={chatDraft}
                     onChange={(e) => setChatDraft(e.target.value)}
                       maxLength={1000}
-                      className="min-h-11 flex-grow rounded-xl border border-[#30363D] bg-[#161B22] p-3 text-base text-white focus:outline-none"
+                      className="min-h-11 flex-grow rounded-xl border border-[#3F3F46] bg-[#18181B] p-3 text-base text-white focus:outline-none"
                   />
                   <button type="button" onClick={() => setShowTradeOfferModal(true)} className="min-h-11 min-w-11 rounded-xl border border-[#FFD700]/60 bg-[#FFD700]/10 text-xl font-bold text-[#FFE66D]" aria-label="Propose trade">+</button>
                   <button 
@@ -8835,75 +8950,11 @@ export default function CardSwipersLanding() {
       </main>
 
       {showNotificationsPanel && (
-        <div className="fixed inset-0 bg-black/70 z-[66] flex items-center justify-center p-4">
-          <div className="w-full max-w-xl bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold">Notifications</h3>
-                <p className="text-xs text-white/60">Realtime updates for interests, matches, and messages.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowNotificationsPanel(false)}
-                className="text-sm text-white/70 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleMarkAllNotificationsRead}
-                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold"
-              >
-                Mark all as read
-              </button>
-              <button
-                type="button"
-                onClick={() => setNotifications([])}
-                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-white/80"
-              >
-                Clear all
-              </button>
-              {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
-                <button
-                  type="button"
-                  onClick={() => Notification.requestPermission().catch(() => {})}
-                  className="px-3 py-2 rounded-xl bg-[#E50914] hover:bg-red-700 text-xs font-semibold"
-                >
-                  Enable Browser Alerts
-                </button>
-              )}
-            </div>
-
-            <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
-              {notifications.length === 0 ? (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">
-                  No notifications yet.
-                </div>
-              ) : (
-                notifications.map((notification) => (
-                  <button
-                    key={notification.id}
-                    type="button"
-                    onClick={() => handleNotificationClick(notification)}
-                    className={`w-full text-left rounded-xl border p-3 transition-colors ${notification.read ? 'border-white/10 bg-white/[0.02]' : 'border-red-400/30 bg-red-500/10 hover:bg-red-500/15'}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold">{notification.title}</p>
-                      {!notification.read && <span className="w-2 h-2 rounded-full bg-[#E50914]" />}
-                    </div>
-                    <p className="text-xs text-white/75 mt-1">{notification.message}</p>
-                    <p className="text-[11px] text-white/45 mt-2">
-                      {new Date(notification.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                    </p>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+        <NotificationHub notifications={allNotifications} offers={notificationOffers} currentUid={firebaseUser?.uid} busy={notificationBusy} error={notificationError} onClose={() => setShowNotificationsPanel(false)} onRead={handleNotificationClick} onReadAll={handleMarkAllNotificationsRead} onOpenClub={(clubId) => { setSelectedClubId(clubId); setClubRoomTab('inbox'); setCurrentTab('onboarding'); setShowNotificationsPanel(false); }} onOpenOffer={(offer) => {
+          const match = matches.find((entry) => entry.id === offer.matchId);
+          if (!match) { setNotificationError('This offer has no available match conversation.'); return; }
+          setActiveChat(match); setActiveDealOfferId(offer.id); setCurrentTab('messages'); setShowNotificationsPanel(false);
+        }} />
       )}
 
       {viewingCollection && (
@@ -8979,7 +9030,7 @@ export default function CardSwipersLanding() {
 
       {showInterestModal && currentCard && (
         <div className="fixed inset-0 bg-black/70 z-[65] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#171A22] border border-white/10 rounded-2xl p-5 space-y-4">
+          <div className="w-full max-w-md bg-[#18181B] border border-white/10 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold">Choose Action</h3>
               <button
@@ -9030,7 +9081,7 @@ export default function CardSwipersLanding() {
               type="button"
               disabled={interestBusy}
               onClick={handleSendInterest}
-              className="min-h-11 w-full rounded-xl bg-[#FFD700] text-[#0B0E14] hover:bg-[#FFE66D] font-semibold text-sm disabled:opacity-60"
+              className="min-h-11 w-full rounded-xl bg-[#FFD700] text-[#09090B] hover:bg-[#FFE66D] font-semibold text-sm disabled:opacity-60"
             >
               {interestBusy ? 'Submitting...' : pendingDealType === 'cash_sale' ? 'Continue to Secure Checkout' : pendingDealType === 'hybrid_trade' ? 'Send Hybrid Trade' : 'Send Trade Request'}
             </button>
@@ -9044,10 +9095,11 @@ export default function CardSwipersLanding() {
           <button
             type="button"
             onClick={() => setShowDiscoverFilters(false)}
-            className="h-full flex-1"
+            className="hidden h-full flex-1 sm:block"
             aria-label="Close filters"
           />
-          <div className="h-full w-full max-w-md space-y-5 border-l border-white/15 bg-[#0B0F19] p-5 text-white shadow-2xl">
+          <div className="flex h-full min-h-0 w-full max-w-md flex-col border-l border-white/15 bg-[#09090B] pt-[env(safe-area-inset-top)] text-white shadow-2xl">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain px-5 py-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Discover</p>
@@ -9055,11 +9107,12 @@ export default function CardSwipersLanding() {
               </div>
               <button type="button" onClick={() => setShowDiscoverFilters(false)} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-xl text-white/75 hover:bg-white/10" aria-label="Close filters">x</button>
             </div>
-            <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label>
-            <div className="grid grid-cols-2 gap-3"><label className="text-sm font-semibold text-white/80">Min Price<input type="number" min="0" value={discoverFilters.minPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minPrice: event.target.value }))} placeholder="$0" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label><label className="text-sm font-semibold text-white/80">Max Price<input type="number" min="0" value={discoverFilters.maxPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, maxPrice: event.target.value }))} placeholder="$5,000" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label></div>
-            <label className="block text-sm font-semibold text-white/80">Year<input type="number" min="1880" max="2100" value={discoverFilters.year} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, year: event.target.value }))} placeholder="2024" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white" /></label>
-            <label className="block text-sm font-semibold text-white/80">Grade Status<select value={discoverFilters.gradeStatus} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, gradeStatus: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white"><option value="all">All</option><option value="graded">Graded Only</option><option value="ungraded">Ungraded Only</option></select></label>
-            <div className="flex justify-end gap-3"><button type="button" onClick={() => setDiscoverFilters({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' })} className="min-h-11 rounded-xl border border-white/20 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Clear</button><button type="button" onClick={() => setShowDiscoverFilters(false)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] hover:bg-[#FFE66D]">Apply Filters</button></div>
+            <label className="block text-sm font-semibold text-white/80">Text Search<input type="search" value={discoverFilters.search} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, search: event.target.value }))} placeholder="Cooper Flagg" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white" /></label>
+            <div className="grid grid-cols-2 gap-3"><label className="text-sm font-semibold text-white/80">Min Price<input type="number" min="0" value={discoverFilters.minPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, minPrice: event.target.value }))} placeholder="$0" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white" /></label><label className="text-sm font-semibold text-white/80">Max Price<input type="number" min="0" value={discoverFilters.maxPrice} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, maxPrice: event.target.value }))} placeholder="$5,000" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white" /></label></div>
+            <label className="block text-sm font-semibold text-white/80">Year<input type="number" min="1880" max="2100" value={discoverFilters.year} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, year: event.target.value }))} placeholder="2024" className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white" /></label>
+            <label className="block text-sm font-semibold text-white/80">Grade Status<select value={discoverFilters.gradeStatus} onChange={(event) => setDiscoverFilters((previous) => ({ ...previous, gradeStatus: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white"><option value="all">All</option><option value="graded">Graded Only</option><option value="ungraded">Ungraded Only</option></select></label>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-white/10 bg-[#09090B] px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><button type="button" onClick={() => setDiscoverFilters({ search: '', minPrice: '', maxPrice: '', year: '', gradeStatus: 'all' })} className="min-h-11 rounded-xl border border-white/20 px-4 text-sm font-semibold text-white/80 hover:bg-white/10">Clear</button><button type="button" onClick={() => setShowDiscoverFilters(false)} className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#09090B] hover:bg-[#FFE66D]">Apply Filters</button></div>
           </div>
         </div>
       )}
@@ -9489,7 +9542,7 @@ export default function CardSwipersLanding() {
                 </span>
               )}
             </div>
-            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Imbox</span>
+            <span className={`text-[11px] font-semibold tracking-[0.01em] transition-colors duration-300 ${currentTab === 'messages' ? 'text-white' : 'text-white/60 group-hover:text-white/78'}`}>Inbox</span>
             <span className={`absolute bottom-1.5 h-1 rounded-full bg-gradient-to-r from-[#F5C542] via-white to-[#E11D48] transition-all duration-300 ${currentTab === 'messages' ? 'w-8 opacity-100' : 'w-3 opacity-0'}`} />
             </span>
           </button>
@@ -9554,14 +9607,14 @@ export default function CardSwipersLanding() {
 
       {ENABLE_PAYMENT_PIPELINE && activePaymentSheet && stripePromise && (
         <div className="fixed inset-0 z-[68] flex items-end justify-center overflow-y-auto bg-black/80 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:items-center">
-          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-[28px] border border-[#30363D] bg-[#0B0E14] p-5 pb-8 text-white shadow-2xl space-y-4">
+          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-[28px] border border-[#3F3F46] bg-[#09090B] p-5 pb-8 text-white shadow-2xl space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-bold">Secure escrow checkout</h2>
                 <p className="text-sm text-white/75">Payment is held until shipment and release.</p>
             {confirmDialog && (
               <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
-                <div className="w-full max-w-md space-y-5 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
+                <div className="w-full max-w-md space-y-5 rounded-2xl border border-[#3F3F46] bg-[#09090B] p-5 text-white shadow-2xl">
                   <div>
                     <h2 id="confirm-dialog-title" className="text-lg font-bold">{confirmDialog.title}</h2>
                     <p className="mt-2 text-sm text-white/75">{confirmDialog.message}</p>
@@ -9574,7 +9627,7 @@ export default function CardSwipersLanding() {
                         confirmResolverRef.current = null;
                         setConfirmDialog(null);
                       }}
-                      className="min-h-11 rounded-xl border border-[#30363D] bg-[#161B22] px-4 text-sm font-semibold text-white hover:bg-[#20262D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                      className="min-h-11 rounded-xl border border-[#3F3F46] bg-[#18181B] px-4 text-sm font-semibold text-white hover:bg-[#27272A] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                     >
                       Cancel
                     </button>
@@ -9585,7 +9638,7 @@ export default function CardSwipersLanding() {
                         confirmResolverRef.current = null;
                         setConfirmDialog(null);
                       }}
-                      className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-semibold text-[#0B0E14] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                      className="min-h-11 rounded-xl bg-[#FFD700] px-4 text-sm font-semibold text-[#09090B] hover:bg-[#FFE66D] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
                     >
                       {confirmDialog.confirmLabel}
                     </button>
@@ -9601,7 +9654,7 @@ export default function CardSwipersLanding() {
                   setActivePaymentSheet(null);
                   setPaymentSheetError('');
                 }}
-                className="min-h-11 min-w-11 rounded-full text-sm font-semibold text-white/75 hover:bg-[#161B22] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                className="min-h-11 min-w-11 rounded-full text-sm font-semibold text-white/75 hover:bg-[#18181B] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
               >
                 Close
               </button>
@@ -9621,7 +9674,7 @@ export default function CardSwipersLanding() {
                   theme: 'night',
                   variables: {
                     colorPrimary: '#FFD700',
-                    colorBackground: '#161B22',
+                    colorBackground: '#18181B',
                     colorText: '#FFFFFF',
                     colorDanger: '#FDA4AF',
                     borderRadius: '12px'
@@ -9651,10 +9704,11 @@ export default function CardSwipersLanding() {
       )}
 
       {tradeNightDraft && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 sm:items-center" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-t-3xl border border-white/10 bg-[#0D1117] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-3xl">
+        <div className="fixed inset-0 z-[90] flex justify-center bg-[#09090B]" role="dialog" aria-modal="true" aria-label="Open Trade Night">
+          <div className="flex h-full min-h-0 w-full max-w-2xl flex-col bg-[#09090B] pt-[env(safe-area-inset-top)]">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-5">
             <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-300">Open Trade Night</p>
-            <h3 className="mt-1 text-lg font-black">Entry Binder Requirements</h3>
+            <h3 className="mt-1 text-xl font-black">Entry Binder Requirements</h3>
             {[
               { key: 'minBinderValue', label: 'Minimum binder total value ($)', min: 0 },
               { key: 'minCardCount', label: 'Minimum card count', min: 1 },
@@ -9673,7 +9727,8 @@ export default function CardSwipersLanding() {
               </label>
             ))}
             {clubError && <p className="mt-2 text-xs text-red-300">{clubError}</p>}
-            <div className="mt-4 flex gap-2">
+            </div>
+            <div className="flex gap-2 border-t border-white/10 bg-[#09090B] px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <button type="button" onClick={() => setTradeNightDraft(null)} className="min-h-11 flex-1 rounded-xl border border-white/15 bg-white/5 text-sm font-semibold">Cancel</button>
               <button type="button" onClick={handleCreateTradeNight} disabled={Boolean(clubEventBusyId)} className="min-h-11 flex-1 rounded-xl bg-[#22C55E] text-sm font-bold text-black disabled:opacity-60">
                 {clubEventBusyId === 'create' ? 'Opening...' : 'Open Registration'}
@@ -9687,6 +9742,8 @@ export default function CardSwipersLanding() {
         <TradeNightEntryModal
           event={tradeNightEntryEvent}
           currentUid={firebaseUser.uid}
+          binders={availableBinders}
+          initialBinderId={selectedBinder.id}
           busy={clubEventBusyId === `register-${tradeNightEntryEvent.id}`}
           onCancel={() => setTradeNightEntryEvent(null)}
           onSubmit={(binderCardIds) => handleSubmitTradeNightEntry(tradeNightEntryEvent, binderCardIds)}
@@ -9708,24 +9765,24 @@ export default function CardSwipersLanding() {
 
       {showTradeOfferModal && activeChat && (
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="trade-offer-title">
-          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-[#30363D] bg-[#0B0E14] p-5 text-white shadow-2xl">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Trade builder</p><h2 id="trade-offer-title" className="mt-1 text-xl font-bold">Propose Trade</h2></div><button type="button" onClick={() => setShowTradeOfferModal(false)} className="min-h-11 min-w-11 rounded-full border border-[#30363D] text-white/75">x</button></div>
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-[#3F3F46] bg-[#09090B] p-5 text-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] uppercase tracking-[0.2em] text-[#FFD700]">Trade builder</p><h2 id="trade-offer-title" className="mt-1 text-xl font-bold">Propose Trade</h2></div><button type="button" onClick={() => setShowTradeOfferModal(false)} className="min-h-11 min-w-11 rounded-full border border-[#3F3F46] text-white/75">x</button></div>
             <p className="text-sm text-white/70">Select one or more cards from your binder to offer in this conversation.</p>
             <div className="grid grid-cols-2 gap-2">
               {DEAL_TYPES.filter((deal) => ['pure_trade', 'hybrid_trade'].includes(deal.value)).map((deal) => (
-                <button key={deal.value} type="button" onClick={() => setOfferDealType(deal.value)} className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${offerDealType === deal.value ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/15 bg-[#161B22] text-white/75'}`}>
+                <button key={deal.value} type="button" onClick={() => setOfferDealType(deal.value)} className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${offerDealType === deal.value ? 'border-[#FFD700] bg-[#FFD700]/15 text-[#FFE66D]' : 'border-white/15 bg-[#18181B] text-white/75'}`}>
                   {deal.label}
                 </button>
               ))}
             </div>
             <div className="grid max-h-[42vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
-              {myCollection.length === 0 ? <p className="col-span-full rounded-xl border border-white/10 bg-[#161B22] p-4 text-sm text-white/70">Your binder is empty.</p> : myCollection.map((card) => {
+              {myCollection.length === 0 ? <p className="col-span-full rounded-xl border border-white/10 bg-[#18181B] p-4 text-sm text-white/70">Your binder is empty.</p> : myCollection.map((card) => {
                 const selected = selectedTradeCardIds.includes(card.id);
-                return <button key={card.id} type="button" onClick={() => toggleTradeCard(card.id)} className={`rounded-xl border p-2 text-left ${selected ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-[#161B22]'}`}><div className="flex items-center gap-2">{card.imageUrl ? <img src={card.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <span className="flex h-14 w-10 items-center justify-center rounded bg-[#0B0E14]">🃏</span>}<span className="min-w-0"><span className="block truncate text-xs font-semibold">{card.name || card.title}</span><span className="block truncate text-[10px] text-white/60">{card.brand}</span></span></div></button>;
+                return <button key={card.id} type="button" onClick={() => toggleTradeCard(card.id)} className={`rounded-xl border p-2 text-left ${selected ? 'border-[#FFD700] bg-[#FFD700]/10' : 'border-white/10 bg-[#18181B]'}`}><div className="flex items-center gap-2">{card.imageUrl ? <img src={card.imageUrl} alt="" className="h-14 w-10 rounded object-cover" /> : <span className="flex h-14 w-10 items-center justify-center rounded bg-[#09090B]">🃏</span>}<span className="min-w-0"><span className="block truncate text-xs font-semibold">{card.name || card.title}</span><span className="block truncate text-[10px] text-white/60">{card.brand}</span></span></div></button>;
               })}
             </div>
-            <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#161B22] px-3 text-base text-white disabled:opacity-50" /></label>
-            <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#0B0E14] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
+            <label className="block text-sm font-semibold text-white/80">Cash adjustment (+ receive / - offer)<input type="text" inputMode="decimal" value={offerDraftAmount} onChange={(event) => setOfferDraftAmount(event.target.value)} placeholder={offerDealType === 'pure_trade' ? 'No cash adjustment' : '+50 or -50'} disabled={offerDealType === 'pure_trade'} className="mt-1 min-h-11 w-full rounded-xl border border-white/15 bg-[#18181B] px-3 text-base text-white disabled:opacity-50" /></label>
+            <button type="button" onClick={() => handleSendOffer(myCollection.filter((card) => selectedTradeCardIds.includes(card.id)))} disabled={offerBusy || selectedTradeCardIds.length === 0} className="min-h-11 w-full rounded-xl bg-[#FFD700] px-4 text-sm font-bold text-[#09090B] disabled:bg-slate-800 disabled:text-slate-400">{offerBusy ? 'Sending...' : 'Send Trade Offer'}</button>
           </div>
         </div>
       )}

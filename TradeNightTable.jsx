@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from './firebase';
+import { getBinderCards } from './binderModel.mjs';
 
 export const TRADE_NIGHT_DEFAULT_MIN_BINDER_VALUE = 500;
 export const TRADE_NIGHT_DEFAULT_MIN_CARD_COUNT = 6;
@@ -82,8 +83,10 @@ function MiniCard({ card, pulsing = false }) {
   );
 }
 
-export function TradeNightEntryModal({ event, currentUid, busy, onCancel, onSubmit }) {
+export function TradeNightEntryModal({ event, currentUid, busy, onCancel, onSubmit, binders = [], initialBinderId = '' }) {
   const [cards, setCards] = useState([]);
+  const [entryBinderId, setEntryBinderId] = useState(initialBinderId);
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
   const [showRequirements, setShowRequirements] = useState(false);
@@ -98,15 +101,17 @@ export function TradeNightEntryModal({ event, currentUid, busy, onCancel, onSubm
           const data = docSnap.data();
           return {
             id: docSnap.id,
+            binderId: data.binderId || '',
             name: data.name || data.title || 'Card',
             imageUrl: data.imageFrontUrl || data.imageUrl || '',
             value: parseDollarValue(data.tradeValue || data.value || data.avgMarketValue)
           };
         });
         setCards(loaded);
-        setSelectedIds(loaded.map((card) => card.id));
+        const binder = binders.find((item) => item.id === initialBinderId);
+        setSelectedIds((binder ? getBinderCards(loaded, binder, binders) : loaded).map((card) => card.id));
       })
-      .catch((error) => console.error('Failed loading entry binder:', error))
+      .catch((error) => { console.error('Failed loading entry binder:', error); if (!cancelled) setLoadError('Could not load entry cards. Close and retry.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [currentUid]);
@@ -131,6 +136,16 @@ export function TradeNightEntryModal({ event, currentUid, busy, onCancel, onSubm
       <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-3xl border border-white/10 bg-[#0D1117] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-3xl">
         <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-300">Select Entry Binder</p>
         <h3 className="mt-1 text-lg font-black">{event.title || 'Trade Night'}</h3>
+        {binders.length > 0 && <label className="mt-3 block text-xs text-white/65">Entry binder
+          <select aria-label="Entry binder" value={entryBinderId} disabled={loading || busy} onChange={(change) => {
+            const binder = binders.find((item) => item.id === change.target.value);
+            setEntryBinderId(change.target.value);
+            setSelectedIds((binder ? getBinderCards(cards, binder, binders) : cards).map((card) => card.id));
+          }} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-3 text-base">
+            <option value="">All inventory</option>{binders.map((binder) => <option key={binder.id} value={binder.id}>{binder.name}</option>)}
+          </select>
+        </label>}
+        {loadError && <p role="alert" className="mt-2 text-sm text-rose-300">{loadError}</p>}
         <p className="mt-1 text-xs text-white/60">
           Requirements: at least {criteria.minCardCount} cards and {formatMoney(criteria.minBinderValue)} total value.
         </p>

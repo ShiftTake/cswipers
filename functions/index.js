@@ -2,8 +2,9 @@ const crypto = require('crypto');
 const admin = require('firebase-admin');
 const { onRequest } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
+const { validateClubMemberUpdate } = require('./clubRoles');
 const {
   buildPayoutPlan,
   calculateTransactionAmounts,
@@ -2255,6 +2256,115 @@ exports.onTradeNightBoot = onDocumentCreated('clubs/{clubId}/events/{eventId}/bo
     { clubId, eventId, targetUid, relation: recipient.relation, voterUids: boot.voterUids || [], comments }
   )));
   await event.data.ref.update({ notifiedUids: recipients.map((entry) => entry.uid), notifiedAt: serverTimestamp() });
+});
+
+exports.clubMembershipAction = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') return sendJson(res, 204, {});
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    const action = String(req.body?.action || '').trim();
+    const requestId = String(req.body?.requestId || '').trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(clubId) || !['join', 'approve', 'reject'].includes(action)) throw new Error('Valid club and membership action are required.');
+    if (action !== 'join' && !/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) throw new Error('Valid join request is required.');
+    await getDb().runTransaction(async (transaction) => {
+      const clubRef = getDb().collection('clubs').doc(clubId);
+      const clubSnap = await transaction.get(clubRef);
+      if (!clubSnap.exists) throw new Error('Club was not found.');
+      const club = clubSnap.data();
+      let targetUid = user.uid;
+      let profile = {};
+      let requestRef = null;
+      let agentUid = null;
+      if (action === 'join') {
+        if (!['public', 'auto-join'].includes(String(club.accessMode || club.visibility || 'private').toLowerCase())) throw new Error('This club requires a join request.');
+        const userSnap = await transaction.get(getDb().collection('users').doc(user.uid));
+        profile = userSnap.data() || {};
+      } else {
+        const actorSnap = await transaction.get(clubRef.collection('members').doc(user.uid));
+        const actor = actorSnap.data();
+        if (!actor || !['owner', 'agent'].includes(actor.role) || (actor.status && actor.status !== 'active')) throw new Error('An active club moderator is required.');
+        requestRef = clubRef.collection('joinRequests').doc(requestId);
+        const requestSnap = await transaction.get(requestRef);
+        const request = requestSnap.data();
+        if (!request || request.status !== 'pending' || !/^[A-Za-z0-9_-]{1,128}$/.test(request.userId || '')) throw new Error('This request is no longer pending.');
+        targetUid = request.userId;
+        profile = { displayName: request.userName, email: request.userEmail, username: request.username, profileImageUrl: request.profileImageUrl };
+        agentUid = actor.role === 'agent' ? user.uid : null;
+      }
+      const memberRef = clubRef.collection('members').doc(targetUid);
+      const [memberSnap, banSnap] = await Promise.all([transaction.get(memberRef), transaction.get(clubRef.collection('bans').doc(targetUid))]);
+      if (action === 'reject') { transaction.delete(requestRef); return; }
+      if (banSnap.exists) throw new Error('This member is blocked from the club.');
+      if (!memberSnap.exists) {
+        transaction.set(memberRef, {
+          uid: targetUid, displayName: profile.displayName || 'Collector', email: profile.email || '',
+          username: profile.username || '', profileImageUrl: profile.profileImageUrl || '', role: 'member', agentUid,
+          credits: 0, creditLimit: 0, escrowHeld: 0, status: 'active', joinedAt: serverTimestamp(), updatedAt: serverTimestamp()
+        });
+        transaction.update(clubRef, { memberCount: Number(club.memberCount || 0) + 1, updatedAt: serverTimestamp() });
+      } else if (memberSnap.data().status && memberSnap.data().status !== 'active') {
+        throw new Error('This membership is not active. Contact a moderator.');
+      }
+      if (requestRef) transaction.delete(requestRef);
+    });
+    return sendJson(res, 200, { ok: true });
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message || 'Could not update membership.' });
+  }
+});
+
+exports.updateClubMemberRole = onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') return sendJson(res, 204, {});
+  try {
+    assertMethod(req, ['POST']);
+    const user = await requireAuth(req);
+    const clubId = String(req.body?.clubId || '').trim();
+    const memberUid = String(req.body?.memberUid || '').trim();
+    const role = String(req.body?.role || '').trim();
+    const agentUid = String(req.body?.agentUid || '').trim();
+    if (![clubId, memberUid].every((value) => /^[A-Za-z0-9_-]{1,128}$/.test(value)) || (agentUid && !/^[A-Za-z0-9_-]{1,128}$/.test(agentUid))) throw new Error('Valid club and member IDs are required.');
+    await getDb().runTransaction(async (transaction) => {
+      const clubRef = getDb().collection('clubs').doc(clubId);
+      const actorRef = clubRef.collection('members').doc(user.uid);
+      const memberRef = clubRef.collection('members').doc(memberUid);
+      const [clubSnap, actorSnap, memberSnap, agentSnap] = await Promise.all([
+        transaction.get(clubRef), transaction.get(actorRef), transaction.get(memberRef),
+        agentUid ? transaction.get(clubRef.collection('members').doc(agentUid)) : null
+      ]);
+      if (!clubSnap.exists || !actorSnap.exists || !memberSnap.exists) throw new Error('Club or membership was not found.');
+      if ((clubSnap.data().ownerUid || clubSnap.data().ownerId) !== user.uid) throw new Error('Only the club owner can manage roles.');
+      const update = validateClubMemberUpdate({ actorUid: user.uid, actor: actorSnap.data(), memberUid, member: memberSnap.data(), role, agentUid, agent: agentSnap?.data() });
+      if (memberSnap.data().role === 'agent' && update.role === 'member') {
+        const assignedMembers = await transaction.get(clubRef.collection('members').where('agentUid', '==', memberUid));
+        if (assignedMembers.docs.some((member) => member.id !== memberUid)) throw new Error('Reassign this agent\'s members first before changing their role to member.');
+      }
+      transaction.update(memberRef, { ...update, updatedAt: serverTimestamp() });
+      const ledger = clubSnap.data().creditLedger;
+      if (ledger?.memberBalances?.[memberUid]) transaction.update(clubRef, {
+        creditLedger: { ...ledger, memberBalances: { ...ledger.memberBalances, [memberUid]: { ...ledger.memberBalances[memberUid], role: update.role } } },
+        updatedAt: serverTimestamp()
+      });
+    });
+    return sendJson(res, 200, { ok: true });
+  } catch (error) {
+    return sendJson(res, 400, { error: error.message || 'Could not update club member.' });
+  }
+});
+
+exports.onClubTradeNightStatus = onDocumentWritten('clubs/{clubId}/events/{eventId}', async (event) => {
+  const clubRef = getDb().collection('clubs').doc(event.params.clubId);
+  await getDb().runTransaction(async (transaction) => {
+    const clubSnap = await transaction.get(clubRef);
+    if (!clubSnap.exists) return;
+    const events = await transaction.get(clubRef.collection('events').where('status', 'in', ['live', 'registration']));
+    const liveCount = events.docs.filter((entry) => entry.data().status === 'live').length;
+    const registrationCount = events.size - liveCount;
+    const previous = clubSnap.data().tradeNightSummary || {};
+    if (previous.liveCount === liveCount && previous.registrationCount === registrationCount) return;
+    transaction.update(clubRef, { tradeNightSummary: { liveCount, registrationCount } });
+  });
 });
 
 exports.leaveClub = onRequest(async (req, res) => {

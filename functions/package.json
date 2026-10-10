@@ -8,7 +8,7 @@
   },
   "scripts": {
     "lint": "node -c index.js",
-    "test": "node --test feeAccounting.test.js"
+    "test": "node --test feeAccounting.test.js clubRoles.test.js clubIntegration.test.js"
   },
   "dependencies": {
     "firebase-admin": "^14.3.0",
