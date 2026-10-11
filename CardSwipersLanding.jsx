@@ -49,6 +49,9 @@ import { normalizeBinders } from './binderModel.mjs';
 import PublicClubDiscover from './PublicClubDiscover.jsx';
 import NotificationHub from './NotificationHub.jsx';
 import ClubRoomNav from './ClubRoomNav.jsx';
+import ClubMembersView from './ClubMembersView.jsx';
+import ClubAdminView from './ClubAdminView.jsx';
+import { ArrowLeft, Share2, Pencil, Check, X, Upload, Search } from 'lucide-react';
 import { CLUB_CATEGORIES } from './clubDiscovery.mjs';
 import { DEFAULT_CLUB_FILTERS } from './clubDiscovery.mjs';
 import TradeNightTable, {
@@ -1106,7 +1109,6 @@ export default function CardSwipersLanding() {
   const [clubDraftDescription, setClubDraftDescription] = useState('');
   const [clubDraftAccess, setClubDraftAccess] = useState('private');
   const [clubDraftCategory, setClubDraftCategory] = useState('Other');
-  const [clubSettingsDraft, setClubSettingsDraft] = useState({ accessMode: 'private', category: 'Other' });
   const [clubDraftLogoId, setClubDraftLogoId] = useState('');
   const [clubDraftLogoFile, setClubDraftLogoFile] = useState(null);
   const [clubDraftLogoPreview, setClubDraftLogoPreview] = useState('');
@@ -1122,7 +1124,13 @@ export default function CardSwipersLanding() {
   const [clubModerationBadgeCount, setClubModerationBadgeCount] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [clubRoomTab, setClubRoomTab] = useState('tradenight');
-  const [clubMemberSearch, setClubMemberSearch] = useState('');
+  const [clubMemberRoleFilter, setClubMemberRoleFilter] = useState('all');
+  const [clubManagementBackTab, setClubManagementBackTab] = useState('tradenight');
+  const [clubAdminEventData, setClubAdminEventData] = useState({ clubId: '', events: [], loading: true, error: '' });
+  const [clubEventFilter, setClubEventFilter] = useState('all');
+  const [clubEventSearch, setClubEventSearch] = useState('');
+  const [clubNoticeEditing, setClubNoticeEditing] = useState(false);
+  const [clubNoticeDraft, setClubNoticeDraft] = useState('');
   const [selectedClubCarouselIndex, setSelectedClubCarouselIndex] = useState(0);
   const clubCarouselRef = useRef(null);
   const [selectedClubMembers, setSelectedClubMembers] = useState([]);
@@ -1227,6 +1235,7 @@ export default function CardSwipersLanding() {
   const canModerateClubPosts = isClubModeratorRole(selectedClubRole);
   const isSelectedClubBanned = Boolean(selectedClubBanRecord);
   const openSelectedClubReports = selectedClubReports.filter((report) => report.status === 'open');
+  const filteredClubEvents = selectedClubEvents.filter((event) => (clubEventFilter === 'all' || (clubEventFilter === 'high-value' ? getEntryCriteria(event).minBinderValue >= 1000 : event.status === clubEventFilter)) && String(event.title || 'Trade Night').toLowerCase().includes(clubEventSearch.trim().toLowerCase()));
   const filteredClubs = clubs.filter((club) => {
     const searchTerm = clubSearchQuery.trim().toLowerCase();
     if (!searchTerm) return true;
@@ -2183,6 +2192,7 @@ export default function CardSwipersLanding() {
         (error) => {
           console.error('Failed loading club join requests:', error);
           setSelectedClubJoinRequests([]);
+          setClubError('Could not load applicants. Reopen the club to retry.');
         }
       );
     } else {
@@ -4895,7 +4905,9 @@ export default function CardSwipersLanding() {
   const handleEnterClub = (club) => {
     if (!club?.id) return;
     setClubRoomTab('tradenight');
-    setClubMemberSearch('');
+    setClubEventFilter('all');
+    setClubEventSearch('');
+    setClubNoticeEditing(false);
     setClubError('');
     setClubInfo('');
     setSelectedClubId(club.id);
@@ -4909,9 +4921,30 @@ export default function CardSwipersLanding() {
     window.requestAnimationFrame(() => {
       const carousel = clubCarouselRef.current;
       if (!carousel) return;
-      const cardWidth = carousel.clientWidth * 0.8 + 16;
-      carousel.scrollTo({ left: 20 + cardWidth * selectedClubCarouselIndex, behavior: 'instant' });
+      const card = carousel.children[selectedClubCarouselIndex];
+      if (card) carousel.scrollTo({ left: card.offsetLeft - carousel.offsetLeft - (carousel.clientWidth - card.clientWidth) / 2, behavior: 'instant' });
     });
+  };
+
+  const handleShareClub = async () => {
+    if (!selectedClub) return;
+    const text = `Join ${selectedClub.name} on CardSwipers. Club ID: ${selectedClub.code || selectedClub.id}`;
+    try {
+      if (navigator.share) await navigator.share({ title: selectedClub.name, text });
+      else { await navigator.clipboard.writeText(text); setClubInfo('Club invite copied.'); }
+    } catch (error) {
+      if (error.name !== 'AbortError') setClubError('Could not share the invite. Club ID: ' + (selectedClub.code || selectedClub.id));
+    }
+  };
+
+  const handleSaveClubNotice = async () => {
+    if (!canManageClubMembers || clubActionBusyId) return;
+    setClubActionBusyId('notice'); setClubError('');
+    try {
+      await updateDoc(doc(db, 'clubs', selectedClubId), { description: clubNoticeDraft.trim(), updatedAt: serverTimestamp() });
+      setClubNoticeEditing(false); setClubInfo('Club notice saved.');
+    } catch (error) { setClubError(error.message || 'Could not save club notice.'); }
+    finally { setClubActionBusyId(''); }
   };
 
   const handleApproveClubJoinRequest = async (request) => {
@@ -5251,20 +5284,6 @@ export default function CardSwipersLanding() {
     } finally {
       setClubReportBusy(false);
     }
-  };
-
-  useEffect(() => {
-    setClubSettingsDraft({ accessMode: getClubAccessMode(selectedClub || {}), category: selectedClub?.categories?.[0] || selectedClub?.category || 'Other' });
-  }, [selectedClub?.id, selectedClub?.accessMode, selectedClub?.category, selectedClub?.categories?.[0]]);
-
-  const handleSaveClubSettings = async () => {
-    if (!firebaseUser || !selectedClubId || !canManageClubMembers || clubActionBusyId) return;
-    setClubActionBusyId('settings'); setClubError(''); setClubInfo('');
-    try {
-      await updateDoc(doc(db, 'clubs', selectedClubId), { accessMode: clubSettingsDraft.accessMode, categories: [clubSettingsDraft.category], updatedAt: serverTimestamp() });
-      setClubInfo('Club settings saved.');
-    } catch (error) { setClubError(error.message || 'Could not save club settings.'); }
-    finally { setClubActionBusyId(''); }
   };
 
   const handleUpdateClubMemberRole = async (memberUid, role, agentUid = '') => {
@@ -5756,6 +5775,36 @@ export default function CardSwipersLanding() {
   const isCoreAppScreen = !isLandingScreen && !isAuthScreen && !isCreateClubScreen;
   const showPersistentMobileDock = isAuthenticated && !isLandingScreen && !isAuthScreen && !isCreateClubScreen && !isInClubRoom;
   const isNativeCoreApp = isNativeApp && isAuthenticated && isCoreAppScreen;
+
+  useEffect(() => {
+    if (!selectedClubId || clubRoomTab !== 'admin' || !canModerateClubPosts) return undefined;
+    setClubAdminEventData({ clubId: selectedClubId, events: [], loading: true, error: '' });
+    return onSnapshot(collection(db, 'clubs', selectedClubId, 'events'), (snapshot) => {
+      setClubAdminEventData({ clubId: selectedClubId, events: snapshot.docs.map((record) => ({ id: record.id, ...record.data() })), loading: false, error: '' });
+    }, () => {
+      setClubAdminEventData({ clubId: selectedClubId, events: [], loading: false, error: 'Could not load club activity. Reopen Club Admin to retry.' });
+    });
+  }, [selectedClubId, clubRoomTab, canModerateClubPosts]);
+
+  useEffect(() => {
+    if (!isCreateClubScreen) return undefined;
+    const viewport = window.visualViewport;
+    const resize = () => {
+      document.documentElement.style.setProperty('--club-viewport-height', `${viewport?.height || window.innerHeight}px`);
+      document.documentElement.style.setProperty('--club-viewport-top', `${viewport?.offsetTop || 0}px`);
+    };
+    resize();
+    viewport?.addEventListener('resize', resize);
+    viewport?.addEventListener('scroll', resize);
+    window.addEventListener('resize', resize);
+    return () => {
+      viewport?.removeEventListener('resize', resize);
+      viewport?.removeEventListener('scroll', resize);
+      window.removeEventListener('resize', resize);
+      document.documentElement.style.removeProperty('--club-viewport-height');
+      document.documentElement.style.removeProperty('--club-viewport-top');
+    };
+  }, [isCreateClubScreen]);
 
   useEffect(() => {
     if (currentTab !== 'post') {
@@ -7430,13 +7479,14 @@ export default function CardSwipersLanding() {
         )}
 
         {currentTab === 'create-club' && (
-          <div className="flex-1 h-full w-full overflow-y-auto overscroll-y-contain bg-[#09090B] text-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="club-create-screen">
             <form
+              id="create-club-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 handleCreateClub();
               }}
-              className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-10"
+              className="club-create-form"
             >
               <div className="relative flex items-center justify-center">
                 <button
@@ -7448,12 +7498,12 @@ export default function CardSwipersLanding() {
                   className="absolute left-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#3F3F46] text-white hover:bg-[#18181B]"
                   aria-label="Back to clubs"
                 >
-                  <span className="text-5xl font-light leading-none">‹</span>
+                  <ArrowLeft size={22} />
                 </button>
-                <h1 className="text-3xl font-bold tracking-0 text-white">Create Club</h1>
+                <h1 className="text-xl font-bold text-white">Create Club</h1>
               </div>
 
-              <div className="mt-8 sm:mt-14">
+              <div className="mt-6">
                 <label htmlFor="club-name" className="block text-xl font-medium text-white">Club Name</label>
                 <input
                   id="club-name"
@@ -7465,8 +7515,7 @@ export default function CardSwipersLanding() {
                   }}
                   placeholder="Please enter your club name."
                   maxLength={20}
-                  autoFocus
-                  className="mt-4 h-[76px] w-full rounded-2xl border border-[#3F3F46] bg-[#18181B] px-5 text-base text-white placeholder:text-slate-500 focus:border-[#FFD700] focus:outline-none focus:ring-2 focus:ring-[#FFD700]/20 sm:h-[94px] sm:px-6 sm:text-xl"
+                  className="mt-3 h-14 w-full rounded-lg border border-white/15 bg-[#18181B] px-4 text-base text-white placeholder:text-zinc-500 focus:border-emerald-400 focus:outline-none"
                 />
                 <p className="mt-2 text-right text-xs text-slate-400">{clubDraftName.trim().length}/20</p>
               </div>
@@ -7485,13 +7534,13 @@ export default function CardSwipersLanding() {
                     <button
                       type="button"
                       onClick={() => clubLogoInputRef.current?.click()}
-                      className={`aspect-square rounded-2xl border-2 border-dashed bg-[#18181B] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-[#FFD700] ring-2 ring-[#FFD700]/40' : 'border-[#3F3F46] hover:border-slate-500'}`}
+                      className={`aspect-square rounded-lg border-2 border-dashed bg-[#18181B] p-3 transition-colors ${clubDraftLogoId === 'custom' ? 'border-emerald-400' : 'border-[#3F3F46] hover:border-zinc-500'}`}
                     >
                       {clubDraftLogoPreview ? (
                         <img src={clubDraftLogoPreview} alt="Custom club logo preview" className="h-full w-full rounded-xl object-cover" />
                       ) : (
                         <span className="flex h-full flex-col items-center justify-center text-center text-white/80">
-                          <span className="text-4xl leading-none">↑</span>
+                          <Upload size={28} />
                           <span className="mt-3 text-sm font-medium">Add Image</span>
                           <span className="mt-1 text-xs text-slate-400">640 x 640</span>
                         </span>
@@ -7510,12 +7559,13 @@ export default function CardSwipersLanding() {
                             setClubDraftLogoId(preset.id);
                             setClubDraftError('');
                           }}
-                          className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-[#FFD700] ring-2 ring-[#FFD700]/50' : 'border-[#3F3F46]'}`}
+                          className={`relative aspect-square overflow-hidden rounded-lg border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-emerald-400' : 'border-[#3F3F46]'}`}
+                          aria-pressed={selected}
                           aria-label={`Use ${preset.id} club logo`}
                         >
                           <span className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.28),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.16),transparent_45%)]" />
-                          <span className="relative flex h-full items-center justify-center text-[3.6rem] font-bold leading-none text-white drop-shadow-[0_8px_10px_rgba(0,0,0,0.5)] sm:text-[5.4rem]">{preset.symbol}</span>
-                          {selected && <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#FFD700] text-base font-bold text-[#09090B] sm:right-2 sm:top-2 sm:h-9 sm:w-9 sm:text-xl">✓</span>}
+                          <span className="relative flex h-full items-center justify-center text-5xl font-bold leading-none text-white">{preset.symbol}</span>
+                          {selected && <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-400 text-black"><Check size={16} /></span>}
                         </button>
                       );
                     })}
@@ -7529,30 +7579,33 @@ export default function CardSwipersLanding() {
               </div>
               {clubDraftError && <p className="mt-5 text-sm font-medium text-rose-300">{clubDraftError}</p>}
 
+            </form>
+            <div className="club-create-footer">
               <button
                 type="submit"
+                form="create-club-form"
                 disabled={clubCreateBusy || clubDraftName.trim().length < 3 || !clubDraftLogoId}
-                className="mt-8 min-h-14 w-full shrink-0 rounded-2xl bg-emerald-500 px-6 py-3 text-xl font-bold text-black shadow-[0_8px_18px_rgba(16,185,129,0.22)] transition-colors hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none sm:mt-auto sm:min-h-16 sm:py-4 sm:text-2xl"
+                className="min-h-12 w-full rounded-lg bg-rose-600 px-6 text-base font-bold text-white hover:bg-rose-500 disabled:bg-zinc-800 disabled:text-zinc-500"
               >
-                {clubCreateBusy ? 'Creating...' : 'Confirm'}
+                {clubCreateBusy ? 'Creating...' : 'Create Club'}
               </button>
-            </form>
+            </div>
           </div>
         )}
 
         {currentTab === 'onboarding' && (
           <div className={`max-w-6xl mx-auto w-full flex flex-col min-h-0 ${isInClubRoom ? 'gap-0' : 'gap-2 md:gap-3 py-1 md:py-2 overflow-y-auto overscroll-y-contain pb-24 md:pb-28'}`}>
-            {isInClubRoom && (
+            {isInClubRoom && !['members', 'admin'].includes(clubRoomTab) && (
               <div className="sticky top-0 z-40 flex min-h-14 items-center gap-3 border-b border-white/10 bg-black/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md">
                 <button type="button" onClick={handleExitClub} aria-label="Back to clubs" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white" title="Back to clubs">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="m15 5-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </button>
-                <p className="min-w-0 truncate text-base font-bold text-white">{selectedClub?.name || 'Club Room'}</p>
+                <p className="min-w-0 flex-1 text-center text-base font-bold text-white">Club Room</p><span className="w-11" />
               </div>
             )}
-            <div className={isInClubRoom ? 'flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-5' : 'grid xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1'}>
+            <div className={isInClubRoom ? 'flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-5' : 'grid min-w-0 grid-cols-[minmax(0,1fr)] xl:grid-cols-[0.96fr_1.04fr] gap-2.5 md:gap-4 min-h-0 flex-1'}>
               {!isInClubRoom && (
-              <section className={`rounded-[22px] border border-white/10 bg-[#18181B] p-3.5 sm:p-5 shadow-[0_16px_42px_rgba(0,0,0,0.32)] flex flex-col gap-2.5 min-h-0 items-center justify-center ${!selectedClub ? 'xl:col-span-2 mx-auto w-full max-w-xl' : ''}`}>
+              <section className="club-discovery xl:col-span-2 mx-auto flex w-full max-w-xl min-h-0 flex-col items-center gap-4">
                 {/* Search Club bar — full-width pill with magnifying glass */}
                 <div className="relative w-full">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none">
@@ -7566,7 +7619,8 @@ export default function CardSwipersLanding() {
                     value={clubSearchQuery}
                     onChange={(event) => setClubSearchQuery(event.target.value)}
                     placeholder="Search Club"
-                    className="w-full pl-9 pr-4 py-3 rounded-full bg-white text-[#111] placeholder-[#aaa] text-sm focus:outline-none shadow-sm"
+                    aria-label="Search clubs by name or ID"
+                    className="w-full pl-9 pr-4 py-3 rounded-lg border border-white/15 bg-[#18181b] text-white placeholder:text-white/40 text-base focus:outline-none"
                   />
                 </div>
 
@@ -7574,11 +7628,12 @@ export default function CardSwipersLanding() {
                   ref={clubCarouselRef}
                   onScroll={(event) => {
                     const container = event.currentTarget;
-                    const cardWidth = container.clientWidth * 0.8 + 16;
-                    const nextIndex = cardWidth ? Math.round((container.scrollLeft - 20) / cardWidth) : 0;
+                    const center = container.scrollLeft + container.clientWidth / 2;
+                    const cards = Array.from(container.children);
+                    const nextIndex = cards.reduce((nearest, card, index) => Math.abs(card.offsetLeft - container.offsetLeft + card.clientWidth / 2 - center) < Math.abs(cards[nearest].offsetLeft - container.offsetLeft + cards[nearest].clientWidth / 2 - center) ? index : nearest, 0);
                     setSelectedClubCarouselIndex(Math.max(0, Math.min(Math.max(filteredClubs.length, 0), nextIndex)));
                   }}
-                  className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="club-carousel"
                 >
                   {[
                     { id: 'create-club', isCreateClub: true },
@@ -7597,7 +7652,7 @@ export default function CardSwipersLanding() {
                               openCreateClub();
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#09090B] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-emerald-300/60 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+                          className="club-swipe-card border-emerald-400/30"
                         >
                           <div className="relative aspect-square w-full bg-[#0A0D13]">
                             <img src={authHeroImage} alt="Create a club" className="h-full w-full object-cover opacity-80" />
@@ -7607,7 +7662,7 @@ export default function CardSwipersLanding() {
                               <CardClubsIcon />
                             </div>
                             <h3 className="mt-3 text-lg font-black uppercase tracking-[0.08em] text-white">Create Club</h3>
-                            <p className="mt-2 text-xs leading-relaxed text-white/65">Start a private card-trading community and build your own club.</p>
+                            <p className="mt-2 text-xs text-white/65">Your collectors. Your club.</p>
                           </div>
                         </article>
                       );
@@ -7625,7 +7680,7 @@ export default function CardSwipersLanding() {
                               handleEnterClub(club);
                             }
                           }}
-                          className="flex min-w-[80%] basis-[80%] snap-center flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#09090B] text-left shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-colors hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                          className="club-swipe-card"
                         >
                           <div className="relative aspect-square w-full bg-[#0A0D13]">
                             {club.logoUrl ? (
@@ -7648,12 +7703,12 @@ export default function CardSwipersLanding() {
                               </div>
                               <span className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-white/80">{club.code || '------'}</span>
                             </div>
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+                            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-2">
+                              <div className="px-2.5 py-1.5">
                                 <p className="text-[9px] uppercase tracking-[0.14em] text-white/55">Members</p>
                                 <p className="mt-0.5 text-sm font-bold text-white">{Number(club.membersCount || club.memberCount || 0).toLocaleString()}</p>
                               </div>
-                              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+                              <div className="px-2.5 py-1.5">
                                 <p className="text-[9px] uppercase tracking-[0.14em] text-white/55">Your role</p>
                                 <p className="mt-0.5 text-sm font-bold capitalize text-white">{club.role || 'Member'}</p>
                               </div>
@@ -7673,12 +7728,12 @@ export default function CardSwipersLanding() {
                         type="button"
                         aria-label={`Show ${club.name || 'club'} ${index + 1}`}
                         onClick={() => {
-                          const cardWidth = clubCarouselRef.current ? clubCarouselRef.current.clientWidth * 0.8 + 16 : 0;
-                          clubCarouselRef.current?.scrollTo({ left: 20 + cardWidth * index, behavior: 'smooth' });
-                          if (club.id === 'create-club') openCreateClub();
-                          else handleEnterClub(club);
+                          const carousel = clubCarouselRef.current;
+                          const card = carousel?.children[index];
+                          if (card) carousel.scrollTo({ left: card.offsetLeft - carousel.offsetLeft - (carousel.clientWidth - card.clientWidth) / 2, behavior: 'smooth' });
                         }}
-                        className={`h-2.5 rounded-full transition-all ${selectedClubCarouselIndex === index ? 'w-7 bg-[#FFD700]' : 'w-2.5 bg-white/25'}`}
+                        aria-current={selectedClubCarouselIndex === index ? 'true' : undefined}
+                        className="flex h-11 w-8 items-center justify-center"
                       />
                     ))}
                   </div>
@@ -7687,11 +7742,11 @@ export default function CardSwipersLanding() {
               )}
 
               {isInClubRoom && selectedClub && (
-              <section className="flex flex-col gap-3 min-h-0 w-full">
+              <section className={`flex flex-col gap-3 min-h-0 w-full ${['members', 'admin'].includes(clubRoomTab) ? 'club-room-management' : ''}`}>
                 <>
-                    <div className="rounded-2xl border border-white/10 bg-zinc-900 px-4 py-4">
+                    <div className="border-b border-white/10 px-1 py-3">
                       <div className="flex items-start gap-3">
-                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-emerald-500 bg-zinc-800 text-3xl">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/15 bg-zinc-800 text-3xl">
                           {selectedClub.logoUrl ? (
                             <img src={selectedClub.logoUrl} alt="" className="h-full w-full object-cover" />
                           ) : (
@@ -7709,8 +7764,12 @@ export default function CardSwipersLanding() {
                             <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-bold uppercase text-emerald-300">{selectedClubRole || 'Guest'}</span>
                           </div>
                         </div>
+                        <button type="button" onClick={handleShareClub} aria-label="Share club invite" title="Share club invite" className="club-icon-button text-emerald-400"><Share2 size={20} /></button>
                       </div>
-                      {selectedClub.description && <p className="mt-3 text-xs text-white/60">{selectedClub.description}</p>}
+                      <div className="mt-4 rounded-lg border border-white/10 bg-[#18181b] p-3">
+                        <div className="flex items-center justify-between"><h4 className="text-xs font-semibold text-white/70">Club Notice</h4>{canManageClubMembers && !clubNoticeEditing && <button type="button" aria-label="Edit club notice" title="Edit club notice" onClick={() => { setClubNoticeDraft(selectedClub.description || ''); setClubNoticeEditing(true); }} className="club-icon-button text-emerald-400"><Pencil size={16} /></button>}</div>
+                        {clubNoticeEditing ? <form onSubmit={(event) => { event.preventDefault(); handleSaveClubNotice(); }}><textarea aria-label="Club notice" maxLength={1000} value={clubNoticeDraft} onChange={(event) => setClubNoticeDraft(event.target.value)} rows={3} className="mt-2 w-full rounded border border-white/20 bg-black p-2 text-base" /><div className="mt-2 flex justify-end gap-2"><button type="button" disabled={Boolean(clubActionBusyId)} onClick={() => setClubNoticeEditing(false)} aria-label="Cancel notice edit" title="Cancel" className="club-icon-button"><X size={18} /></button><button type="submit" disabled={Boolean(clubActionBusyId)} aria-label="Save club notice" title="Save notice" className="club-icon-button rounded bg-emerald-500 text-black"><Check size={18} /></button></div></form> : <p className="mt-2 break-words text-xs leading-relaxed text-white/60">{selectedClub.description || 'No club notice.'}</p>}
+                      </div>
                       {!selectedClubMembership ? (
                         <button
                           type="button"
@@ -7732,7 +7791,9 @@ export default function CardSwipersLanding() {
                       ) : null}
                     </div>
 
-                    <ClubRoomNav value={clubRoomTab} onChange={setClubRoomTab} inboxCount={selectedClubJoinRequests.length + openSelectedClubReports.length + allNotifications.filter((item) => item.clubId === selectedClubId && !item.read).length} />
+                    <ClubRoomNav value={clubRoomTab} canManage={canModerateClubPosts} onChange={(tab) => { setClubInfo(''); setClubMemberRoleFilter('all'); setClubManagementBackTab('tradenight'); setClubRoomTab(tab); }} inboxCount={selectedClubJoinRequests.length + openSelectedClubReports.length + allNotifications.filter((item) => item.clubId === selectedClubId && !item.read).length} />
+                    {clubRoomTab === 'members' && <ClubMembersView key={`${selectedClubId}-${clubMemberRoleFilter}`} members={selectedClubMembers} requests={selectedClubJoinRequests} currentUid={firebaseUser?.uid} canManage={canManageClubMembers} canModerate={canModerateClubPosts} busy={clubActionBusyId || (clubReportBusy ? 'report' : '')} error={clubError} info={clubInfo} accessMode={getClubAccessMode(selectedClub)} initialRole={clubMemberRoleFilter} onBack={() => setClubRoomTab(clubManagementBackTab)} onRole={handleUpdateClubMemberRole} onCredits={handleAllocateClubCredits} onRemove={handleRemoveClubMember} onBlock={handleBanClubMember} onReport={handleReportClubMember} onApprove={handleApproveClubJoinRequest} onReject={handleRejectClubJoinRequest} />}
+                    {clubRoomTab === 'admin' && canModerateClubPosts && <ClubAdminView club={selectedClub} members={selectedClubMembers} events={clubAdminEventData.clubId === selectedClubId ? clubAdminEventData.events : []} loading={clubAdminEventData.loading || clubAdminEventData.clubId !== selectedClubId} error={clubAdminEventData.error || clubError} info={clubInfo} onBack={() => setClubRoomTab('tradenight')} onShare={handleShareClub} onNavigate={(route) => { setClubInfo(''); if (route === 'scheduled') { setClubEventFilter('registration'); setClubEventSearch(''); setClubRoomTab('tradenight'); } else { setClubManagementBackTab('admin'); setClubMemberRoleFilter(route === 'agents' ? 'agent' : 'all'); setClubRoomTab('members'); } }} />}
                     {clubError && <p role="alert" className="text-sm text-rose-300">{clubError}</p>}
                     {clubInfo && <p role="status" className="text-sm text-emerald-300">{clubInfo}</p>}
                     <section className={clubRoomTab === 'chat' ? 'border-b border-white/10 py-3' : 'hidden'}>
@@ -7781,7 +7842,7 @@ export default function CardSwipersLanding() {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Trade Nights</p>
-                          <p className="mt-1 text-xs text-white/60">{selectedClubMembership ? 'Club credits / Entry binders / Poker rotation' : `${Number(selectedClub.tradeNightSummary?.liveCount || 0)} live / ${Number(selectedClub.tradeNightSummary?.registrationCount || 0)} registering`}</p>
+                          <p className="mt-1 text-xs text-white/60">{selectedClubEvents.filter((event) => event.status === 'live').length} live · {selectedClubEvents.filter((event) => event.status === 'registration').length} registering</p>
                         </div>
                         {canModerateClubPosts && (
                           <button
@@ -7856,11 +7917,13 @@ export default function CardSwipersLanding() {
                           </button>
                         </div>
                       )}
-                      <div className="mt-3 grid gap-2">
-                        {selectedClubEvents.length === 0 ? (
-                          <p className="text-sm text-white/60">No trade nights are open yet.</p>
+                      <div className="club-segments" aria-label="Trade night filters">{[['all', 'All'], ['registration', 'Registering'], ['live', 'Live'], ['high-value', 'High Value']].map(([value, label]) => <button key={value} type="button" aria-pressed={clubEventFilter === value} onClick={() => setClubEventFilter(value)}>{label}</button>)}</div>
+                      <label className="club-search"><Search size={18} /><input type="search" aria-label="Search trade nights" placeholder="Search trade nights" value={clubEventSearch} onChange={(event) => setClubEventSearch(event.target.value)} /></label>
+                      <div className="mt-3 grid gap-2 pb-20">
+                        {filteredClubEvents.length === 0 ? (
+                          <div className="py-5 text-sm text-white/60"><p>{selectedClubEvents.length ? 'No trade nights match these filters.' : 'No trade nights are open yet.'}</p>{selectedClubEvents.length > 0 && <button type="button" onClick={() => { setClubEventFilter('all'); setClubEventSearch(''); }} className="mt-2 min-h-11 text-emerald-300">Clear Filters</button>}</div>
                         ) : (
-                          selectedClubEvents.map((event) => {
+                          filteredClubEvents.map((event) => {
                             const eventDate = toDateValue(event.scheduledFor);
                             const registrationOpen = String(event.status || '').toLowerCase() === 'registration';
                             const registrations = tradeNightRegistrationsByEvent[event.id] || [];
@@ -7869,7 +7932,7 @@ export default function CardSwipersLanding() {
                             const isBootedFromEvent = (event.bootedUids || []).includes(firebaseUser?.uid);
                             const isRegisteredForEvent = registrations.some((registration) => (registration.userId || registration.id) === firebaseUser?.uid);
                             return (
-                              <div key={event.id} className="flex overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+                              <div key={event.id} className="flex overflow-hidden rounded-lg border border-white/10 bg-zinc-900">
                                 <div className={`flex w-7 shrink-0 items-center justify-center ${eventStatus === 'live' ? 'bg-emerald-500 text-black' : registrationOpen ? 'bg-red-500 text-white' : 'bg-zinc-700 text-white/80'}`}>
                                   <span className="rotate-180 text-[9px] font-black uppercase tracking-[0.18em] [writing-mode:vertical-rl]">{eventStatus === 'live' ? 'Live' : registrationOpen ? 'Registering' : 'Closed'}</span>
                                 </div>
@@ -7879,7 +7942,7 @@ export default function CardSwipersLanding() {
                                     <p className="text-sm font-bold">{event.title || 'Trade Night'}</p>
                                     <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${eventStatus === 'live' ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : registrationOpen ? 'border-amber-500/30 bg-amber-500/15 text-amber-200' : 'border-white/15 bg-white/10 text-white/60'}`}>{eventStatus === 'live' ? 'Table live' : registrationOpen ? 'Registration open' : String(event.status || 'Closed')}</span>
                                     <p className="mt-1 text-[11px] text-white/55">
-                                      {event.buyInCredits || 0} credits · {event.currentRegistrations || 0}/{event.capLimit || '∞'} registered
+                                      {event.currentRegistrations || 0}/{event.capLimit || '∞'} traders · {event.registrationWindowMinutes || selectedClub.defaultEventConfig?.registrationWindowMinutes || 30} min window
                                       {eventDate ? ` · ${eventDate.toLocaleDateString()}` : ''}
                                     </p>
                                     <p className="mt-0.5 text-[11px] text-emerald-200/80">
@@ -7895,7 +7958,7 @@ export default function CardSwipersLanding() {
                                     {clubEventBusyId === `register-${event.id}` ? 'Registering...' : isBootedFromEvent ? 'Booted' : isRegisteredForEvent ? 'Registered' : registrationOpen ? 'Select Binder & Register' : String(event.status || 'closed')}
                                   </button>
                                 </div>
-                                <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-emerald-400/20 bg-[#0f3d1a]/60 px-3 py-2.5">
+                                <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/10 pt-3">
                                   <div className="min-w-0">
                                     <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300">Poker Table</p>
                                     <p className="truncate text-[11px] text-white/60">
@@ -7920,85 +7983,7 @@ export default function CardSwipersLanding() {
                       </div>
                     </section>
 
-                    <div className={['members', 'feed'].includes(clubRoomTab) ? 'flex min-h-0 flex-col gap-3' : 'hidden'}>
-                      <div className={clubRoomTab === 'members' ? 'min-h-0 space-y-3 py-3' : 'hidden'}>
-                        {canManageClubMembers && <form className="space-y-3 border-b border-white/10 pb-4" onSubmit={(event) => { event.preventDefault(); handleSaveClubSettings(); }}>
-                          <h3 className="text-base font-bold">Club Settings</h3>
-                          <div className="grid grid-cols-2 gap-3"><label className="text-xs text-white/60">Visibility<select aria-label="Club visibility" value={clubSettingsDraft.accessMode} onChange={(event) => setClubSettingsDraft((previous) => ({ ...previous, accessMode: event.target.value }))} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm"><option value="private">Private</option><option value="public">Public</option></select></label><label className="text-xs text-white/60">Category<select aria-label="Club settings category" value={clubSettingsDraft.category} onChange={(event) => setClubSettingsDraft((previous) => ({ ...previous, category: event.target.value }))} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm">{CLUB_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label></div>
-                          <button type="submit" disabled={Boolean(clubActionBusyId)} className="min-h-11 rounded-lg bg-emerald-400 px-4 text-sm font-bold text-black disabled:opacity-50">{clubActionBusyId === 'settings' ? 'Saving...' : 'Save Settings'}</button>
-                        </form>}
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/45 mb-2">Members</p>
-                        <input type="search" aria-label="Search club members" value={clubMemberSearch} onChange={(event) => setClubMemberSearch(event.target.value)} placeholder="Search members" className="min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-3 text-base" />
-                        <div className="space-y-2 overflow-y-auto pr-1">
-                          {selectedClubMembers.length === 0 ? (
-                            <p className="text-xs text-white/60">No members yet.</p>
-                          ) : (
-                            selectedClubMembers.filter((member) => `${member.username || ''} ${member.displayName || ''} ${member.email || ''}`.toLowerCase().includes(clubMemberSearch.trim().toLowerCase())).map((member) => (
-                              <div key={member.uid} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold truncate">{member.displayName || member.email || member.uid}</p>
-                                    <p className="text-[11px] text-white/55 truncate">{member.email || member.uid}</p>
-                                    <p className="text-[11px] text-[#86EFAC] mt-1">{member.credits === 'infinite' ? 'Unlimited credits' : `${Number(member.credits || 0)} credits`} · {Number(member.escrowHeld || 0)} held</p>
-                                  </div>
-                                  <span className="text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded-full border border-white/15 bg-white/5 text-white/70">{member.role || 'member'}</span>
-                                </div>
-                                {(canManageClubMembers || canModerateClubPosts) && member.uid !== firebaseUser?.uid && (
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {canManageClubMembers && member.role !== 'owner' && (
-                                      <label className="text-xs text-white/60">Role<select aria-label={`Role for ${member.displayName || member.uid}`} value={member.role || 'member'} disabled={Boolean(clubActionBusyId)} onChange={(event) => handleUpdateClubMemberRole(member.uid, event.target.value)} className="ml-2 min-h-11 rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm"><option value="member">Member</option><option value="agent">Agent</option></select></label>
-                                    )}
-                                    {member.role !== 'owner' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveClubMember(member)}
-                                        disabled={clubActionBusyId === `remove-${member.uid}`}
-                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-900/45 border border-red-400/30 text-red-100 hover:bg-red-900/60 disabled:opacity-60"
-                                      >
-                                        Remove
-                                      </button>
-                                    )}
-                                    {member.role !== 'owner' && canModerateClubPosts && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAllocateClubCredits(member)}
-                                        disabled={clubActionBusyId === `credits-${member.uid}` || (selectedClubRole === 'agent' && member.role !== 'member')}
-                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-emerald-500/15 border border-emerald-400/30 text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-60"
-                                      >
-                                        {clubActionBusyId === `credits-${member.uid}` ? 'Assigning...' : 'Add Credits'}
-                                      </button>
-                                    )}
-                                    {member.role !== 'owner' && canModerateClubPosts && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleBanClubMember(member, 'Manual moderator action')}
-                                        disabled={clubActionBusyId === `ban-${member.uid}`}
-                                        className="px-2.5 py-1 rounded-lg text-[11px] bg-red-800/55 border border-red-300/40 text-red-100 hover:bg-red-800/70 disabled:opacity-60"
-                                      >
-                                        Block
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                                {canManageClubMembers && member.role === 'member' && <label className="mt-2 block text-xs text-white/60">Assigned agent<select aria-label={`Assigned agent for ${member.displayName || member.uid}`} value={member.agentUid || ''} disabled={Boolean(clubActionBusyId)} onChange={(event) => handleUpdateClubMemberRole(member.uid, 'member', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-white/15 bg-zinc-900 px-2 text-sm"><option value="">Unassigned</option>{selectedClubMembers.filter((agent) => agent.role === 'agent' && (!agent.status || agent.status === 'active')).map((agent) => <option key={agent.uid} value={agent.uid}>{agent.displayName || agent.username || agent.uid}</option>)}</select></label>}
-                                {member.uid !== firebaseUser?.uid && (
-                                  <div className="mt-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleReportClubMember(member)}
-                                      disabled={clubReportBusy || !selectedClubMembership || isSelectedClubBanned}
-                                      className="px-2.5 py-1 rounded-lg text-[11px] bg-white/10 hover:bg-white/20 disabled:opacity-60"
-                                    >
-                                      Report
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
+                    <div className={clubRoomTab === 'feed' ? 'flex min-h-0 flex-col gap-3' : 'hidden'}>
                       <div className={clubRoomTab === 'feed' ? 'min-h-0 space-y-3 border-b border-white/10 py-3' : 'hidden'}>
                         <div>
                           <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Post Card In Club</p>
