@@ -51,7 +51,7 @@ class StartupErrorBoundary extends React.Component {
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <div style={{ minHeight: '100vh', background: '#0B0E14', color: '#fff', padding: '48px 20px', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ minHeight: '100vh', background: '#000', color: '#fff', padding: '48px 20px', fontFamily: 'Inter, sans-serif' }}>
         <h1 style={{ fontSize: 20, fontWeight: 800 }}>CardSwipers hit a startup error</h1>
         <pre style={{ marginTop: 16, whiteSpace: 'pre-wrap', fontSize: 12, color: '#FCA5A5' }}>
           {String(this.state.error?.stack || this.state.error?.message || this.state.error)}

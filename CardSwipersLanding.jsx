@@ -236,7 +236,7 @@ function CardSilhouettePlaceholder({ className = '', label = 'Card image unavail
     <div
       role="img"
       aria-label={label}
-      className={`relative flex items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(160deg,#111827,#1f2937)] ${className}`}
+      className={`relative flex items-center justify-center overflow-hidden rounded-lg bg-[linear-gradient(160deg,#181818,#272727)] ${className}`}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.16),transparent_40%),radial-gradient(circle_at_80%_90%,rgba(255,255,255,0.08),transparent_45%)]" />
       <svg viewBox="0 0 120 180" className="relative h-16 w-10 text-white/70" fill="none" aria-hidden="true">
@@ -711,15 +711,15 @@ const ESCROW_TERMS_LABEL = 'I agree to the Terms of Service and community market
 const buildClubCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const isClubModeratorRole = (role) => role === 'owner' || role === 'agent';
 const CLUB_LOGO_PRESETS = [
-  { id: 'baseball', symbol: '⚾', className: 'from-sky-900 via-blue-700 to-slate-950' },
+  { id: 'baseball', symbol: '⚾', className: 'from-red-900 via-orange-700 to-neutral-950' },
   { id: 'basketball', symbol: '🏀', className: 'from-orange-900 via-orange-700 to-stone-950' },
   { id: 'football', symbol: '🏈', className: 'from-amber-950 via-orange-800 to-stone-950' },
-  { id: 'soccer', symbol: '⚽', className: 'from-slate-800 via-zinc-600 to-black' },
-  { id: 'lightning', symbol: '⚡', className: 'from-yellow-900 via-amber-600 to-slate-950' },
-  { id: 'energy', symbol: '✦', className: 'from-red-900 via-orange-700 to-slate-950' },
-  { id: 'gem', symbol: '◇', className: 'from-cyan-900 via-blue-700 to-slate-950' },
-  { id: 'shield', symbol: '⬟', className: 'from-indigo-950 via-blue-800 to-slate-950' },
-  { id: 'star', symbol: '★', className: 'from-amber-950 via-yellow-700 to-slate-950' }
+  { id: 'soccer', symbol: '⚽', className: 'from-neutral-800 via-neutral-600 to-black' },
+  { id: 'lightning', symbol: '⚡', className: 'from-yellow-900 via-amber-600 to-neutral-950' },
+  { id: 'energy', symbol: '✦', className: 'from-red-900 via-orange-700 to-neutral-950' },
+  { id: 'gem', symbol: '◇', className: 'from-emerald-900 via-emerald-700 to-neutral-950' },
+  { id: 'shield', symbol: '⬟', className: 'from-neutral-900 via-neutral-700 to-neutral-950' },
+  { id: 'star', symbol: '★', className: 'from-amber-950 via-yellow-700 to-neutral-950' }
 ];
 const normalizeClubRole = (role) => {
   const normalized = String(role || 'member').toLowerCase();
@@ -6772,7 +6772,7 @@ export default function CardSwipersLanding() {
             {currentCard ? (
               <div className="w-full flex-1 min-h-0 grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] gap-4 md:gap-6 items-start">
                 <div className="space-y-3 md:space-y-5">
-                  <div className="w-full h-full min-h-0 bg-[#171923] border border-white/10 rounded-[28px] md:rounded-[32px] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
+                  <div className="w-full h-full min-h-0 bg-[#181818] border border-white/10 rounded-[28px] md:rounded-[32px] p-3 md:p-5 flex flex-col justify-between relative overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.45)]">
                     <div className={`absolute inset-0 bg-gradient-to-br ${currentCard.cardColor} opacity-30 pointer-events-none`} />
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_35%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.25))] pointer-events-none" />
 
@@ -6813,7 +6813,7 @@ export default function CardSwipersLanding() {
                     </div>
 
                     <div className="relative z-10 flex-1 flex items-center justify-center py-2 md:py-8">
-                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[#0F131C] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`} onClick={() => canToggleCurrentCardImage && setActiveCardImageSide((prev) => (prev === 'front' ? 'back' : 'front'))}>
+                      <div className={`w-full max-w-[440px] md:max-w-[520px] h-[32vh] min-h-[220px] md:min-h-[250px] max-h-[320px] md:max-h-[460px] bg-[#141414] border ${currentCard.borderColor} rounded-[28px] md:rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.55)] relative overflow-hidden`} onClick={() => canToggleCurrentCardImage && setActiveCardImageSide((prev) => (prev === 'front' ? 'back' : 'front'))}>
                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.07),transparent_25%,transparent_75%,rgba(255,255,255,0.05))]" />
                         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
                         <div className="absolute top-4 right-4 text-[10px] uppercase tracking-[0.22em] text-white/60 font-bold">
@@ -6879,7 +6879,7 @@ export default function CardSwipersLanding() {
                       </div>
                     </div>
 
-                    <div className="z-10 space-y-3 md:space-y-4 bg-gradient-to-t from-[#171923] via-[#171923]/92 to-transparent pt-3 md:pt-4 rounded-xl">
+                    <div className="z-10 space-y-3 md:space-y-4 bg-gradient-to-t from-[#181818] via-[#181818]/92 to-transparent pt-3 md:pt-4 rounded-xl">
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="space-y-2 min-w-0">
                           <h2 className="text-[1.18rem] sm:text-[1.8rem] font-black tracking-[-0.04em] leading-tight">{currentCard.title}</h2>
@@ -6893,7 +6893,7 @@ export default function CardSwipersLanding() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 flex-wrap bg-[#0F131C] border border-white/10 rounded-2xl px-3 py-2.5 md:px-4 md:py-3">
+                      <div className="flex items-center justify-between gap-3 flex-wrap bg-[#141414] border border-white/10 rounded-2xl px-3 py-2.5 md:px-4 md:py-3">
                         <button
                           type="button"
                           onClick={() => setViewingCollection(currentCard)}
@@ -7000,7 +7000,7 @@ export default function CardSwipersLanding() {
                 </div>
 
                 <aside className="space-y-3 md:space-y-4 xl:sticky xl:top-24">
-                  <div className="rounded-[24px] md:rounded-[28px] bg-[#111827] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
+                  <div className="rounded-[24px] md:rounded-[28px] bg-[#181818] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Collector Profile</p>
                       <h3 className="mt-2 text-xl sm:text-2xl font-bold">{currentCard.owner}</h3>
@@ -7019,12 +7019,12 @@ export default function CardSwipersLanding() {
                     </div>
                   </div>
 
-                  <div className="rounded-[24px] md:rounded-[28px] bg-[#111827] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] space-y-4">
+                  <div className="rounded-[24px] md:rounded-[28px] bg-[#181818] border border-white/10 p-4 md:p-5 shadow-[0_20px_40px_rgba(0,0,0,0.35)] space-y-4">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/45 mb-3">Seeking</p>
                       <div className="flex flex-wrap gap-2">
                         {(currentCard.seekingTags || []).map((tag) => (
-                          <span key={tag} className="px-3 py-1.5 rounded-full bg-[#0F131C] border border-white/10 text-sm text-white/75">
+                          <span key={tag} className="px-3 py-1.5 rounded-full bg-[#141414] border border-white/10 text-sm text-white/75">
                             {tag}
                           </span>
                         ))}
@@ -7108,7 +7108,7 @@ export default function CardSwipersLanding() {
                       onClick={() => postFrontImageInputRef.current?.click()}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#09090B] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#101010] flex items-center justify-center relative group">
                         {postFrontImagePreview ? (
                           <img
                             src={postFrontImagePreview}
@@ -7135,7 +7135,7 @@ export default function CardSwipersLanding() {
                       }}
                       className="rounded-[18px] border border-dashed border-white/20 bg-[#09090B] hover:border-[#FB7185]/60 transition-all p-3"
                     >
-                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#0A0D13] flex items-center justify-center relative group">
+                      <div className="rounded-[14px] overflow-hidden min-h-[104px] sm:min-h-[148px] bg-[#101010] flex items-center justify-center relative group">
                         {postBackImagePreview ? (
                           <img
                             src={postBackImagePreview}
@@ -7559,7 +7559,7 @@ export default function CardSwipersLanding() {
                             setClubDraftLogoId(preset.id);
                             setClubDraftError('');
                           }}
-                          className={`relative aspect-square overflow-hidden rounded-lg border-2 bg-gradient-to-br ${preset.className} ${selected ? 'border-emerald-400' : 'border-[#3F3F46]'}`}
+                          className={`relative aspect-square overflow-hidden rounded-lg border-2 bg-[linear-gradient(120deg,#242424,#141414)] ${selected ? 'border-emerald-400' : 'border-[#3F3F46]'}`}
                           aria-pressed={selected}
                           aria-label={`Use ${preset.id} club logo`}
                         >
@@ -7654,7 +7654,7 @@ export default function CardSwipersLanding() {
                           }}
                           className="club-swipe-card border-emerald-400/30"
                         >
-                          <div className="relative aspect-square w-full bg-[#0A0D13]">
+                          <div className="relative aspect-square w-full bg-[#181818]">
                             <img src={authHeroImage} alt="Create a club" className="h-full w-full object-cover opacity-80" />
                           </div>
                           <div className="relative flex flex-1 flex-col items-center px-4 pb-5 text-center">
@@ -7682,7 +7682,7 @@ export default function CardSwipersLanding() {
                           }}
                           className="club-swipe-card"
                         >
-                          <div className="relative aspect-square w-full bg-[#0A0D13]">
+                          <div className="relative aspect-square w-full bg-[#181818]">
                             {club.logoUrl ? (
                               <img src={club.logoUrl} alt={club.name || 'Club'} className="h-full w-full object-cover" />
                             ) : logoPreset ? (
@@ -9104,7 +9104,7 @@ export default function CardSwipersLanding() {
 
       {showOnboarding && (
         <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl bg-[#111827] border border-white/10 rounded-3xl p-7 space-y-6 my-8">
+          <div className="w-full max-w-3xl bg-[#181818] border border-white/10 rounded-3xl p-7 space-y-6 my-8">
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex-1">
@@ -9397,7 +9397,7 @@ export default function CardSwipersLanding() {
 
       {showFlagModal && (
         <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#111827] border border-white/10 rounded-3xl p-7 space-y-6">
+          <div className="w-full max-w-md bg-[#181818] border border-white/10 rounded-3xl p-7 space-y-6">
             <div>
               <h2 className="text-2xl font-black">Report Inappropriate</h2>
               <p className="text-sm text-white/60 mt-1">Help us keep CardSwipers safe for collectors</p>

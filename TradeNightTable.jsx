@@ -495,7 +495,7 @@ export default function TradeNightTable({ clubId, event, registrations, members,
                   className="relative mx-auto block"
                   aria-label={`${name} seat options`}
                 >
-                  <span className={`flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 bg-[#1f2937] text-sm font-black ${isActionSeat ? 'border-amber-300 shadow-[0_0_16px_rgba(252,211,77,0.6)]' : uid === currentUid ? 'border-white/70' : 'border-white/20'}`}>
+                  <span className={`flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 bg-[#272727] text-sm font-black ${isActionSeat ? 'border-amber-300 shadow-[0_0_16px_rgba(252,211,77,0.6)]' : uid === currentUid ? 'border-white/70' : 'border-white/20'}`}>
                     {image ? <img src={image} alt="" className="h-full w-full object-cover" /> : getInitials(name)}
                   </span>
                   {isVendorSeat && <span className="absolute -top-1 left-1/2 -translate-x-1/2 rounded-md bg-sky-500 px-1.5 text-[9px] font-black uppercase">Vendor</span>}
